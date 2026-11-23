@@ -1,0 +1,375 @@
+/* samsung-tv-overview.css — the round's own rules, on top of the shipped phone stylesheet.
+
+   Round slug `samsung-tv-overview`, 2026-11-23. Surface: the Ravilo ANDROID PHONE only, 412 x 915
+   dp portrait — Profile → Samsung TV → the guide's *Your Samsung TVs* screen. No TV, desktop,
+   web, admin, cast or Tizen frame is drawn: the row that opens this guide is null on every
+   platform but an Android phone (spec FR-1), so no other surface has this screen at all.
+
+   Loaded AFTER design/ravilo/mobile/ravilo-phone.css, so every colour, radius, font and easing in
+   these pictures is the shipped one: --bg, --bg-2, --card, --card-2, --ink, --ink-soft, --ink-dim,
+   --line, --line-2, --accent, --accent-2, --grad, --good, --ease, --fg. Nothing here redefines
+   one of those.
+
+   NOTHING here is production CSS. design/ravilo/ is reference only — no Gradle task consumes it —
+   so these rules are a specification of intent for the Compose port, which is why every hex, px,
+   weight, radius and easing is written out rather than left to the implementer.
+
+   WHAT IS REUSED FROM THE SHIPPED APP, not authored here:
+     - the status bar, 34 dp, its glyphs and its opaque 1 px outset (.statusbar);
+     - the primary button: 54 dp tall, radius 27, --grad, white Sora 16/600 (SamsungGuideScreen's
+       GuideButton);
+     - the card surface: --card at radius 14 (SamsungGuideScreen's TvChoice);
+     - the green badge pill: 10 sp Sora 700, letter-spacing .8 sp, radius 6, padding 6/2, ink on a
+       16 % tint of its own colour (ProfileScreen's Experimental badge);
+     - JetBrains Mono for a model code and a version, which are ids (SKILL-house, Words).
+
+   TEXT SIZE. Every font-size and line-height is `calc(N * var(--sp))`, where --sp is 1 px at the
+   system default and 2 px at the 200 % font setting — which is how Android's sp actually behaves:
+   text grows, dp padding does not. The frames.html query ?fs=200 sets the root size; no px text
+   size appears below.
+
+   CANVAS RULES HELD: dark ink (#12141b body, #262a35 secondary) for every label on the light-gray
+   backdrop; no content-visibility; no backdrop-filter; no large blur; no infinite animation. The
+   scan indicator is a STATIC arc for that last reason, and the report says so — the live app spins
+   it. The shipped phone stylesheet's .btn.ghost IS backdrop-filter; this round does not use it.
+
+   TOUCH TARGETS: the back chevron, the primary button, every quiet link and *Search again* are
+   44 dp or more on their smaller axis. No text is below 11 sp.
+*/
+
+/* ---- the three faces, self-hosted from the repo's own copies. The render has no network, so
+   these blocks make the picture identical with or without one. No file is copied: the url points
+   at the repository's own woff2. --------------------------------------------------------------- */
+@font-face { font-family: 'Space Grotesk'; font-style: normal; font-weight: 100 900; font-display: block;
+  src: url('../../app/fonts/space-grotesk.woff2') format('woff2'); }
+@font-face { font-family: 'Sora'; font-style: normal; font-weight: 100 900; font-display: block;
+  src: url('../../app/fonts/sora.woff2') format('woff2'); }
+@font-face { font-family: 'JetBrains Mono'; font-style: normal; font-weight: 100 900; font-display: block;
+  src: url('../../app/fonts/jetbrains-mono.woff2') format('woff2'); }
+
+/* =================================================================================================
+   FRAME SCAFFOLDING — what the renderer points its element screenshots at.
+   ================================================================================================= */
+
+html, body { height: auto; overflow: visible; background: #e9eaee; margin: 0; padding: 0; }
+html { font-size: 16px; }                 /* 1 rem = 16 px, so --sp = 1 px: the system default */
+html[data-fs="200"] { font-size: 32px; }  /* Android's largest font setting: --sp = 2 px */
+
+.stv-frames { padding: 0; margin: 0; }
+.stv-frames * { box-sizing: border-box; }
+.stv-frame { width: max-content; }
+/* "Wi-Fi" never breaks at its hyphen — see stv-kit.js nbwifi(). */
+.stv-nb { white-space: nowrap; }
+
+/* The phone: Pixel 9, 412 x 915 portrait, the shipped size. The bezel is left off — the renderer
+   crops to the screen and the bezel is not the design. */
+.stv-ph { --sp: .0625rem;
+  width: 412px; height: 915px; position: relative; overflow: hidden;
+  background: var(--bg); color: var(--ink); font-family: 'Sora', sans-serif;
+  display: flex; flex-direction: column; }
+
+/* A `tall` frame renders the whole screen rather than the 915 dp a viewer meets first. Both are
+   rendered at the 200 % font setting: the phone-height frame is what the viewer sees and shows
+   where the fold falls, the tall one proves nothing is clipped or overlapped below it. */
+.stv-ph.tall { height: auto; }
+.stv-ph.tall .stv-scroll { overflow: visible; }
+
+/* A strip: several phones side by side as one PNG, so states are compared rather than remembered.
+   Every cell is rendered on its own as well. */
+.stv-strip { display: flex; gap: 20px; background: #e9eaee; width: max-content; padding: 0; }
+.stv-strip .stv-cell { flex: none; }
+.stv-strip .stv-cap { font-family: 'JetBrains Mono', monospace; font-size: 11px;
+  letter-spacing: .07em; text-transform: uppercase; color: #262a35; padding: 0 0 10px; }
+
+/* =================================================================================================
+   SHARED CHROME — the same in all three directions.
+   ================================================================================================= */
+
+/* The shipped status bar, 34 dp, opaque with a 1 px outset below it. */
+.stv-sb { position: relative; z-index: 60; flex: none; height: 34px;
+  background: var(--bg); box-shadow: 0 1px 0 0 var(--bg);
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 24px 0 26px; font-size: calc(13 * var(--sp)); font-weight: 600; color: var(--ink); }
+.stv-sbi { display: flex; gap: 5px; align-items: center; opacity: .95; }
+.stv-sb svg { width: 15px; height: 15px; display: block; }
+
+/* The page head. The guide's other screens are centred one-action pages; this one is a LIST, so
+   its title is left-aligned on the 18 dp gutter and the back control is a real 44 dp target. */
+.stv-hd { flex: none; display: flex; align-items: center; gap: 2px; padding: 2px 18px 10px 6px; }
+.stv-bk { width: 44px; height: 44px; flex: none; display: flex; align-items: center;
+  justify-content: center; border: 0; background: none; color: var(--ink); cursor: pointer; }
+.stv-bk svg { width: 22px; height: 22px; }
+.stv-hd h1 { margin: 0; font-family: 'Space Grotesk', sans-serif; font-weight: 700;
+  font-size: calc(24 * var(--sp)); line-height: calc(29 * var(--sp)); letter-spacing: -.01em;
+  color: var(--ink); min-width: 0; }
+
+.stv-scroll { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden;
+  scrollbar-width: none; padding: 0 18px 24px; }
+.stv-scroll::-webkit-scrollbar { display: none; }
+
+/* ---- the badge. The shipped Experimental badge's exact geometry: 10 sp Sora 700, .8 sp tracking,
+   radius 6, padding 6/2, ink on a 16 % tint of its own colour. Four colours, and NONE of them is
+   the accent: state is never expressed by the brand colour alone.
+   --stv-ok is the green. The shipped --good (#2dd49a) is a dark-theme value and reaches 1.9:1 on
+   the Daylight theme's near-white pill, so Daylight gets its own darker green here — that is the
+   same light-theme badge override the admin system already carries, and a promotion needs it as a
+   real token rather than as this rule. ------------------------------------------------------- */
+/* The tint is written out rather than mixed: color-mix() is newer than the Tizen floor this
+   family has to keep working on, and a round's CSS is the Compose port's reference, where a
+   tint is an alpha on a colour anyway. */
+.stv-ph { --stv-ok: #2dd49a; --stv-ok-t: rgba(45, 212, 154, .16);
+          --stv-bad: #f2797f; --stv-bad-t: rgba(242, 121, 127, .15); }
+html[data-skin="daylight"] .stv-ph { --stv-ok: #0f7a52; --stv-ok-t: rgba(15, 122, 82, .14);
+          --stv-bad: #b3242c; --stv-bad-t: rgba(179, 36, 44, .12); }
+
+.stv-badge { flex: none; align-self: flex-start; font-family: 'Sora', sans-serif; font-weight: 700;
+  font-size: calc(10 * var(--sp)); line-height: calc(14 * var(--sp)); letter-spacing: .08em;
+  text-transform: uppercase; word-spacing: .18em; padding: 2px 6px; border-radius: 6px;
+  white-space: nowrap; }
+/* NEVER two lines. The Faroese *IKKI SETT UPP* wrapped inside its own pill at the 200 % font
+   setting, which reads as two pills; the row below wraps the pill onto its own line instead. */
+.stv-badge.approved { color: var(--stv-ok); background: var(--stv-ok-t); }
+.stv-badge.waiting  { color: var(--ink-soft); background: rgba(var(--fg), .10); }
+.stv-badge.rejected { color: var(--stv-bad); background: var(--stv-bad-t); }
+.stv-badge.notsetup { color: var(--ink-dim); background: transparent;
+  box-shadow: inset 0 0 0 1px var(--line-2); }
+
+/* ---- the primary button: the shipped GuideButton, unchanged. 54 dp, radius 27, --grad. ------- */
+.stv-cta { display: flex; align-items: center; justify-content: center; width: 100%;
+  min-height: 54px; margin-top: 14px; padding: 0 16px; border: 0; border-radius: 27px;
+  background: var(--grad); color: #fff; font-family: 'Sora', sans-serif; font-weight: 600;
+  font-size: calc(16 * var(--sp)); line-height: calc(21 * var(--sp)); text-align: center;
+  cursor: pointer; transition: transform .16s var(--ease); }
+.stv-cta:active { transform: scale(.98); }
+
+/* A quiet link — Reinstall, Set up this TV, Ask again, Search again. 44 dp of target, no fill, the
+   secondary accent so it is not mistaken for the primary action. */
+.stv-quiet { display: flex; align-items: center; justify-content: center; width: 100%;
+  min-height: 44px; margin-top: 4px; border: 0; background: none; color: var(--accent-2);
+  font-family: 'Sora', sans-serif; font-weight: 600; font-size: calc(13.5 * var(--sp));
+  line-height: calc(19 * var(--sp)); cursor: pointer; }
+
+/* ---- the scan line and its skeletons (item 1) ------------------------------------------------
+   The arc is STATIC: an infinite animation breaks the screenshot render. The live app turns it.
+   The skeletons are what a 254-host sweep looks like for its whole second or two, which is the
+   state a viewer actually meets — a bare spinner is the frame, not the state. */
+.stv-scan { display: flex; align-items: center; gap: 10px; min-height: 44px; }
+.stv-scan span { font-size: calc(14.5 * var(--sp)); line-height: calc(20 * var(--sp));
+  color: var(--ink-soft); }
+.stv-arc { width: 18px; height: 18px; flex: none; color: var(--accent-2);
+  transform: rotate(-45deg); }
+.stv-sk { display: flex; flex-direction: column; gap: 12px; margin-top: 10px; }
+.stv-skcard { height: 128px; border-radius: 18px; background: rgba(var(--fg), .065); }
+.stv-skcard.sm { height: 72px; border-radius: 14px; background: rgba(var(--fg), .05); }
+.stv-sk:not(:first-child) { margin-top: 12px; }
+.stv-skrow { height: 72px; border-top: 1px solid var(--line); background: rgba(var(--fg), .05); }
+
+/* The pending version value in the x1 study: a bar where the number will be, 54 x 11. */
+.stv-vrow .sk { width: 54px; height: 11px; border-radius: 6px; background: rgba(var(--fg), .14); }
+
+/* ---- no Wi-Fi (item 1, second sentence; state 8) --------------------------------------------- */
+.stv-notice { display: flex; gap: 11px; align-items: flex-start; padding: 13px 14px;
+  border-radius: 14px; background: rgba(var(--fg), .06); box-shadow: inset 0 0 0 1px var(--line);
+  margin-bottom: 14px; }
+.stv-notice p { margin: 0; font-size: calc(14 * var(--sp)); line-height: calc(20 * var(--sp));
+  color: var(--ink-soft); }
+.stv-nicon { width: 20px; height: 20px; flex: none; color: var(--ink-dim); margin-top: 1px; }
+
+/* ---- the footer count line and Search again (item 4) ----------------------------------------- */
+.stv-foot { display: flex; align-items: center; justify-content: center; flex-wrap: wrap;
+  gap: 0 10px; min-height: 44px; margin-top: 14px; text-align: center; }
+.stv-foot span { font-size: calc(12.5 * var(--sp)); line-height: calc(17 * var(--sp));
+  color: var(--ink-dim); }
+/* nowrap: *Leita aftur* broke across two lines at 200 % while the count line beside it still had
+   room. The two take separate lines instead. */
+.stv-flink { white-space: nowrap; border: 0; background: none; padding: 12px 4px;
+  color: var(--accent-2);
+  font-family: 'Sora', sans-serif; font-weight: 600; font-size: calc(12.5 * var(--sp));
+  line-height: calc(17 * var(--sp)); cursor: pointer; }
+
+/* =================================================================================================
+   DIRECTION A — "Stack". Cards; the approved TV's card is the big one; two labelled version lines;
+   the button inside the card.
+   ================================================================================================= */
+
+.stv-list { display: flex; flex-direction: column; gap: 12px; }
+
+/* The card. --card at radius 14 is the shipped TvChoice surface; the BIG card takes radius 18 and
+   a hairline, so the one card that carries an action is a different object rather than a taller
+   copy of the same one. */
+/* Every card carries the hairline: on the Daylight theme --card (#f1f2f6) sits 2 % from --bg
+   (#fbfbfd) and a card without an edge does not read as an object at all — the first render of
+   state 4 showed the Bedroom card dissolving into the page. */
+.stv-card { background: var(--card); border-radius: 14px; padding: 13px 14px 12px;
+  box-shadow: inset 0 0 0 1px var(--line); }
+.stv-card.big { border-radius: 18px; padding: 15px 16px 16px; }
+/* A card whose only action is a quiet link keeps that link on the text column's own left edge:
+   centred, it read as a second primary button. */
+.stv-card:not(.big) > .stv-quiet { justify-content: flex-start; width: auto; margin-top: 0; }
+
+/* The name row. The badge never shrinks and never wraps inside itself; the name column holds at
+   least 130 sp — which is 130 dp at the default font and 260 dp at 200 %, so the pill drops onto
+   its own line exactly when keeping it beside the name would start eating the name. Drawn without
+   that floor first, and the Faroese 200 % frame truncated *Living Room TV* to *Living R…* to make
+   room for a pill that then wrapped to two lines anyway. */
+.stv-nm { display: flex; align-items: flex-start; gap: 6px 10px; flex-wrap: wrap; }
+.stv-nm .t { flex: 1 1 calc(130 * var(--sp)); min-width: 0; display: block; }
+.stv-nm b { display: block; font-weight: 600; font-size: calc(17 * var(--sp));
+  line-height: calc(22 * var(--sp)); color: var(--ink);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.stv-card.big .stv-nm b { font-size: calc(18.5 * var(--sp)); line-height: calc(24 * var(--sp)); }
+.stv-nm em { display: block; margin-top: 2px; font-style: normal;
+  font-family: 'JetBrains Mono', monospace; font-size: calc(12 * var(--sp));
+  line-height: calc(16 * var(--sp)); letter-spacing: .02em; color: var(--ink-dim);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* The two labelled version lines — the brief's lean, and the one that holds at 200 %. Label left
+   in Sora, value right in JetBrains Mono; the value a viewer must act on takes the accent. */
+.stv-vers { margin-top: 13px; padding-top: 12px; border-top: 1px solid var(--line); }
+.stv-vrow { display: flex; align-items: baseline; gap: 12px; min-height: 24px; }
+.stv-vrow + .stv-vrow { margin-top: 3px; }
+.stv-vrow .l { flex: 1; min-width: 0; font-size: calc(13.5 * var(--sp));
+  line-height: calc(19 * var(--sp)); color: var(--ink-soft); }
+.stv-vrow .l.full { flex: none; color: var(--ink-soft); }
+.stv-vrow .v { flex: none; font-family: 'JetBrains Mono', monospace; font-weight: 600;
+  font-size: calc(15 * var(--sp)); line-height: calc(20 * var(--sp)); color: var(--ink); }
+.stv-vrow .v.dim { color: var(--ink-dim); font-weight: 500; }
+.stv-vrow .v.hi { color: var(--accent-2); }
+/* A value that is a word, not a version, is set in Sora: JetBrains Mono is the id-and-number
+   face, and *Not installed* in it read as something the TV had answered. */
+.stv-vrow .v.word, .stv-cver b.word, .stv-bver b.word { font-family: 'Sora', sans-serif;
+  font-weight: 500; }
+/* The next-release sentence is a SENTENCE, not a label/value pair, so the row stops being a flex
+   row for it. As a flex row with a flex:none child it overflowed the card instead of wrapping,
+   and at the 200 % font setting the picture read *Comes with the next Ravilo* with the last word
+   cut off at the card's edge. Nothing in the markup showed it; only the render did. */
+.stv-vrow.next { display: block; min-height: 0; margin-top: 6px; }
+.stv-vrow.next .l { display: block; font-size: calc(13.5 * var(--sp));
+  line-height: calc(19 * var(--sp)); }
+
+/* Up to date: a green check and the words where the button would be, with the one remaining
+   action — Reinstall — at the far end of the same line. No button, by FR-10. */
+.stv-okline { display: flex; align-items: center; gap: 8px; min-height: 44px; margin-top: 6px; }
+.stv-okline .stv-quiet { width: auto; margin: 0 0 0 auto; }
+.stv-okline svg { width: 17px; height: 17px; flex: none; color: var(--stv-ok); }
+.stv-okline span { font-weight: 600; font-size: calc(14.5 * var(--sp));
+  line-height: calc(20 * var(--sp)); color: var(--stv-ok); }
+
+/* Not found on this Wi-Fi: no version, no button (item 4). */
+/* No glyph: the struck-through Wi-Fi mark was illegible at 16 dp in the first render and the
+   same mark is already in the status bar and the notice, where it is big enough to read. */
+.stv-off { margin-top: 7px; }
+.stv-off span { font-size: calc(13 * var(--sp)); line-height: calc(18 * var(--sp));
+  color: var(--ink-dim); }
+
+/* The owner's decision note on a rejected row. */
+.stv-note { margin: 10px 0 0; font-size: calc(13.5 * var(--sp)); line-height: calc(19 * var(--sp));
+  color: var(--ink-soft); }
+
+/* =================================================================================================
+   DIRECTION B — "Ledger". One plain list, every TV an equal row; the version pair as one arrow
+   line; one button pinned to the bottom of the screen.
+   ================================================================================================= */
+
+/* Full-bleed: the rows cancel the scroll's 18 dp gutter and keep it as their own padding, so the
+   hairlines run edge to edge the way the phone's other settings lists do. */
+.stv-blist { margin: 0 -18px; }
+.stv-brow { display: flex; align-items: flex-start; gap: 6px 10px; flex-wrap: wrap;
+  min-height: 72px; padding: 14px 18px 15px; border-top: 1px solid var(--line); }
+.stv-blist .stv-brow:first-child { border-top: 0; }
+.stv-bt { flex: 1 1 calc(130 * var(--sp)); min-width: 0; display: block; }
+.stv-bt b { display: block; font-weight: 600; font-size: calc(16 * var(--sp));
+  line-height: calc(21 * var(--sp)); color: var(--ink);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.stv-bt em { display: block; margin-top: 2px; font-style: normal;
+  font-family: 'JetBrains Mono', monospace; font-size: calc(11.5 * var(--sp));
+  line-height: calc(15 * var(--sp)); letter-spacing: .02em; color: var(--ink-dim); }
+
+/* The arrow line: 1.70 › 1.71, both in mono, the target in the accent. */
+.stv-bver { display: flex; align-items: center; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
+.stv-bver b { font-family: 'JetBrains Mono', monospace; font-weight: 600;
+  font-size: calc(13.5 * var(--sp)); line-height: calc(18 * var(--sp)); color: var(--ink); }
+.stv-bver b.hi { color: var(--accent-2); }
+.stv-bver i { display: flex; color: var(--ink-dim); }
+.stv-bver i svg { width: 13px; height: 13px; }
+.stv-bver i.ok { color: var(--stv-ok); }
+.stv-bver span { font-size: calc(13 * var(--sp)); line-height: calc(18 * var(--sp));
+  color: var(--stv-ok); font-weight: 600; }
+.stv-bver.next { display: block; font-size: calc(13 * var(--sp));
+  line-height: calc(18 * var(--sp)); color: var(--ink-soft); }
+.stv-boff { display: block; margin-top: 6px; font-size: calc(13 * var(--sp));
+  line-height: calc(18 * var(--sp)); color: var(--ink-dim); }
+.stv-bnote { display: block; margin-top: 6px; font-size: calc(13 * var(--sp));
+  line-height: calc(18 * var(--sp)); color: var(--ink-soft); }
+.stv-bsk { display: block; margin-top: 8px; width: 96px; height: 11px; border-radius: 6px;
+  background: rgba(var(--fg), .14); }
+.stv-bchev { display: flex; align-self: center; flex: none; color: var(--ink-dim); }
+.stv-bchev svg { width: 18px; height: 18px; }
+
+/* The dock. Opaque, a hairline above it, and it carries the NAME of the TV it acts on — without
+   that line nothing on the screen says which row the button belongs to. */
+.stv-dock { flex: none; background: var(--bg); border-top: 1px solid var(--line);
+  padding: 10px 18px 16px; }
+.stv-dfor { display: block; text-align: center; font-size: calc(12.5 * var(--sp));
+  line-height: calc(17 * var(--sp)); color: var(--ink-dim); }
+.stv-dock .stv-cta { margin-top: 8px; }
+/* The row's own Reinstall link: at the end of the row, aligned with the badge column. */
+.stv-brow > .stv-quiet { width: auto; min-height: 0; align-self: center; margin: 0 0 0 2px; }
+
+/* =================================================================================================
+   DIRECTION C — "Signal". The state is the headline, the TV is the kicker; versions as one
+   labelled inline pair; the button inside the state block.
+   ================================================================================================= */
+
+.stv-sig { position: relative; display: flex; background: var(--card); border-radius: 18px;
+  overflow: hidden; box-shadow: inset 0 0 0 1px var(--line); }
+/* The 4 dp rail is the one place this direction spends colour, and it is the only thing on the
+   screen that differs by state alone. It is never the only signal: the headline says the same. */
+.stv-sig .rail { flex: none; width: 4px; background: var(--ink-dim); }
+.stv-sig.k-update .rail { background: var(--grad); }
+.stv-sig.k-install .rail { background: var(--grad); }
+.stv-sig.k-uptodate .rail { background: var(--stv-ok); }
+.stv-sig.k-next .rail,
+.stv-sig.k-offline .rail { background: var(--ink-dim); }
+.stv-sigb { flex: 1; min-width: 0; padding: 15px 16px 16px; }
+
+.stv-kick { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 7px; min-width: 0; }
+.stv-kick svg { width: 15px; height: 15px; flex: none; color: var(--ink-dim); }
+.stv-kick span { font-weight: 600; font-size: calc(13.5 * var(--sp));
+  line-height: calc(18 * var(--sp)); color: var(--ink-soft);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.stv-kick em { flex: none; font-style: normal; font-family: 'JetBrains Mono', monospace;
+  font-size: calc(11 * var(--sp)); line-height: calc(15 * var(--sp)); color: var(--ink-dim); }
+.stv-kick .stv-badge { margin-left: auto; align-self: center; }
+/* The block is left-aligned throughout, so its quiet link is too — centred, it floated. */
+.stv-sigb > .stv-quiet { justify-content: flex-start; width: auto; margin-top: 2px; }
+.stv-sig h2 { margin: 5px 0 0; font-family: 'Space Grotesk', sans-serif; font-weight: 700;
+  font-size: calc(22 * var(--sp)); line-height: calc(27 * var(--sp)); letter-spacing: -.01em;
+  color: var(--ink); }
+.stv-sigp { margin: 7px 0 0; font-size: calc(13.5 * var(--sp));
+  line-height: calc(19 * var(--sp)); color: var(--ink-soft); }
+
+/* The inline labelled pair. Two columns while they fit, stacked when they do not — which is what
+   happens at 200 %, and is drawn rather than avoided. */
+.stv-cver { display: flex; flex-wrap: wrap; gap: 8px 22px; margin-top: 11px; }
+.stv-cver .p { display: flex; flex-direction: column; min-width: 0; }
+.stv-cver .l { font-size: calc(11.5 * var(--sp)); line-height: calc(15 * var(--sp));
+  letter-spacing: .06em; text-transform: uppercase; color: var(--ink-dim); }
+.stv-cver b { margin-top: 2px; font-family: 'JetBrains Mono', monospace; font-weight: 600;
+  font-size: calc(16 * var(--sp)); line-height: calc(21 * var(--sp)); color: var(--ink); }
+.stv-cver b.hi { color: var(--accent-2); }
+.stv-cver b.dim { color: var(--ink-dim); font-weight: 500; }
+
+.stv-chead { margin: 22px 0 2px; font-weight: 700; font-size: calc(11.5 * var(--sp));
+  line-height: calc(16 * var(--sp)); letter-spacing: .07em; text-transform: uppercase;
+  color: var(--ink-dim); }
+.stv-clist { margin: 0 -18px; }
+.stv-crow { display: flex; align-items: flex-start; gap: 6px 10px; flex-wrap: wrap;
+  min-height: 64px; padding: 13px 18px 14px; border-bottom: 1px solid var(--line); }
+.stv-ct { flex: 1 1 calc(130 * var(--sp)); min-width: 0; display: block; }
+.stv-ct b { display: block; font-weight: 600; font-size: calc(15.5 * var(--sp));
+  line-height: calc(20 * var(--sp)); color: var(--ink);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.stv-ct em { display: block; margin-top: 2px; font-style: normal;
+  font-family: 'JetBrains Mono', monospace; font-size: calc(11.5 * var(--sp));
+  line-height: calc(15 * var(--sp)); letter-spacing: .02em; color: var(--ink-dim); }

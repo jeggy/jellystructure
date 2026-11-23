@@ -1,0 +1,358 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Samsung TV overview — directions</title>
+<!--
+  The directions document. Self-contained on purpose: it is the reference the Compose port is
+  built from, so every hex, px, weight and radius is written out here rather than left to be read
+  off a picture. The frames themselves link the shipped phone stylesheet; this document does not,
+  because a reference that depends on another file is a reference that can silently change under
+  its reader.
+
+  Surface: the Ravilo Android phone's Samsung TV guide, the *Your Samsung TVs* screen,
+  412 x 915 dp portrait. Nothing else — the Profile row that opens this guide is null on every
+  platform but an Android phone.
+-->
+<style>
+  @font-face { font-family: 'Space Grotesk'; font-weight: 100 900; font-display: block;
+    src: url('../../app/fonts/space-grotesk.woff2') format('woff2'); }
+  @font-face { font-family: 'Sora'; font-weight: 100 900; font-display: block;
+    src: url('../../app/fonts/sora.woff2') format('woff2'); }
+  @font-face { font-family: 'JetBrains Mono'; font-weight: 100 900; font-display: block;
+    src: url('../../app/fonts/jetbrains-mono.woff2') format('woff2'); }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #e9eaee; color: #12141b; font-family: 'Sora', sans-serif; font-size: 15px;
+    line-height: 1.6; padding: 46px 40px 90px; }
+  .w { max-width: 1000px; margin: 0 auto; }
+  h1 { font-family: 'Space Grotesk', sans-serif; font-size: 34px; font-weight: 700;
+    letter-spacing: -.02em; line-height: 1.12; }
+  h2 { font-family: 'Space Grotesk', sans-serif; font-size: 23px; font-weight: 700;
+    letter-spacing: -.01em; margin: 44px 0 10px; padding-top: 22px; border-top: 1px solid #c9ccd6; }
+  h3 { font-family: 'Space Grotesk', sans-serif; font-size: 17px; font-weight: 700;
+    margin: 26px 0 6px; }
+  p, li { color: #262a35; }
+  p { margin: 0 0 12px; }
+  ul, ol { margin: 0 0 14px 22px; }
+  li { margin: 0 0 5px; }
+  .lede { font-size: 17px; color: #262a35; margin: 10px 0 0; }
+  code, .mono { font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 13px;
+    color: #3b4152; }
+  table { border-collapse: collapse; width: 100%; margin: 10px 0 18px; font-size: 14px; }
+  th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid #d3d6de;
+    vertical-align: top; color: #262a35; }
+  th { font-family: 'JetBrains Mono', monospace; font-size: 11px; letter-spacing: .07em;
+    text-transform: uppercase; color: #4a5064; border-bottom: 1px solid #b9bdc9; }
+  td.k { white-space: nowrap; font-family: 'JetBrains Mono', monospace; font-size: 12.5px; }
+  .pick { display: inline-block; font-family: 'JetBrains Mono', monospace; font-size: 11px;
+    letter-spacing: .08em; text-transform: uppercase; font-weight: 700; color: #0f7a52;
+    background: rgba(15,122,82,.12); padding: 3px 8px; border-radius: 6px; vertical-align: 5px;
+    margin-left: 10px; }
+  .no { color: #b3242c; font-weight: 600; }
+  .yes { color: #0f7a52; font-weight: 600; }
+  .note { background: #dfe1e8; border-left: 3px solid #8b91a3; padding: 12px 16px;
+    margin: 0 0 16px; }
+  .note p:last-child { margin: 0; }
+  .swatch { display: inline-block; width: 11px; height: 11px; border-radius: 3px;
+    vertical-align: -1px; margin-right: 5px; box-shadow: inset 0 0 0 1px rgba(0,0,0,.2); }
+</style>
+</head>
+<body>
+<div class="w">
+
+<h1>Your Samsung TVs — the phone's overview after approval</h1>
+<p class="lede">Three directions for the one screen the Ravilo Android phone shows when the viewer
+has an approved Samsung TV: which TVs are on this Wi-Fi, which one is approved, what version it is
+running and what the latest is. Drawn 2026-11-23. 412 × 915 dp portrait, the Android phone and no
+other surface.</p>
+
+<h2>What is fixed</h2>
+<ul>
+  <li>One screen, titled <b>Your Samsung TVs</b>. It starts the subnet scan by itself and says
+    <i>Looking for TVs on this Wi-Fi…</i> until the scan ends.</li>
+  <li>One card or row per TV found: friendly name, model, and a badge — <b>Approved</b> (green),
+    <b>Waiting for approval</b>, <b>Not approved</b>, <b>Not set up</b>.</li>
+  <li>The approved TV shows <b>On the TV: 1.70</b> and <b>Latest: 1.71</b>, and one primary button:
+    <i>Install on TV</i> when Ravilo is not on it or the version is not known; <i>Update to
+    1.71</i> when it is older; no button, the line <i>Up to date</i> and a quiet <i>Reinstall</i>
+    link when they are equal. An approved TV no release covers yet shows <i>Comes with the next
+    Ravilo release</i> in place of <i>Latest</i> and has no button.</li>
+  <li>A request whose TV the scan did not find is listed from the server with <i>Not found on this
+    Wi-Fi</i>, no version and no button. Below the list, one quiet line with the count found and
+    <i>Search again</i>.</li>
+  <li>An installed version the phone cannot read shows as <b>On the TV: —</b>.</li>
+  <li>One action and one big primary button per screen; under about 40 words of body text; light
+    and dark; readable at large font sizes. No connection detail, no IP address.
+    "Developer Mode" is the only technical term allowed, and this screen does not need it.</li>
+  <li>No string names Jellyfin. Danish and Faroese drafts for every new string.</li>
+  <li><b>The phone never infers a state.</b> Badges come from the server, versions from the TV.</li>
+</ul>
+
+<h2>Stand-in data</h2>
+<table>
+  <tr><th>What</th><th>Value</th></tr>
+  <tr><td class="k">TV A</td><td>Living Room TV · <span class="mono">UE50TU7105</span> · Ready · on
+    the TV <span class="mono">1.70</span> · latest <span class="mono">1.71</span></td></tr>
+  <tr><td class="k">TV B</td><td>Bedroom TV · <span class="mono">QE43Q60B</span> · no request
+    (Not set up)</td></tr>
+  <tr><td class="k">Releases</td><td><span class="mono">v1.71</span> latest ·
+    <span class="mono">v1.70</span> installed</td></tr>
+</table>
+<p>Invented, and in <code>stv-data.js</code> only. No TV name, model or version in any picture
+comes from the household's own network.</p>
+
+<h2>The three directions</h2>
+
+<h3>A — Stack <span class="pick">Recommended</span></h3>
+<p>Cards. The approved TV's card is the big one — radius 18 instead of 14, more padding, and the
+only card carrying a button. Two labelled version lines, label left in Sora, value right in
+JetBrains Mono. The badge sits at the end of the name row, so the badges form one column down the
+right edge. Everything one TV needs is inside that TV's own card.</p>
+
+<h3>B — Ledger</h3>
+<p>No cards. Full-bleed rows on hairlines, every TV the same weight, the way the phone's other
+settings lists look. The version pair is one line, <span class="mono">1.70 › 1.71</span>. The one
+primary button is pinned to the bottom of the screen with the TV's name above it.</p>
+
+<h3>C — Signal</h3>
+<p>The state is the headline and the TV is the kicker above it: <i>Update waiting</i>, <i>Up to
+date</i>, <i>Ready to install</i>, <i>Waiting for the next release</i>, <i>Not on this Wi-Fi</i>.
+Versions are one labelled inline pair under it. The button is inside the block. Every other TV is
+a compact row under <i>Also on this Wi-Fi</i>.</p>
+
+<h2>How they compare</h2>
+<table>
+  <tr><th>&nbsp;</th><th>A — Stack</th><th>B — Ledger</th><th>C — Signal</th></tr>
+  <tr><td class="k">Cards or list</td><td>cards, the approved one larger</td><td>one flat
+    list</td><td>a block plus a list</td></tr>
+  <tr><td class="k">Version pair</td><td>two labelled lines</td><td>one arrow line</td>
+    <td>one labelled inline pair</td></tr>
+  <tr><td class="k">Button</td><td>inside the card</td><td>pinned to the bottom</td>
+    <td>inside the block</td></tr>
+  <tr><td class="k">Which TV the button acts on</td><td class="yes">unambiguous — it is in the
+    card</td><td class="no">needs a name line above the button, 680 dp from the row</td>
+    <td class="yes">unambiguous — it is in the block</td></tr>
+  <tr><td class="k">"1.70" vs "1.71": which is which</td><td class="yes">labelled</td>
+    <td class="no">unlabelled; <span class="mono">—&nbsp;›&nbsp;1.71</span> in the
+    not-known state reads as nothing at all</td><td class="yes">labelled</td></tr>
+  <tr><td class="k">New strings</td><td>17</td><td>17</td><td class="no">22 — five headlines, and
+    it retires one of the spec's own sentences as a duplicate</td></tr>
+  <tr><td class="k">Says the same thing twice</td><td class="yes">no</td><td class="yes">no, once
+    the dock is dropped when there is nothing to do</td><td class="no">yes, on
+    <i>update</i>: <i>Update waiting</i> over <i>Update to 1.71</i></td></tr>
+  <tr><td class="k">Two approved TVs</td><td class="yes">two cards, two buttons</td>
+    <td class="no">one dock; the second TV's action has nowhere to go</td><td class="no">one
+    block; the second approved TV drops to a row with no button</td></tr>
+  <tr><td class="k">200 % font</td><td class="yes">holds; the pill drops to its own line</td>
+    <td class="yes">holds</td><td class="yes">holds; the version pair stacks</td></tr>
+  <tr><td class="k">"Nice looking"</td><td>warm; the one card with an action is the biggest object
+    on screen</td><td class="no">reads as a settings list</td><td class="yes">the most
+    at-a-glance of the three</td></tr>
+</table>
+
+<h2>Every state the recommended direction holds</h2>
+<table>
+  <tr><th>State</th><th>What A draws</th></tr>
+  <tr><td class="k">s1 searching</td><td>The scan line — a <b>static</b> 18 dp arc in
+    <span class="swatch" style="background:#0f73c2"></span><span class="mono">--accent-2</span> and
+    the sentence at 14.5 sp — over two placeholder cards, 128 dp and 72 dp, at
+    <span class="mono">rgba(fg,.065)</span> and <span class="mono">.05</span>. No footer line: the
+    count is not known yet.</td></tr>
+  <tr><td class="k">s2 update waiting</td><td>Big card. <i>On the TV</i> 1.70, <i>Latest</i> 1.71
+    in <span class="mono">--accent-2</span>, then the 54 dp gradient pill <i>Update to 1.71</i>.
+    </td></tr>
+  <tr><td class="k">s3 up to date</td><td>Big card, both values 1.71 in
+    <span class="mono">--ink</span>. No button: a green check and <i>Up to date</i> at 14.5 sp
+    600 on the left of a 44 dp line, <i>Reinstall</i> at its far right.</td></tr>
+  <tr><td class="k">s4 two TVs</td><td>The owner's case. The approved card, then the Bedroom TV's
+    compact card — name, model, the outlined <i>Not set up</i> pill, and a left-aligned
+    <i>Set up this TV</i>. Footer: <i>2 TVs found on this Wi-Fi · Search again</i>.</td></tr>
+  <tr><td class="k">s5 version not known</td><td><i>On the TV</i> <b>—</b> in
+    <span class="mono">--ink-dim</span>, <i>Latest</i> 1.71, button <i>Install on TV</i>.</td></tr>
+  <tr><td class="k">s6 not in a release</td><td><i>On the TV</i> <b>—</b>, then <i>Comes with the
+    next Ravilo release</i> as a wrapping sentence, not a label/value row. No button.</td></tr>
+  <tr><td class="k">s7 not found</td><td>Bedroom TV's card first, then Living Room TV's from the
+    server row: name, model, the green badge, and <i>Not found on this Wi-Fi</i> at 13 sp dim. No
+    version, no button. Footer counts 1.</td></tr>
+  <tr><td class="k">s8 no Wi-Fi</td><td>A notice block above the list — struck-through Wi-Fi glyph
+    at 20 dp, the shipped sentence at 14 sp. The server card shows name, model and badge and
+    <b>nothing else</b>: with no Wi-Fi, no card may say <i>Not found on this Wi-Fi</i>. Footer is
+    the shipped <i>Try again</i> alone; there is no scan to repeat.</td></tr>
+</table>
+<p>Drawn in <b>light</b> (Daylight) and <b>dark</b> (Aurora), in <b>en</b>, <b>da</b> and
+<b>fo</b>, and at the <b>200 %</b> font setting, phone-height and full-height.</p>
+
+<h2>Measurements</h2>
+<table>
+  <tr><th>Thing</th><th>Value</th><th>Where it comes from</th></tr>
+  <tr><td class="k">Status bar</td><td>34 dp, opaque, 1 px outset below</td><td>shipped
+    <span class="mono">.statusbar</span></td></tr>
+  <tr><td class="k">Head</td><td>back chevron 44 × 44 dp at the 6 dp gutter; title Space Grotesk
+    24/29 sp 700, −.01em, left-aligned at 18 dp</td><td>new: the guide's other screens are centred
+    one-action pages, this one is a list</td></tr>
+  <tr><td class="k">Page gutter</td><td>18 dp</td><td>shipped phone gutter</td></tr>
+  <tr><td class="k">Big card</td><td><span class="mono">--card</span>, radius 18, padding
+    15/16/16, inset 1 px <span class="mono">--line</span></td><td>extends TvChoice's
+    surface</td></tr>
+  <tr><td class="k">Compact card</td><td>radius 14, padding 13/14/12, same inset
+    hairline</td><td>shipped TvChoice</td></tr>
+  <tr><td class="k">Card gap</td><td>12 dp</td><td>new</td></tr>
+  <tr><td class="k">Name</td><td>Sora 18.5/24 sp 600 (big) · 17/22 sp 600 (compact), one line,
+    ellipsis</td><td>extends TvChoice's 17 sp</td></tr>
+  <tr><td class="k">Model</td><td>JetBrains Mono 12/16 sp, .02em,
+    <span class="mono">--ink-dim</span></td><td>a model code is an id</td></tr>
+  <tr><td class="k">Badge</td><td>Sora 10 sp 700, .08em, word-spacing .18em, uppercase, radius 6,
+    padding 6/2, <b>never wraps</b></td><td>shipped Experimental badge</td></tr>
+  <tr><td class="k">Name row</td><td>wraps; the name column's floor is
+    <span class="mono">calc(130 × --sp)</span> — 130 dp at the default font, 260 dp at 200 %, so
+    the pill drops to its own line rather than truncating the name</td><td>new, and the reason is
+    in the 200 % Faroese picture</td></tr>
+  <tr><td class="k">Version rows</td><td>24 dp each, 3 dp apart, over a 1 px
+    <span class="mono">--line</span> at 13/12 dp. Label Sora 13.5/19 sp
+    <span class="mono">--ink-soft</span>; value JetBrains Mono 15/20 sp 600</td><td>new</td></tr>
+  <tr><td class="k">Primary button</td><td>full width, 54 dp, radius 27,
+    <span class="mono">--grad</span>, Sora 16 sp 600 white, <span class="mono">scale(.98)</span>
+    pressed</td><td>shipped GuideButton, unchanged</td></tr>
+  <tr><td class="k">Quiet link</td><td>44 dp target, Sora 13.5 sp 600,
+    <span class="mono">--accent-2</span></td><td>new</td></tr>
+  <tr><td class="k">Footer</td><td>44 dp, centred, Sora 12.5 sp; the link
+    <span class="mono">--accent-2</span> and <b>never wrapping</b></td><td>new</td></tr>
+  <tr><td class="k">Text scaling</td><td>every size is <span class="mono">calc(N × --sp)</span>,
+    <span class="mono">--sp</span> = 1 dp at the default font and 2 dp at 200 %. Padding and icon
+    sizes do not scale</td><td>how Android sp behaves</td></tr>
+</table>
+
+<h3>The green, and the one new token</h3>
+<p>The badge green is <span class="swatch" style="background:#2dd49a"></span>
+<span class="mono">#2dd49a</span> — the shipped <span class="mono">--good</span> — on every dark
+skin. On the <b>Daylight</b> theme that colour reaches about 1.9 : 1 on its own 16 % tint, so
+Daylight takes <span class="swatch" style="background:#0f7a52"></span>
+<span class="mono">#0f7a52</span> at 14 %. The red for <i>Not approved</i> is
+<span class="swatch" style="background:#f2797f"></span> <span class="mono">#f2797f</span> dark and
+<span class="swatch" style="background:#b3242c"></span> <span class="mono">#b3242c</span> light.
+<b>A light-theme green is a real token the phone does not have yet</b> — the admin system already
+carries exactly this override on <span class="mono">.badge</span>, and Ravilo's
+<span class="mono">RaviloColors</span> will need one.</p>
+
+<h2>Decided in this round, and why</h2>
+<table>
+  <tr><th>Row</th><th>Decision</th></tr>
+  <tr><td class="k">Card order</td><td>Approved/Ready, then Waiting for approval, then Not
+    approved, then Not set up; the server-only rows keep that rank among themselves and sit below
+    every found TV. Equal ranks keep the server's order so two scans do not reshuffle the list.
+    The spec fixes only that server-only rows come last, and the first render of state 7 put a
+    <i>Not set up</i> TV above the viewer's own approved one.</td></tr>
+  <tr><td class="k">No Wi-Fi</td><td>No card says <i>Not found on this Wi-Fi</i>, and the footer is
+    <i>Try again</i>, not <i>Search again</i>. There was no scan.</td></tr>
+  <tr><td class="k">Loading</td><td>Two placeholder cards under the scan line, not a bare spinner:
+    a 254-host sweep is a state a viewer meets, not a frame.</td></tr>
+  <tr><td class="k">Up to date</td><td><i>Up to date</i> and <i>Reinstall</i> share one 44 dp
+    line. Stacked, 40 dp apart, they read as unrelated.</td></tr>
+  <tr><td class="k">Word values</td><td>A value that is a word, not a version — <i>Not
+    installed</i> — is set in Sora. JetBrains Mono made it look like something the TV
+    returned.</td></tr>
+  <tr><td class="k">"Wi-Fi"</td><td>Never breaks at its hyphen. In Compose that is a non-breaking
+    hyphen in the string.</td></tr>
+</table>
+
+<h2>Open, for Bárður</h2>
+<ol>
+  <li><b>Render the approved card from the server while the scan runs?</b> The request rows are
+    already in hand — they are what decided this screen opens at all. Drawn as
+    <span class="mono">a-x1-serverfirst</span>: the approved card appears at once with a short bar
+    where <i>On the TV</i> will be, and one small placeholder stands for whatever else the sweep
+    finds. It is a better first second than two grey rectangles, and it needs a sentence in FR-10
+    that is not there.</li>
+  <li><b>FR-10 has no line for "Ravilo is not on this TV".</b> FR-11 reads a 404 as <i>not
+    installed</i>, which is distinct from <i>not known</i>, and it is the common case. Drawn as
+    <span class="mono">a-x2-notinstalled</span> with the draft string <i>Not installed</i>. Both
+    states give the same button, so this is copy, not behaviour.</li>
+  <li><b>Two approved TVs.</b> Nothing in the brief or the spec says this cannot happen — the cap
+    is ten rows. A is the only direction that holds it without a new rule.</li>
+</ol>
+
+<h2>The strings</h2>
+<p>Six keys are reused as shipped, character for character. Seventeen are drafts. Danish and
+Faroese are drafts in the register the shipped <span class="mono">samsungtv.*</span> strings
+already use.</p>
+<table>
+  <tr><th>Key</th><th>en</th><th>da</th><th>fo</th></tr>
+  <tr><td class="k">samsungtv.ready.cta <i>(shipped)</i></td><td>Install on TV</td>
+    <td>Installer på TV</td><td>Legg á sjónvarpið</td></tr>
+  <tr><td class="k">samsungtv.rejected.again <i>(shipped)</i></td><td>Ask again</td>
+    <td>Bed igen</td><td>Bið aftur</td></tr>
+  <tr><td class="k">samsungtv.intro.nowifi <i>(shipped)</i></td><td>This phone isn’t on Wi-Fi.
+    Connect it to the same Wi-Fi as the TV.</td><td>Telefonen er ikke på Wi-Fi. Forbind den til
+    samme Wi-Fi som TV’et.</td><td>Telefonin er ikki á Wi-Fi. Tengdu hana til sama Wi-Fi sum
+    sjónvarpið.</td></tr>
+  <tr><td class="k">samsungtv.retry <i>(shipped)</i></td><td>Try again</td><td>Prøv igen</td>
+    <td>Royn aftur</td></tr>
+  <tr><td class="k">samsungtv.overview.title</td><td>Your Samsung TVs</td><td>Dine
+    Samsung-TV’er</td><td>Tíni Samsung sjónvørp</td></tr>
+  <tr><td class="k">samsungtv.overview.searching</td><td>Looking for TVs on this Wi-Fi…</td>
+    <td>Leder efter TV på dette Wi-Fi…</td><td>Leitar eftir sjónvørpum á hesum Wi-Fi…</td></tr>
+  <tr><td class="k">samsungtv.overview.on_tv</td><td>On the TV</td><td>På TV’et</td>
+    <td>Á sjónvarpinum</td></tr>
+  <tr><td class="k">samsungtv.overview.latest</td><td>Latest</td><td>Nyeste</td>
+    <td>Nýggjasta</td></tr>
+  <tr><td class="k">samsungtv.overview.unknown</td><td>—</td><td>—</td><td>—</td></tr>
+  <tr><td class="k">samsungtv.overview.not_installed <i>(open 2)</i></td><td>Not installed</td>
+    <td>Ikke installeret</td><td>Ikki á sjónvarpinum</td></tr>
+  <tr><td class="k">samsungtv.overview.next_release</td><td>Comes with the next Ravilo release</td>
+    <td>Kommer med næste Ravilo-udgave</td><td>Kemur við næstu Ravilo-útgávu</td></tr>
+  <tr><td class="k">samsungtv.overview.up_to_date</td><td>Up to date</td><td>Opdateret</td>
+    <td>Dagført</td></tr>
+  <tr><td class="k">samsungtv.overview.reinstall</td><td>Reinstall</td><td>Installer igen</td>
+    <td>Legg á aftur</td></tr>
+  <tr><td class="k">samsungtv.overview.update_to</td><td>Update to {v}</td><td>Opdater til {v}</td>
+    <td>Dagfør til {v}</td></tr>
+  <tr><td class="k">samsungtv.overview.not_found</td><td>Not found on this Wi-Fi</td>
+    <td>Ikke fundet på dette Wi-Fi</td><td>Ikki funnið á hesum Wi-Fi</td></tr>
+  <tr><td class="k">samsungtv.overview.set_up</td><td>Set up this TV</td><td>Sæt dette TV op</td>
+    <td>Set hetta sjónvarpið upp</td></tr>
+  <tr><td class="k">samsungtv.overview.found_one</td><td>1 TV found on this Wi-Fi</td>
+    <td>1 TV fundet på dette Wi-Fi</td><td>1 sjónvarp funnið á hesum Wi-Fi</td></tr>
+  <tr><td class="k">samsungtv.overview.found_n</td><td>{n} TVs found on this Wi-Fi</td>
+    <td>{n} TV fundet på dette Wi-Fi</td><td>{n} sjónvørp funnin á hesum Wi-Fi</td></tr>
+  <tr><td class="k">samsungtv.overview.found_none</td><td>No TVs found on this Wi-Fi</td>
+    <td>Ingen TV fundet på dette Wi-Fi</td><td>Einki sjónvarp funnið á hesum Wi-Fi</td></tr>
+  <tr><td class="k">samsungtv.overview.search_again</td><td>Search again</td><td>Søg igen</td>
+    <td>Leita aftur</td></tr>
+  <tr><td class="k">samsungtv.badge.approved</td><td>Approved</td><td>Godkendt</td>
+    <td>Góðkent</td></tr>
+  <tr><td class="k">samsungtv.badge.waiting</td><td>Waiting for approval</td><td>Venter på
+    godkendelse</td><td>Bíðar eftir góðkenning</td></tr>
+  <tr><td class="k">samsungtv.badge.rejected</td><td>Not approved</td><td>Ikke godkendt</td>
+    <td>Ikki góðkent</td></tr>
+  <tr><td class="k">samsungtv.badge.notsetup</td><td>Not set up</td><td>Ikke sat op</td>
+    <td>Ikki sett upp</td></tr>
+  <tr><td class="k">samsungtv.overview.others <i>(C only)</i></td><td>Also on this Wi-Fi</td>
+    <td>Også på dette Wi-Fi</td><td>Eisini á hesum Wi-Fi</td></tr>
+  <tr><td class="k">samsungtv.head.* <i>(C only, five keys)</i></td><td>Update waiting · Up to
+    date · Ready to install · Waiting for the next release · Not on this Wi-Fi</td>
+    <td>Opdatering venter · Opdateret · Klar til installation · Venter på næste udgave · Ikke på
+    dette Wi-Fi</td><td>Dagføring bíðar · Dagført · Klárt at leggja á · Bíðar eftir næstu útgávu ·
+    Ikki á hesum Wi-Fi</td></tr>
+</table>
+<div class="note">
+  <p>The shipped <span class="mono">i18n/*.json</span> wins wherever a string already exists. The
+  four marked <i>shipped</i> above are quoted from it and are not this round's to change; the rest
+  are drafts for the owner to read.</p>
+</div>
+
+<h2>What this round did not draw</h2>
+<ul>
+  <li>Any surface but the Android phone. The TV, the desktops, the web, the cast receiver, the
+    Tizen app and the admin have no such screen.</li>
+  <li>The Midnight, Noir and Graphite skins. Drawn in Daylight and Aurora only; the round's two
+    new colours are declared per theme and will need a value in the other three.</li>
+  <li>A focus state. This surface is touch-only — there is no D-pad on the phone's guide.</li>
+  <li>An error state of its own. Every failure on this screen belongs to FR-7's install, which
+    already has one sentence and one button per failure, and is a different screen.</li>
+  <li>The iPhone 16 bezel. The Profile row is Android-only.</li>
+</ul>
+
+</div>
+</body>
+</html>

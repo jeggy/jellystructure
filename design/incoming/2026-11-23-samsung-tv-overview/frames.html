@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Samsung TV overview — frames</title>
+<!--
+  frames.html — every frame this round renders, built from stv-data.js through stv-kit.js.
+
+  One document, parameterised, rather than one document per picture:
+      ?dir=a|b|c          the direction (a Stack, b Ledger, c Signal)
+      &set=states|studies|strip
+      &lang=en|da|fo
+      &skin=daylight|aurora     light (the brief's default) or dark
+      &fs=100|200               the system font setting
+      &tall=1                   render the whole screen rather than the 915 dp above the fold
+
+  The surface is the Ravilo ANDROID PHONE's Samsung TV guide only (412 x 915 dp portrait), so
+  there is exactly one shipped stylesheet to load — design/ravilo/mobile/ravilo-phone.css. It is
+  LINKED, not copied, so every token, radius, weight and font in these pictures is the production
+  one. The round's own stylesheet comes last, so it extends the shipped system and never precedes
+  it.
+
+  No TV, desktop, web, admin, cast or Tizen frame exists in this round: the Profile row that opens
+  this guide is null on every platform but an Android phone (spec FR-1), so ravilo.css,
+  ravilo-desktop.css and ravilo-music.css are not loaded — no file that could answer for the
+  phone's tokens is in the document.
+
+  ravilo-data.js is NOT loaded. This screen shows no library content at all — no title, no poster,
+  no episode — so the shipped corpus has nothing to lend it, and the two TV names and two model
+  codes the brief names are the whole stand-in. They are in stv-data.js and nowhere else.
+
+  Opened by hand in a browser this page works exactly as the renderer sees it;
+  scripts/render-design.sh drives it over the parameter combinations and screenshots one element
+  per frame, naming each PNG after the element's id.
+-->
+<script>
+  (function () {
+    var q = new URLSearchParams(location.search);
+    var dir = q.get('dir') || 'a';
+    var set = q.get('set') || 'states';
+    var lang = q.get('lang') || 'en';
+    var skin = q.get('skin') || 'daylight';
+    var fs = q.get('fs') || '100';
+    var tall = q.get('tall') === '1';
+    document.documentElement.lang = lang;
+    /* Daylight is the phone's own LIGHT theme and aurora is its default dark one. The brief's
+       state set is light; the recommended direction is also drawn dark. */
+    document.documentElement.setAttribute('data-skin', skin);
+    if (skin === 'daylight') document.documentElement.setAttribute('data-appearance', 'light');
+    document.documentElement.setAttribute('data-fs', fs);
+    document.write('<link rel="stylesheet" href="../../ravilo/mobile/ravilo-phone.css">');
+    document.write('<link rel="stylesheet" href="samsung-tv-overview.css">');
+    window.STVOPT = { dir: dir, set: set, lang: lang, skin: skin, fs: fs, tall: tall };
+  })();
+</script>
+</head>
+<body>
+<div class="stv-frames" id="frames"></div>
+
+<script src="stv-data.js"></script>
+<script src="stv-kit.js"></script>
+<script>
+(function () {
+  'use strict';
+  var O = window.STVOPT;
+  var D = window.STV, K = window.STVKit;
+  K.setLang(O.lang);
+  var root = document.getElementById('frames');
+
+  /* The file-name suffix. English frames at the default font on the light theme carry none, so
+     `a-s4-two` is the brief's main picture and `a-s4-two-dark-fo-200` says what it is without
+     anyone opening it. */
+  var sfx = '';
+  if (O.skin !== 'daylight') sfx += '-dark';
+  if (O.lang !== 'en') sfx += '-' + O.lang;
+  if (O.fs !== '100') sfx += '-' + O.fs;
+  if (O.tall) sfx += '-tall';
+
+  /* `stv-frame` is the renderer's handle and carries no style beyond shrinking to its content:
+     --all targets it, so a phone nested INSIDE a strip is never mistaken for a frame of its own. */
+  function frame(id, cls, html) {
+    var d = document.createElement('div');
+    d.id = id; d.className = 'stv-frame ' + (cls || '');
+    d.innerHTML = html;
+    root.appendChild(d);
+    return d;
+  }
+  function phone(state) {
+    return '<div class="stv-ph' + (O.tall ? ' tall' : '') + '">'
+      + K.screen(O.dir, state) + '</div>';
+  }
+
+  var LIST = O.set === 'studies' ? D.STUDIES : D.STATES;
+
+  if (O.set === 'strip') {
+    /* One PNG with every state of this direction side by side, for the directions document and
+       for the comment that puts the pick to the owner. Each cell is also rendered on its own. */
+    var cells = D.STATES.map(function (s) {
+      return '<div class="stv-cell"><div class="stv-cap">' + K.esc(s.id) + '</div>'
+        + phone(s) + '</div>';
+    }).join('');
+    frame(O.dir + '-strip' + sfx, '', '<div class="stv-strip">' + cells + '</div>');
+  } else {
+    LIST.forEach(function (s) {
+      frame(O.dir + '-' + s.id + sfx, '', phone(s));
+    });
+  }
+
+  /* A render-time assertion, printed into the page title so a broken build is visible in the
+     renderer's own log rather than only in a picture: every frame must have produced exactly one
+     phone, and every phone exactly one head. */
+  var phones = root.querySelectorAll('.stv-ph').length;
+  var heads = root.querySelectorAll('.stv-ph .stv-hd h1').length;
+  document.title = 'frames: ' + root.children.length + ' / phones: ' + phones
+    + ' / heads: ' + heads + (phones === heads ? ' / ok' : ' / MISMATCH');
+})();
+</script>
+</body>
+</html>
