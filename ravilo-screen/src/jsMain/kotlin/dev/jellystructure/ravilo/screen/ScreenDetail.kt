@@ -89,6 +89,19 @@ internal class ScreenDetail(
     /** The primary button: where focus lands when the page has drawn. */
     val primaryFocusId = "detail-play"
 
+    /**
+     * DEB-5396 (DEB-5394, FR-35) — the item Play would play, the one the router warms an encode for: the film, or the series' primary
+     * episode (what [seriesPrimary] names from the overlay as it is now, so an FR-31 re-read that moves it moves this). Null until the
+     * page has drawn, and for a series nothing in which can play.
+     */
+    fun prewarmTarget(): String? = when {
+        movie != null -> id
+        else -> series?.let { seriesPrimary(it, id, overlay)?.episode?.id }
+    }
+
+    /** The series whose remembered audio the prewarm asks for (FR-23); null for a film, as a start's own. */
+    val prewarmSeriesId: String? get() = if (series != null) id else null
+
     fun load() {
         if (loading || ready || failure != null) return   // a failed page is not retried by every redraw; leaving it and coming back is
         loading = true

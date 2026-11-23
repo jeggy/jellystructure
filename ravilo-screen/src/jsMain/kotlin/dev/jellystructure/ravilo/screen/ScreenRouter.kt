@@ -1,7 +1,9 @@
 package dev.jellystructure.ravilo.screen
 
+import dev.jellystructure.shared.tv.ClientCapabilities
 import dev.jellystructure.shared.tv.HomeFeed
 import dev.jellystructure.shared.tv.MediaKind
+import dev.jellystructure.shared.tv.RememberedChoice
 import dev.jellystructure.shared.tv.TvApiClient
 import dev.jellystructure.shared.tv.TvSegmentMarkers
 import kotlinx.browser.document
@@ -74,7 +76,11 @@ internal class ScreenShell(
     private val onChangeServer: () -> Unit = {},
     private val onProfileMenu: () -> Unit = {},
     private val onPlay: (ScreenPlayRequest) -> Unit = {},
+    prewarmCapabilities: () -> ClientCapabilities = { ClientCapabilities() },
+    prewarmRemembered: (seriesId: String?) -> RememberedChoice? = { null },
 ) {
+    /** DEB-5396 (FR-35) — the encode Play would use for the page that is showing. */
+    private val pageWarm = ScreenPrewarm(api, prewarmCapabilities, prewarmRemembered)
     private val root get() = document.getElementById("shell") as HTMLElement
     private val body get() = document.getElementById("shell-body") as HTMLElement
     private val entries = mutableListOf(ScreenRouteEntry("home", "shell-page-target"))
@@ -87,13 +93,15 @@ internal class ScreenShell(
     private var visible = false
     private var player = false
     private var loadGeneration = 0
+    private var away = false
 
-    fun hide() { visible = false; ++loadGeneration; root.classList.remove("on") }
+    fun hide() { visible = false; ++loadGeneration; root.classList.remove("on"); pageWarm.cancel() }
 
     fun resetHome() {
         entries.clear(); entries.add(ScreenRouteEntry("home", "shell-page-target"))
         ++loadGeneration
         player = false
+        pageWarm.cancel()
         showHome()
     }
 
@@ -118,6 +126,7 @@ internal class ScreenShell(
         if (!player) entries.add(ScreenRouteEntry("player", ""))
         player = true
         root.classList.remove("on")
+        syncPrewarm()   // a phone's push over the page cancels; Play released it first
     }
 
     /** DEB-4663 (FR-11) — Settings is a route like Movies: Back pops to where the viewer came from. */
@@ -181,6 +190,12 @@ internal class ScreenShell(
 
     fun refocus() = focus.refocus()
 
+    /** DEB-5396 (FR-35) — the app was sent to another one (FR-22): the page's warm encode stops at once, and starts its 2 s again on the way back. */
+    fun awayFromApp(away: Boolean) {
+        this.away = away
+        syncPrewarm()
+    }
+
     private fun render() {
         val current = entries.last()
         if (current.name == ScreenSettings.ROUTE) {
@@ -214,7 +229,25 @@ internal class ScreenShell(
         focus.refocus()
         if ((current.name == "home" || current.name == "channel") && current.feed == null && !current.failed) loadFeed(current)
         current.detail?.load()
+        syncPrewarm()
         if (current.browse != null && current.browse.page == 0 && !current.browse.loading && !current.browse.failed) loadBrowse(current)
+    }
+
+    /**
+     * DEB-5396 (FR-35) — the page that shows holds the encode of what Play would play, after 2 s. Anything else showing — Back, another
+     * page, Home, the app hidden, a phone's push — cancels it at once; a target that moves cancels the old item and starts the 2 s
+     * again for the new one. [playFromPage] lets go of it first, so leaving by Play does not.
+     */
+    private fun syncPrewarm() {
+        val page = entries.lastOrNull()?.detail?.takeIf { visible && !player && !away && it.ready }
+        val target = page?.prewarmTarget()
+        if (target == null) pageWarm.cancel() else pageWarm.warm(target, page.prewarmSeriesId, ScreenPrewarm.DWELL_MS)
+    }
+
+    /** Play on a title's page: the server adopts the warm job when the plan matches, or stops it for its own, so nothing is cancelled here. */
+    private fun playFromPage(request: ScreenPlayRequest) {
+        pageWarm.release()
+        onPlay(request)
     }
 
     private fun loadBrowse(entry: ScreenRouteEntry) {
@@ -286,7 +319,7 @@ internal class ScreenShell(
         if (mediaId != null) {
             val title = element.querySelector(".tile-title, .hero-title")?.textContent ?: element.textContent ?: ""
             val kind = MediaKind.entries.firstOrNull { it.name.lowercase() == element.getAttribute("data-media-kind") } ?: MediaKind.MOVIE
-            val page = ScreenDetail(api, serverUrl, mediaId, kind, title, onChange = ::detailChanged, onPlay = onPlay)
+            val page = ScreenDetail(api, serverUrl, mediaId, kind, title, onChange = ::detailChanged, onPlay = ::playFromPage)
             entries.add(ScreenRouteEntry("detail", "shell-page-target", title = title, mediaId = mediaId, mediaKind = kind, detail = page))
             render()
             return

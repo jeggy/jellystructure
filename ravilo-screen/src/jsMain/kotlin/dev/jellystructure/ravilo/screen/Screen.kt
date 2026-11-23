@@ -17,6 +17,7 @@ import dev.jellystructure.shared.tv.RememberedChoice
 import dev.jellystructure.shared.tv.SessionLoadEnvelope
 import dev.jellystructure.shared.tv.TrackInput
 import dev.jellystructure.shared.tv.rememberPick
+import dev.jellystructure.shared.tv.trustedCreditsStartMs
 import dev.jellystructure.shared.tv.rememberedAudioIndex
 import dev.jellystructure.shared.tv.rememberedSubtitleIndex
 import dev.jellystructure.shared.tv.variantSignatureAt
@@ -76,6 +77,8 @@ private const val LONG_AWAY_MS = 5 * 60_000L
 private const val RECONNECT_MAX_MS = 30_000L
 /** R264 — the next-up card's countdown, and when it appears on a title with no credits marker. */
 private const val NEXT_UP_SECS = 10
+/** DEB-5396 (FR-36) — with no trusted credits marker the next episode's encode starts this long before the end (R381's own lead). */
+private const val NEXT_WARM_LEAD_MS = 60_000L
 /** R264 — rows the TV picker shows at once; the window follows the focus. */
 private const val PICKER_ROWS = 9
 
@@ -100,7 +103,10 @@ private class Screen(private val serverUrl: String) {
     private var lastQoePost: Job? = null
 
     private val qoe = ScreenQoe(::nowMs, backend::currentBandwidthBps, ::onLowestRung, ::askForLowerRung, backend::availableBitratesBps, ::askAfterFreeze, ::showFrozen) { report -> lastQoePost = GlobalScope.launch { api.postPlaybackQoe(report) } }
-    private val shell = ScreenShell(api, serverUrl, ::reopenServerSetup, onProfileMenu = { openProfileMenu() }, onPlay = ::playFromTv)
+    /** DEB-5396 (FR-36) — the next episode's encode, started at the credits (or 60 s before the end) and dropped by anything but its own start. */
+    private val nextWarm = ScreenPrewarm(api, backend::capabilities, ::rememberedAudioFor)
+    private val shell = ScreenShell(api, serverUrl, ::reopenServerSetup, onProfileMenu = { openProfileMenu() }, onPlay = ::playFromTv,
+        prewarmCapabilities = backend::capabilities, prewarmRemembered = ::rememberedAudioFor)
 
     private val signIn = ScreenSignIn(api, deviceId, deviceName(), ::onPaired, onBack = { showPicker() }, onChangeServer = ::reopenServerSetup)
     private val profileUi = ScreenProfiles(profiles, ::selectProfile, ::showSignIn, ::showPicker, ::signOut,
@@ -216,6 +222,7 @@ private class Screen(private val serverUrl: String) {
     }
 
     private fun idle() {
+        nextWarm.cancel()   // FR-36 — Back, a stop, Home, hiding the app and a refused start all end here: a viewer who leaves leaves nothing running
         qoe.end()   // FR-25 — the item's final report, whichever way it ended (Back, stop, the stream's end, hiding the app)
         loaded = false; playing = false; buffering = false; itemId = null; title = null; kicker = null; artUrl = null; ticket = null
         startedFromTv = false
@@ -393,6 +400,8 @@ private class Screen(private val serverUrl: String) {
 
     /** One start, whoever asked: a phone's push (FR-10), the next-up card's round trip, or this TV's own Play (FR-9). */
     private suspend fun beginPlay(env: PlayItemEnvelope, fromTv: Boolean, startOver: Boolean = false, series: String? = null) {
+        // FR-36 — the warmed next episode starting is the adoption the warm was for; a start of anything else drops it.
+        if (nextWarm.item == env.jellyfinId) nextWarm.release() else nextWarm.cancel()
         // FR-10 — a phone's push takes over whatever page the viewer is on (the shell keeps it mounted underneath).
         profileUi.hide()
         startedFromTv = fromTv
@@ -460,9 +469,11 @@ private class Screen(private val serverUrl: String) {
     }
 
     /** FR-23 — the tier a start asks the server to honour: the series' choice when it has an audio language, else the global one. */
-    private fun rememberedAudio(): RememberedChoice? {
+    private fun rememberedAudio(): RememberedChoice? = rememberedAudioFor(seriesId)
+
+    private fun rememberedAudioFor(series: String?): RememberedChoice? {
         val user = activeUserId ?: return null
-        return seriesId?.let { ScreenTrackMemory.series(user, it) }?.takeIf { it.audioLanguage != null }
+        return series?.let { ScreenTrackMemory.series(user, it) }?.takeIf { it.audioLanguage != null }
             ?: ScreenTrackMemory.global(user)?.takeIf { it.audioLanguage != null }
     }
 
@@ -558,6 +569,7 @@ private class Screen(private val serverUrl: String) {
             else -> "receiver.failed" to retryKey()
         }
         backend.close()
+        nextWarm.cancel()
         hideSkip(); hideNextUp(); closePicker(); hideChrome()
         el("failed-t").textContent = ScreenLanguage.t(title)
         el("failed-s").textContent = ScreenLanguage.t(body)
@@ -733,6 +745,10 @@ private class Screen(private val serverUrl: String) {
             if (inIntro && !skipShown && !pickerOpen) showSkip() else if (!inIntro && skipShown) hideSkip()
             if (nextId == null || nextUpCancelled) continue
             val creditsAt = seg?.creditsStartMs?.takeIf { seg.stinger == null }
+            // DEB-5396 (FR-36) — the next episode's encode starts at the credits, or 60 s before the end with no trusted marker (earlier
+            // than the card, and the same with autoplay off). A position back before that drops it; the loop re-posts it every 30 s.
+            val warmAt = creditsAt?.let { trustedCreditsStartMs(it, dur) } ?: if (dur > 0) dur - NEXT_WARM_LEAD_MS else null
+            if (warmAt != null && pos >= warmAt) nextId?.let { nextWarm.warm(it, seriesId) } else nextWarm.cancel()
             val due = when {
                 creditsAt != null -> pos >= creditsAt
                 // R384 (FR-R384-4) — no marker: the last second (it was 20 s); the countdown runs on past the end.
@@ -785,6 +801,7 @@ private class Screen(private val serverUrl: String) {
      *  end (the countdown ran on over the last frame) that is now. */
     private fun cancelNextUp() {
         nextUpCancelled = true; hideNextUp()
+        nextWarm.cancel()   // FR-36 — the card's cancel: this title plays to its end and nothing follows it
         if (finishedUnderNextUp) { finishedUnderNextUp = false; endHere() }
     }
 
@@ -988,12 +1005,14 @@ private class Screen(private val serverUrl: String) {
         if (hidden) {
             if (awaySince != null) return
             awaySince = nowMs()
+            shell.awayFromApp(true)   // FR-35 — a title's page stops its warm encode
             // AVPlay's plane does not survive the app being sent away: end the stream as Back would, the return is a fresh start.
             if (loaded) stopAndIdle() else if (shell.isPlayer()) cancelStart()
             return
         }
         val since = awaySince ?: return
         awaySince = null
+        shell.awayFromApp(false)
         startEvents()
         if (activeUserId != null) GlobalScope.launch { adoptLanguageOfActiveUser() }
         if (nowMs() - since >= LONG_AWAY_MS) shell.refreshAfterAway()

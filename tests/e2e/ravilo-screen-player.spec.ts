@@ -302,6 +302,150 @@ test.describe("DEB-5025 (FR-28–FR-30) — the Samsung player has Android TV's 
   });
 });
 
+// DEB-5396 (DEB-5394, FR-36) — the next episode's encode starts before the card: at the credits marker, or 60 s before the end with
+// none, and a viewer who goes back, stops or cancels leaves nothing running. The backend is stood in for by page.route (as the title
+// page's spec does), so this proves what the app SENDS and when, not what the encoder does with it. The fake AVPlay's stream is 120 s.
+test.describe("DEB-5394 FR-36 — the next episode's encode starts before the card", () => {
+  const API = "http://app:9505";
+  const SEGMENTS = { credits_start_ms: 80_000 };
+
+  type Seen = { prewarms: any[]; cancels: any[]; starts: any[]; stops: any[] };
+
+  /** A two-episode series; the first plays from its page with the second as `nextId`. [segments]: the first episode's markers. */
+  async function playingFirst(page: Page, segments: object | null, autoplayNext = true): Promise<Seen> {
+    const seen: Seen = { prewarms: [], cancels: [], starts: [], stops: [] };
+    const card = { id: "sr1", kind: "SERIES", title: "Paper Series", year: 2024, genre: null, rating: null, poster_url: "/api/tv/image/sr1-poster", backdrop_url: "/api/tv/image/sr1-backdrop" };
+    const episode = (id: string, n: number, title: string, extra: object = {}) => ({ id, episode_number: n, title, runtime: 40, overview: null, still_url: `/api/tv/image/${id}-still`, ...extra });
+    const series = { card, synopsis: "x", cast: [], related: [], logo_url: null,
+      seasons: [{ index: 1, name: "Season 1", episodes: [episode("e1", 1, "Opening Reel", segments ? { segments } : {}), episode("e2", 2, "Second Reel")] }] };
+    const feed = { heroes: [], channels: [], rows: [{ id: "new", title: "New Arrivals", kind: "NEWLY_ADDED", items: [card] }], tile_shape: "POSTER", hero_height_pct: 48, focus_detail: "none" };
+    await page.addInitScript(fakeAvPlayInitScript);
+    await page.addInitScript(() => {
+      localStorage.setItem("ravilo.screen.serverUrl", "http://app:9505");
+      localStorage.setItem("ravilo.screen.profiles", JSON.stringify([{ userId: "viewer", displayName: "Test Viewer", token: "test-token" }]));
+      (window as any).__avplay.setDuration(120_000);
+    });
+    await page.routeWebSocket(/\/api\/tv\/events/, () => {});
+    const json = (route: any, status: number, body: object = {}) => route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
+    await page.route(`${API}/**`, async (route) => {
+      const req = route.request();
+      const path = new URL(req.url()).pathname;
+      const body = req.postData() ? JSON.parse(req.postData()!) : null;
+      if (req.method() === "OPTIONS") return route.fulfill({ status: 204 });
+      if (path === "/api/tv/home") return json(route, 200, feed);
+      if (path === "/api/tv/series/sr1") return json(route, 200, series);
+      if (path === "/api/tv/playstate") return json(route, 200, {});
+      if (path === "/api/tv/config") return json(route, 200, { autoplay_next: autoplayNext });
+      if (path === "/api/tv/playback/prewarm") { seen.prewarms.push(body); return json(route, 200, { status: "warm" }); }
+      if (path === "/api/tv/playback/prewarm/cancel") { seen.cancels.push(body); return route.fulfill({ status: 204 }); }
+      if (path === "/api/tv/playback/start") {
+        seen.starts.push(body);
+        return json(route, 200, { jellyfin_base_url: API, access_token: "", item_id: body.item_id, container: "ts", direct_play: false,
+          hls_url: `${API}/hls/${body.item_id}/master.m3u8`, start_position_ms: 0, expires_at: 9_999_999_999 });
+      }
+      if (path === "/api/tv/playback/stop") { seen.stops.push(body); return route.fulfill({ status: 204 }); }
+      if (path.startsWith("/api/tv/")) return route.fulfill({ status: 204 });
+      return json(route, 404);
+    });
+    await page.goto(SCREEN_URL);
+    await expect(page.locator("#home-row-0-tile-0")).toHaveClass(/focused/);
+    await page.keyboard.press("Enter");
+    await expect(page.locator("#detail-play")).toHaveClass(/focused/);
+    await page.keyboard.press("Enter");
+    await waitForAvplayCall(page, "open");
+    await expect.poll(() => seen.starts.map((s) => s.item_id)).toEqual(["e1"]);
+    return seen;
+  }
+  const jump = (page: Page, ms: number) => page.evaluate((m) => (window as any).__avplay.jump(m), ms);
+  const settle = (page: Page) => page.waitForTimeout(800);   // a few 250 ms ticks of the segment loop
+
+  test("with a credits marker: nothing before it, one prewarm for nextId at it, and none sooner at 60 s before the end", async ({ page }) => {
+    test.setTimeout(60_000);
+    const seen = await playingFirst(page, SEGMENTS);
+    await jump(page, 70_000);                       // inside the last 60 s, but before the credits: the marker decides
+    await settle(page);
+    expect(seen.prewarms).toEqual([]);
+    await jump(page, 81_000);
+    await expect.poll(() => seen.prewarms.length).toBe(1);
+    expect(seen.prewarms[0].item_id).toBe("e2");
+    expect(seen.prewarms[0].capabilities).toEqual(seen.starts[0].capabilities);
+    await settle(page);
+    expect(seen.prewarms, "one post, not one per tick").toHaveLength(1);
+  });
+
+  test("with no marker: nothing at 59 s, one prewarm at 60 s before the end (the card's last second is later)", async ({ page }) => {
+    test.setTimeout(60_000);
+    const seen = await playingFirst(page, null);
+    await jump(page, 50_000);
+    await settle(page);
+    expect(seen.prewarms).toEqual([]);
+    await jump(page, 60_500);
+    await expect.poll(() => seen.prewarms.map((p) => p.item_id)).toEqual(["e2"]);
+    await expect(page.locator("#nextup"), "the card is not up yet").not.toHaveClass(/\bon\b/);
+  });
+
+  test("a seek back before the trigger posts the cancel, and going past it again warms again", async ({ page }) => {
+    test.setTimeout(60_000);
+    const seen = await playingFirst(page, null);
+    await jump(page, 62_000);
+    await expect.poll(() => seen.prewarms).toHaveLength(1);
+    // −10 s on the controls: ArrowRight reveals them on +30 s, two ArrowLefts reach −10 s.
+    await page.keyboard.press("ArrowRight");
+    await page.keyboard.press("ArrowLeft");
+    await page.keyboard.press("ArrowLeft");
+    await expect(page.locator("#ov-b10")).toHaveClass(/\bfoc\b/);
+    await page.keyboard.press("Enter");
+    await expect.poll(() => seen.cancels).toEqual([{ item_id: "e2" }]);
+    await jump(page, 65_000);
+    await expect.poll(() => seen.prewarms).toHaveLength(2);
+  });
+
+  test("the countdown starting nextId posts no cancel, with autoplay on", async ({ page }) => {
+    test.setTimeout(90_000);
+    const seen = await playingFirst(page, SEGMENTS);
+    await jump(page, 81_000);
+    await expect.poll(() => seen.prewarms).toHaveLength(1);
+    await expect(page.locator("#nextup")).toHaveClass(/\bon\b/);
+    await expect.poll(() => seen.starts.map((s) => s.item_id), { timeout: 20_000 }).toEqual(["e1", "e2"]);
+    await settle(page);
+    expect(seen.cancels, "the start is the adoption; nothing is cancelled").toEqual([]);
+    expect(seen.prewarms).toHaveLength(1);
+  });
+
+  test("OK on the card and the controls' Next start nextId with no cancel", async ({ page }) => {
+    test.setTimeout(60_000);
+    const seen = await playingFirst(page, SEGMENTS);
+    await jump(page, 81_000);
+    await expect(page.locator("#nextup")).toHaveClass(/\bon\b/);
+    await page.keyboard.press("Enter");
+    await expect.poll(() => seen.starts.map((s) => s.item_id)).toEqual(["e1", "e2"]);
+    await settle(page);
+    expect(seen.cancels).toEqual([]);
+  });
+
+  test("Back on the card posts the cancel, and the title then plays on with nothing warming", async ({ page }) => {
+    test.setTimeout(60_000);
+    const seen = await playingFirst(page, SEGMENTS);
+    await jump(page, 81_000);
+    await expect(page.locator("#nextup")).toHaveClass(/\bon\b/);
+    await expect.poll(() => seen.prewarms).toHaveLength(1);
+    await page.keyboard.press("Escape");
+    await expect.poll(() => seen.cancels).toEqual([{ item_id: "e2" }]);
+    await expect(page.locator("#nextup")).not.toHaveClass(/\bon\b/);
+    await settle(page);
+    expect(seen.prewarms, "a cancelled card does not warm again").toHaveLength(1);
+  });
+
+  test("Back out of the player after the prewarm cancels it; with autoplay off the prewarm still starts", async ({ page }) => {
+    test.setTimeout(60_000);
+    const seen = await playingFirst(page, null, false);
+    await jump(page, 61_000);
+    await expect.poll(() => seen.prewarms.map((p) => p.item_id)).toEqual(["e2"]);
+    await page.keyboard.press("Escape");            // hides nothing (controls are down): stops the title
+    await expect.poll(() => seen.cancels).toEqual([{ item_id: "e2" }]);
+  });
+});
+
 async function bootAndSignIn(page: Page, request: APIRequestContext, phoneDevice = "e2e-player-phone-r264"): Promise<{ phoneToken: string; screenId: string }> {
   await ownSignInBucket(page);
   await page.goto(SCREEN_URL, { waitUntil: "domcontentloaded", timeout: 10_000 });

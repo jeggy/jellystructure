@@ -22,6 +22,9 @@ export function fakeAvPlayInitScript() {
   let held = false;
   // DEB-5024 (FR-34) — how fast the playhead moves against wall time (1 = real time); `setRate(0.9)` is a stream that slips behind.
   let rate = 1;
+  // DEB-5396 — the stream's length (the default stays 60 s) and a playhead the test moves to as natural play would, with no `seekTo`
+  // call recorded: `setDuration(ms)` before a start, `jump(ms)` while it plays.
+  let durationMs = 60_000;
   const properties: Record<string, string | undefined> = {};
   (window as any).__avplay = {
     bufferStart() { buffering = true; listener.onbufferingstart?.(); },
@@ -29,6 +32,8 @@ export function fakeAvPlayInitScript() {
     hold() { held = true; },
     release() { held = false; },
     setRate(r: number) { rate = r; },
+    setDuration(ms: number) { durationMs = ms; },
+    jump(ms: number) { posMs = ms; },
     event(type: string, data?: unknown) { listener.onevent?.(type, data); },
     setProperty(name: string, value: string | undefined) { properties[name] = value; },
     failPrepareWith: undefined as string | undefined,
@@ -95,7 +100,7 @@ export function fakeAvPlayInitScript() {
       },
       getState() { return state; },
       getCurrentTime() { return posMs; },
-      getDuration() { return 60_000; },
+      getDuration() { return durationMs; },
       getTotalTrackInfo() { return []; },
       setSelectTrack(type: string, index: number) {
         (window as any).__avplayCalls.push(["setSelectTrack", type, index]);

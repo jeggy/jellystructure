@@ -40,11 +40,15 @@ type Seen = {
   reads: string[][]; inFlight: number; maxInFlight: number;
   playstate: Record<string, object>; playstateStatus: number; gate: Promise<void> | null;
   push: (message: object) => void;
+  // DEB-5396 (DEB-5394, FR-35) — each `/prewarm` and `/prewarm/cancel` body the page posted, and what the mock answers to a prewarm.
+  prewarms: any[]; cancels: any[]; prewarmAnswer: object | number;
 };
 type Opts = {
   home?: object; movie?: object | null; series?: object | null; playstate?: Record<string, object>;
   favorite?: (body: any) => Promise<{ status: number; body?: object }>;
   played?: (body: any) => Promise<{ status: number; body?: object }>;
+  /** DEB-5396 — the page runs on Playwright's fake clock, so a test says when 2 s and 30 s have passed. */
+  fakeClock?: boolean;
 };
 
 /** Home with one tile (the movie or the series); OK on it is the page. */
@@ -54,6 +58,7 @@ async function boot(page: Page, opts: Opts = {}): Promise<Seen> {
     starts: [], favorites: [], played: [], reads: [], inFlight: 0, maxInFlight: 0,
     playstate: opts.playstate ?? {}, playstateStatus: 200, gate: null,
     push: (message) => sockets.forEach((ws) => ws.send(JSON.stringify(message))),
+    prewarms: [], cancels: [], prewarmAnswer: { status: "warm" },
   };
   // The events socket is accepted and says nothing until a test pushes.
   await page.routeWebSocket(/\/api\/tv\/events/, (ws) => { sockets.push(ws); });
@@ -90,11 +95,17 @@ async function boot(page: Page, opts: Opts = {}): Promise<Seen> {
       const answer = opts.played ? await opts.played(body) : { status: 200, body: { [body.item_id]: state({ played: body.played }) } };
       return json(route, answer.status, answer.body ?? {});
     }
+    if (path === "/api/tv/playback/prewarm") {
+      seen.prewarms.push(body);
+      return typeof seen.prewarmAnswer === "number" ? json(route, seen.prewarmAnswer) : json(route, 200, seen.prewarmAnswer);
+    }
+    if (path === "/api/tv/playback/prewarm/cancel") { seen.cancels.push(body); return route.fulfill({ status: 204 }); }
     if (path === "/api/tv/playback/start") { seen.starts.push(body); return json(route, 200, ticket(body.item_id)); }
     if (path.startsWith("/api/tv/playback/")) return route.fulfill({ status: 204 });
     if (path.startsWith("/api/tv/image/")) return route.fulfill({ status: 204 });
     return json(route, 404);
   });
+  if (opts.fakeClock) await page.clock.install();
   await page.goto(SCREEN_URL);
   await expect(page.locator("#shell-body .home-feed")).toBeVisible();
   return seen;
@@ -482,5 +493,140 @@ test.describe("DEB-4889 FR-19 — a title's page shows its audio and subtitle la
     await openPage(page);
     await expect(page.locator(".detail-langs")).toHaveCount(0);
     await expect(page.locator(".detail-meta + .detail-overview")).toHaveCount(1);
+  });
+});
+
+// DEB-5396 (DEB-5394, FR-35) — Android TV's DetailPrewarm on the Samsung: after 2 s on a title's page the app asks the server to start
+// the encode Play would use, keeps it warm while the page shows, and stops it at once when the page is left without Play. The page
+// runs on the fake clock, so "2 s" and "30 s" are what the test says they are.
+test.describe("DEB-5394 FR-35 — a title's page starts the encode Play would use", () => {
+  const settle = (page: Page) => page.waitForTimeout(300);   // real time, for the mock's answer to reach the page
+
+  test("a film held 2 s posts one prewarm for it with the start's capabilities, and nothing sooner", async ({ page }) => {
+    const seen = await boot(page, { fakeClock: true });
+    await openPage(page);
+    await page.clock.fastForward(1_500);
+    await settle(page);
+    expect(seen.prewarms, "nothing before 2 s").toEqual([]);
+    await page.clock.fastForward(600);
+    await expect.poll(() => seen.prewarms.length).toBe(1);
+    expect(seen.prewarms[0].item_id).toBe("m1");
+
+    // The start's own capabilities: Play now, and the two bodies carry the same ones.
+    await page.keyboard.press("Enter");
+    await expect.poll(() => seen.starts.length).toBe(1);
+    expect(seen.prewarms[0].capabilities).toEqual(seen.starts[0].capabilities);
+    expect(seen.prewarms).toHaveLength(1);
+  });
+
+  test("a warm answer is posted again at 30 s and at 60 s", async ({ page }) => {
+    const seen = await boot(page, { fakeClock: true });
+    await openPage(page);
+    await page.clock.fastForward(2_100);
+    await expect.poll(() => seen.prewarms.length).toBe(1);
+    await settle(page);
+    await page.clock.fastForward(30_000);
+    await expect.poll(() => seen.prewarms.length).toBe(2);
+    await settle(page);
+    await page.clock.fastForward(30_000);
+    await expect.poll(() => seen.prewarms.length).toBe(3);
+    expect(seen.prewarms.map((p) => p.item_id)).toEqual(["m1", "m1", "m1"]);
+  });
+
+  for (const [name, answer] of [["none", { status: "none", reason: "copy" }], ["direct", { status: "direct" }], ["a 404 from an older server", 404]] as const) {
+    test(`${name} is not posted again, and leaving then posts no cancel`, async ({ page }) => {
+      const seen = await boot(page, { fakeClock: true });
+      seen.prewarmAnswer = answer;
+      await openPage(page);
+      await page.clock.fastForward(2_100);
+      await expect.poll(() => seen.prewarms.length).toBe(1);
+      await settle(page);
+      await page.clock.fastForward(90_000);
+      await settle(page);
+      expect(seen.prewarms).toHaveLength(1);
+      await page.keyboard.press("Escape");
+      await expect(page.locator("#shell-body .home-feed")).toBeVisible();
+      await settle(page);
+      expect(seen.cancels, "nothing is running to stop").toEqual([]);
+    });
+  }
+
+  test("Back before the 2 s posts nothing at all; Back after it posts the cancel at once", async ({ page }) => {
+    const seen = await boot(page, { fakeClock: true });
+    await openPage(page);
+    await page.clock.fastForward(1_000);
+    await page.keyboard.press("Escape");
+    await expect(page.locator("#shell-body .home-feed")).toBeVisible();
+    await page.clock.fastForward(5_000);
+    await settle(page);
+    expect(seen.prewarms).toEqual([]);
+    expect(seen.cancels).toEqual([]);
+
+    await openPage(page);
+    await page.clock.fastForward(2_100);
+    await expect.poll(() => seen.prewarms.length).toBe(1);
+    await page.keyboard.press("Escape");
+    await expect.poll(() => seen.cancels).toEqual([{ item_id: "m1" }]);   // with no clock moved: at once
+    await settle(page);
+    await page.clock.fastForward(60_000);
+    await settle(page);
+    expect(seen.prewarms, "a page left posts no more").toHaveLength(1);
+  });
+
+  test("Play does not cancel: the server adopts the job, and nothing is posted when the player returns before 2 s", async ({ page }) => {
+    const seen = await boot(page, { fakeClock: true });
+    await openPage(page);
+    await page.clock.fastForward(2_100);
+    await expect.poll(() => seen.prewarms.length).toBe(1);
+    await page.keyboard.press("Enter");
+    await waitForAvplayCall(page, "open");
+    await page.clock.fastForward(5_000);
+    await settle(page);
+    expect(seen.cancels, "leaving by Play cancels nothing").toEqual([]);
+    expect(seen.prewarms, "and nothing keeps posting under the player").toHaveLength(1);
+  });
+
+  test("the app hidden cancels at once; a series warms its primary episode with the series' remembered audio", async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.setItem("ravilo.screen.tracks.viewer", JSON.stringify({ series: { sr1: { audio: "fra" } } }));
+    });
+    const seen = await boot(page, { series: seriesDetail(), playstate: {}, fakeClock: true });
+    await openPage(page);
+    await page.clock.fastForward(2_100);
+    await expect.poll(() => seen.prewarms.length).toBe(1);
+    expect(seen.prewarms[0].item_id).toBe("s1e1");
+    expect(seen.prewarms[0].audio_language).toBe("fra");
+
+    await page.evaluate(() => {
+      Object.defineProperty(document, "hidden", { configurable: true, get: () => true });
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    await expect.poll(() => seen.cancels).toEqual([{ item_id: "s1e1" }]);
+  });
+
+  test("a re-read that moves the primary episode cancels the old one and warms the new one after 2 s; a season switch does not move it", async ({ page }) => {
+    const seen = await boot(page, { series: seriesDetail(), playstate: {}, fakeClock: true });
+    await openPage(page);
+    await page.clock.fastForward(2_100);
+    await expect.poll(() => seen.prewarms.map((p) => p.item_id)).toEqual(["s1e1"]);
+
+    // Season 2 is a different list on the page, not a different Play: the primary button still plays S01E01.
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("ArrowRight");
+    await page.keyboard.press("Enter");
+    await expect(page.locator("#detail-season-2")).toHaveClass(/cur/);
+    await expect(page.locator("#detail-ep-0 .detail-ep-code")).toContainText("S02");
+    await settle(page);
+    expect(seen.cancels).toEqual([]);
+    expect(seen.prewarms).toHaveLength(1);
+
+    // FR-31's re-read: the first episode was watched elsewhere, so Play is now S01E02.
+    seen.playstate = { sr1: state({ continue_episode_id: "s1e2" }), s1e1: state({ played: true }) };
+    seen.push({ type: "home_changed", rev: 1 });
+    await expect.poll(() => seen.cancels).toEqual([{ item_id: "s1e1" }]);
+    await settle(page);
+    expect(seen.prewarms, "the 2 s starts again for the new one").toHaveLength(1);
+    await page.clock.fastForward(2_100);
+    await expect.poll(() => seen.prewarms.map((p) => p.item_id)).toEqual(["s1e1", "s1e2"]);
   });
 });
