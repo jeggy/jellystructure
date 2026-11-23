@@ -15,7 +15,7 @@ Kind of round: **product design**, as the brief states. It lands under `design/i
   three fields the real app has, never stated in the data
 - `samsung-tv-overview.css` — the round's own rules, on top of the shipped phone stylesheet
 - `Samsung TV Overview - Directions.html` — the directions document, the Compose port's reference
-- `png/` — 78 PNGs, `samsung-tv-overview-<direction>-<state>[-dark][-lang][-200][-tall].png`
+- `png/` — 80 PNGs, `samsung-tv-overview-<direction>-<state>[-dark][-lang][-200][-tall].png`
 
 Every PNG was opened one at a time and magnified before this was written.
 
@@ -59,6 +59,56 @@ survives too, so the saving is real, but it buys nothing a phone screen with thi
 needs.
 
 **3 · The button inside the card — the brief's lean.** See pick 1.
+
+## Before and after
+
+Bárður added this to the brief on the day of the round, from the owner: *"Here is how it looks now.
+But this doesn't provide good information. So let's make sure to keep it clean but most importantly
+provide useful information."* The "before" is the shipped Ready screen, `GuideScreen.Ready` drawn by
+`Page(…, art = Art.TV, body = "samsungtv.ready.body", cta = "samsungtv.ready.cta")`. **No capture of
+it is in this repository and none ever will be — the one he sent shows his own profile picture.**
+The description below is of our own shipped strings and our own `Art.TV` drawing, which is all this
+comparison needs.
+
+**What today's screen says.** A generic TV drawing of roughly 142 × 102 dp, about a third of
+everything drawn; the title *Your TV is approved*; two lines of standing advice (*Keep this phone on
+the same Wi-Fi as the TV. Use this button again to update later.*); and one button, *Install on TV*.
+Below it, most of the screen is empty.
+
+It states **one fact** — that some TV of yours is approved — and it is the only fact it can state,
+because the screen holds no TV identity and no version. Three consequences follow from that, and
+they are not cosmetic:
+
+- **It cannot name the TV.** *Your TV* is right when you have one and wrong the moment you have two,
+  which the ten-row cap allows.
+- **It cannot choose its own verb.** The button says *Install on TV* whether Ravilo is absent, four
+  releases old, or already current — because nothing on that screen knows which.
+- **The advice is there in place of state.** *Use this button again to update later* is the sentence
+  a screen writes when it cannot tell you whether there is an update.
+
+**What each direction tells the viewer that today's screen does not.** Six facts replace the one,
+and all six come from data the app already has — no new wire field (FR-10's own note):
+
+| | Today | A — Stack | B — Ledger | C — Signal |
+|---|---|---|---|---|
+| Which TVs are on this Wi-Fi | — | one card each, plus a count line | one row each, plus a count line | a block plus *Also on this Wi-Fi* |
+| **Which** TV is approved | — | name, model and a green badge | name, model and a green badge | name and badge in the kicker |
+| What is on it now | — | *On the TV 1.70* | `1.70 ›` | *ON THE TV 1.70* |
+| What the latest is | — | *Latest 1.71* | `› 1.71` | *LATEST 1.71* |
+| Whether there is anything to do | — | the button's own verb, or *Up to date* | the dock's verb, or no dock | the headline |
+| The one thing to do | *Install on TV*, always | *Update to 1.71* / *Install on TV* / nothing | the same, in the dock | the same, in the block |
+
+The ratio is the short version: **today's screen spends about a third of its height on a drawing
+that carries no information and states one fact. A's card spends none on decoration and states
+six**, and the illustration that went is the only thing that was removed to make room.
+
+**On the drawing itself.** Bárður's note says to drop or shrink it *unless it carries information*,
+and that a small TV glyph on each card is fine. Direction A as drawn carries no illustration at all,
+which is the far side of the same line — the cards are correct and a little bare. `a-x4-glyph` and
+`a-x5-glyph-update` draw the picked direction with a 34 dp tile at the head of each card: it carries
+nothing the name does not, and it gives the card the anchor for the eye that the old 142 × 102 dp
+drawing was doing badly. **It is an option on the picked direction, not a change to it** — the owner
+picked A from pictures that had no tile — so it is Bárður's to fold in or leave.
 
 ## What only the pictures showed
 
@@ -119,8 +169,9 @@ light-theme green above.
 ## States drawn, and states skipped
 
 Drawn: all eight the brief names, in light; the recommended direction also in dark, in `da` and
-`fo`, and at the 200 % font setting both phone-height and full-height. Three studies
-(`a-x1-serverfirst`, `a-x2-notinstalled`, `a-x3-allbadges`) and one strip per direction.
+`fo`, and at the 200 % font setting both phone-height and full-height. Five studies
+(`a-x1-serverfirst`, `a-x2-notinstalled`, `a-x3-allbadges`, `a-x4-glyph`, `a-x5-glyph-update`) and
+one strip per direction.
 
 **Skipped, and reportable:** the Midnight, Noir and Graphite skins. A focus state — this surface is
 touch-only. An error state of its own — every failure here belongs to FR-7's install, which is a

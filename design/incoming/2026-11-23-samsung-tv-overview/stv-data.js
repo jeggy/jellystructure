@@ -117,6 +117,26 @@
         { tv: 'b', req: 'requested' },
         { tv: 'a', req: 'rejected', note: 'Not this one — it is the one in the guest room.' },
         { tv: 'b', req: null }
+      ] },
+
+    /* Bárður's addition to the brief (2026-11-23, from the owner): today's screen gives a large
+       generic TV drawing a third of the content and says nothing; the fix is information first,
+       and "a small TV glyph on each card is fine". Direction A as drawn carries no illustration
+       at all, which is the far side of the same line. This is the owner's own case with a 34 dp
+       glyph tile on each card, so the choice is made on a picture rather than on that sentence.
+       It is an OPTION on the picked direction, not a change to it. */
+    { id: 'x4-glyph', label: 'The picked direction with a small TV glyph on each card',
+      wifi: true, glyph: true, cards: [
+        { tv: 'a', req: 'ready', onTv: LATEST, cover: LATEST },
+        { tv: 'b', req: null }
+      ] },
+
+    /* The same option on the state that has the most to say, so the glyph is judged against a
+       full card and not only against the quietest one. */
+    { id: 'x5-glyph-update', label: 'The glyph option on the update-waiting state',
+      wifi: true, glyph: true, cards: [
+        { tv: 'a', req: 'ready', onTv: INSTALLED, cover: LATEST },
+        { tv: 'b', req: null }
       ] }
   ];
 

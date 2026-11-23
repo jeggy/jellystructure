@@ -17,6 +17,7 @@
   var D = window.STV;
   var LANG = 'en';
   var WIFI = true;   /* set per screen; a card may not claim a scan that never ran */
+  var GLYPH = false; /* the x4/x5 option: a small TV tile at the head of every card */
   var SVG_N = 0;
   function uid(p) { SVG_N += 1; return 'stv-' + p + '-' + SVG_N; }
 
@@ -260,7 +261,9 @@
     var big = (st.kind === 'update' || st.kind === 'uptodate' || st.kind === 'install'
       || st.kind === 'next');
     var h = '<div class="stv-card' + (big ? ' big' : '') + ' k-' + st.kind + '">';
-    h += '<div class="stv-nm"><span class="t">'
+    h += '<div class="stv-nm' + (GLYPH ? ' g' : '') + '">'
+      + (GLYPH ? '<span class="stv-tile">' + ic('tv', '', 1.9) + '</span>' : '')
+      + '<span class="t">'
       + '<b>' + esc(tv.name) + '</b><em>' + esc(tv.model) + '</em></span>'
       + badgePill(c) + '</div>';
 
@@ -410,6 +413,7 @@
        at the top already says why nothing was found, and the two sentences contradicted each
        other in the first render of state 8. The card is then name, model and badge alone. */
     WIFI = s.wifi !== false;
+    GLYPH = s.glyph === true;
     if (s.wifi === false) body += nowifi();
     if (s.scanning) body += scanLine();
     if (s.scanning && !s.serverFirst) body += skeletons(dir, false);

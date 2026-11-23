@@ -223,6 +223,16 @@ html[data-skin="daylight"] .stv-ph { --stv-ok: #0f7a52; --stv-ok-t: rgba(15, 122
   line-height: calc(16 * var(--sp)); letter-spacing: .02em; color: var(--ink-dim);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
+/* The x4/x5 option: a 34 dp tile at the head of the name row. It carries no information the
+   name does not — it is there so the card has an anchor for the eye, which is what today's
+   screen's 142 x 102 dp drawing was doing badly. The name column's floor counts from after it,
+   so the wrap rule above is unchanged. */
+.stv-tile { flex: none; width: 34px; height: 34px; border-radius: 10px;
+  background: rgba(var(--fg), .07); color: var(--ink-dim);
+  display: flex; align-items: center; justify-content: center; }
+.stv-tile svg { width: 19px; height: 19px; }
+.stv-nm.g { gap: 6px 11px; }
+
 /* The two labelled version lines — the brief's lean, and the one that holds at 200 %. Label left
    in Sora, value right in JetBrains Mono; the value a viewer must act on takes the accent. */
 .stv-vers { margin-top: 13px; padding-top: 12px; border-top: 1px solid var(--line); }

@@ -102,6 +102,51 @@ other surface.</p>
 <p>Invented, and in <code>stv-data.js</code> only. No TV name, model or version in any picture
 comes from the household's own network.</p>
 
+<h2>Before and after</h2>
+<p>The brief gained this on the day of the round, from the owner: <i>"this doesn't provide good
+information. So let's make sure to keep it clean but most importantly provide useful
+information."</i> The "before" is the shipped Ready screen —
+<span class="mono">GuideScreen.Ready</span>, drawn by <span class="mono">Page(…, art = Art.TV, body
+= "samsungtv.ready.body", cta = "samsungtv.ready.cta")</span>. <b>No capture of it is in this
+repository and none ever will be</b>; the one the owner sent shows his own profile picture. What
+follows describes our own shipped strings and our own drawing, which is all the comparison
+needs.</p>
+<p>Today: a generic TV drawing of roughly 142 × 102 dp, about a third of everything drawn; the
+title <i>Your TV is approved</i>; two lines of standing advice; and the button <i>Install on TV</i>.
+It states <b>one fact</b>, and it is the only one it can state — the screen holds no TV identity and
+no version, so it cannot name the TV, cannot choose its own verb, and writes advice where state
+should be.</p>
+<table>
+  <tr><th>&nbsp;</th><th>Today</th><th>A — Stack</th><th>B — Ledger</th><th>C — Signal</th></tr>
+  <tr><td class="k">Which TVs are on this Wi-Fi</td><td class="no">—</td><td>a card each, plus a
+    count line</td><td>a row each, plus a count line</td><td>a block plus <i>Also on this
+    Wi-Fi</i></td></tr>
+  <tr><td class="k"><b>Which</b> TV is approved</td><td class="no">—</td><td>name, model, green
+    badge</td><td>name, model, green badge</td><td>name and badge in the kicker</td></tr>
+  <tr><td class="k">What is on it now</td><td class="no">—</td><td><i>On the TV</i> 1.70</td>
+    <td><span class="mono">1.70 ›</span></td><td><i>ON THE TV</i> 1.70</td></tr>
+  <tr><td class="k">What the latest is</td><td class="no">—</td><td><i>Latest</i> 1.71</td>
+    <td><span class="mono">› 1.71</span></td><td><i>LATEST</i> 1.71</td></tr>
+  <tr><td class="k">Whether there is anything to do</td><td class="no">—</td><td>the button's verb,
+    or <i>Up to date</i></td><td>the dock's verb, or no dock</td><td>the headline</td></tr>
+  <tr><td class="k">The one thing to do</td><td><i>Install on TV</i>, always</td><td>the right verb
+    for the two numbers</td><td>the same, in the dock</td><td>the same, in the block</td></tr>
+</table>
+<p><b>Today's screen spends about a third of its height on a drawing that carries no information,
+and states one fact. A's card spends none on decoration and states six</b> — and the illustration
+is the only thing removed to make room. All six come from data the app already has; no new wire
+field.</p>
+<div class="note">
+  <p><b>The glyph option.</b> The note says to drop or shrink the illustration <i>unless it carries
+  information</i>, and that a small TV glyph on each card is fine. A as drawn carries none at all,
+  which is the far side of the same line. <span class="mono">a-x4-glyph</span> and
+  <span class="mono">a-x5-glyph-update</span> draw the picked direction with a 34 dp tile — radius
+  10, <span class="mono">rgba(fg,.07)</span>, a 19 dp TV glyph in
+  <span class="mono">--ink-dim</span> — at the head of each card's name row. It carries nothing the
+  name does not; it gives the card an anchor for the eye. <b>An option on the picked direction, not
+  a change to it:</b> the owner picked A from pictures with no tile.</p>
+</div>
+
 <h2>The three directions</h2>
 
 <h3>A — Stack <span class="pick">Recommended</span></h3>
