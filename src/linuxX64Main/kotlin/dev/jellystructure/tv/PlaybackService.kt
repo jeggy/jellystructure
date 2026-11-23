@@ -745,7 +745,7 @@ class PlaybackService(
     internal suspend fun stallHoldAfterReports(device: DeviceData?): Boolean {
         device ?: return false
         val jobs = pendingFolds.value[device.deviceId].orEmpty()
-        if (jobs.isNotEmpty()) withTimeoutOrNull(FOLD_WAIT_MS) { jobs.forEach { it.join() } }
+        if (jobs.isNotEmpty()) dev.jellystructure.ops.boundedOrNull(FOLD_WAIT_MS, "a QoE fold") { jobs.forEach { it.join() } }
         return stallHoldOf(device)
     }
 
