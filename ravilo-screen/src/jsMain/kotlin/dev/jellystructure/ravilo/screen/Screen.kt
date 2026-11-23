@@ -129,6 +129,8 @@ private class Screen(private val serverUrl: String) {
     private var lastProgressAt = 0L
     private var lastStatusAt = 0L
     private var busySinceMs: Long? = null
+    /** DEB-5394 (FR-37) — the last successful `startPlayback` round trip, handed to the QoE when its item begins. */
+    private var startRequestMs = 0L
     private var selectedAudio = 0
     private var selectedSub = -1
     private var subSize = "M"
@@ -196,6 +198,7 @@ private class Screen(private val serverUrl: String) {
             override fun onPlayTime(ms: Long) = qoe.playTime(ms)
             override fun onPlayerEvent(type: String, data: String?) = qoe.playerEvent(type, data)
             override fun onViewerAction() = qoe.viewerAction()
+            override fun onPrepared(openToPreparedMs: Long) = qoe.prepared(openToPreparedMs)
             override fun onStreamCompleted() { onFinished() }
             override fun onError(detail: String) {
                 console.error("Ravilo screen: backend error: $detail")
@@ -455,6 +458,7 @@ private class Screen(private val serverUrl: String) {
         playing = false
         lastProgressAt = nowMs()
         qoe.beginItem(env.jellyfinId, t.startVariantBps, t.directPlay, backend.capabilities().linkKind)
+        qoe.startRequested(startRequestMs)   // DEB-5394 (FR-37)
         val opened = runCatching { backend.open(t.hlsUrl ?: "", env.startPositionMs.takeIf { it > 0 } ?: t.startPositionMs, t.startVariantBps) }
         if (opened.isFailure) {
             // DEB-4874 — a start that never opened has played nothing: the server's session for it is closed at 0, never at the
@@ -523,11 +527,12 @@ private class Screen(private val serverUrl: String) {
         while (true) {
             // FR-23 — the remembered audio rides the start's own fields, so the stream is cut in that language with no second request.
             val audio = rememberedAudio()
+            val requestedAt = nowMs()
             val r = runCatching {
                 api.startPlayback(itemId, caps, startPositionMs = if (startOver) 0L else null, audioLanguage = audio?.audioLanguage, audioVariant = audio?.audioVariant, startOver = startOver)
             }
             if (generation != loadGeneration) return r.getOrNull()
-            val e = r.exceptionOrNull() ?: run { busySinceMs = null; return r.getOrNull() }
+            val e = r.exceptionOrNull() ?: run { busySinceMs = null; startRequestMs = nowMs() - requestedAt; return r.getOrNull() }
             val http = e as? TvApiError.Http
             if (http != null && http.status == 503) {
                 val wait = http.retryAfterSeconds ?: 5

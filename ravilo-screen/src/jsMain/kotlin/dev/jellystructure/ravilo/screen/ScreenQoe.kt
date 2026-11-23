@@ -93,6 +93,10 @@ internal class ScreenQoe(
     // ── this load (one stream of the item) ──
     private var loadAtMs = 0L
     private var firstFrameAtMs = -1L
+    // DEB-5394 (FR-37) — the three spans of this load's start; null = that step did not happen (a restream has no startPlayback of its own).
+    private var startRequestMs: Long? = null
+    private var openToPreparedMs: Long? = null
+    private var preparedAtMs = -1L
     private var lastPlayTimeMs = -1L
     private var viewerActionAtMs = -1L
     private var paused = false
@@ -133,6 +137,16 @@ internal class ScreenQoe(
         resetLoad()
     }
 
+    /** DEB-5394 (FR-37) — `startPlayback`'s round trip for the load [beginItem] just began. */
+    fun startRequested(ms: Long) { if (itemId != null) startRequestMs = ms }
+
+    /** DEB-5394 (FR-37) — AVPlay's `prepareAsync` succeeded [ms] after `open()`. */
+    fun prepared(ms: Long) {
+        if (itemId == null) return
+        openToPreparedMs = ms
+        preparedAtMs = clock()
+    }
+
     /** The same item opened again (a restream): its first wait is its start, and its counts stay. */
     fun restreamed() {
         if (itemId == null) return
@@ -144,6 +158,7 @@ internal class ScreenQoe(
     private fun resetLoad() {
         loadAtMs = clock()
         firstFrameAtMs = -1L
+        startRequestMs = null; openToPreparedMs = null; preparedAtMs = -1L
         lastPlayTimeMs = -1L
         viewerActionAtMs = -1L
         paused = false
@@ -325,8 +340,16 @@ internal class ScreenQoe(
         if (firstFrameAtMs < 0 && moved) {
             firstFrameAtMs = clock()
             if (firstFrameMs == null) firstFrameMs = firstFrameAtMs - loadAtMs
+            logStartSpans()
         }
         if (recoveryAtMs >= 0 && moved) finishRecovery(clock())   // FR-32 — the stream a freeze asked for is moving
+    }
+
+    /** DEB-5394 (FR-37) — one console line per start, the item's id and three spans in ms (`-` = the step did not happen). Nothing else. */
+    private fun logStartSpans() {
+        val sinceOpen = openToPreparedMs
+        val toFirstFrame = if (preparedAtMs >= 0) (firstFrameAtMs - preparedAtMs).toString() else "-"
+        console.log("Ravilo screen: start-spans item=$itemId request=${startRequestMs ?: "-"} open_to_prepared=${sinceOpen ?: "-"} prepared_to_first_frame=$toFirstFrame buffer_s=${avPlayBufferSeconds() ?: "-"}")
     }
 
     /** `onevent`: a bitrate or resolution change is a rung switch; its direction is the playing bitrate against the last known. */

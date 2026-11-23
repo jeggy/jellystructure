@@ -3,9 +3,11 @@ package dev.jellystructure.ravilo.screen
 import dev.jellystructure.shared.tv.ClientCapabilities
 import dev.jellystructure.shared.tv.StreamTicket
 import kotlinx.browser.document
+import kotlinx.browser.localStorage
 import kotlinx.browser.window
 import org.w3c.dom.HTMLVideoElement
 import org.w3c.dom.events.Event
+import kotlin.js.Date
 
 /**
  * R264 (dev review item 6 / open question 1) — the one seam this whole phase turns on: does the target
@@ -60,6 +62,8 @@ interface MediaBackendListener {
     fun onPlayTime(ms: Long) {}
     /** DEB-5024 (FR-25) — a rung switch the player reported (`onevent`'s type and data). */
     fun onPlayerEvent(type: String, data: String?) {}
+    /** DEB-5394 (FR-37) — `prepareAsync` succeeded [openToPreparedMs] after `open()` began (AVPlay only; `<video>` has no such step). */
+    fun onPrepared(openToPreparedMs: Long) {}
     /** DEB-5024 (FR-25) — the viewer's own seek, pause or resume: the wait right after it is theirs, not a stall. */
     fun onViewerAction() {}
 }
@@ -73,6 +77,12 @@ interface MediaBackendListener {
 fun resolveStreamUrl(serverUrl: String, url: String): String =
     if (url.startsWith("/") && !url.startsWith("//")) serverUrl.trimEnd('/') + url else url
 
+/** DEB-5394 (FR-37) — the debug key the measurement sets from the console: whole seconds, absent or not a positive number = no call. */
+internal const val AVPLAY_BUFFER_KEY = "ravilo.screen.debug.avplayBufferSeconds"
+
+internal fun avPlayBufferSeconds(): Int? =
+    runCatching { localStorage.getItem(AVPLAY_BUFFER_KEY)?.trim()?.toIntOrNull() }.getOrNull()?.takeIf { it > 0 }
+
 /** The class on `<html>` that makes the page transparent over AVPlay's video plane (screen.css). */
 const val AVPLAY_ON = "avplay-on"
 
@@ -85,6 +95,7 @@ class AvPlayBackend(private val serverUrl: String) : MediaBackend {
         // DEB-4874 — `avplay.open` is only legal from NONE: over a stream that is still open (the episode the next-up card leaves,
         // whoever started it) it throws PLAYER_ERROR_INVALID_STATE. Leave AVPlay closed first, so every start is safe, not one path.
         runCatching { WebApisGlobal.avplay.close() }
+        val openedAtMs = Date.now()   // DEB-5394 (FR-37) — the second span starts here
         // DEB-4845 — AVPlay draws on a plane behind the page; an opaque page background (html, body) hides it,
         // which is a black picture with sound. The class lets the page through for as long as a stream is open.
         document.documentElement?.classList?.add(AVPLAY_ON)
@@ -103,8 +114,18 @@ class AvPlayBackend(private val serverUrl: String) : MediaBackend {
         ))
         // DEB-5024 (FR-26) — the first picture comes from the server's start rung, not from AVPlay's own guess.
         if (startVariantBps != null && startVariantBps > 0) runCatching { WebApisGlobal.avplay.setStreamingProperty("ADAPTIVE_INFO", "STARTBITRATE=$startVariantBps") }
+        // DEB-5394 (FR-37) — a debug start buffer, in seconds: an absent key makes no call, which is AVPlay's own choice. A set that refuses it plays on.
+        avPlayBufferSeconds()?.let { n ->
+            runCatching {
+                WebApisGlobal.avplay.setBufferingParam("PLAYER_BUFFER_FOR_PLAY", "PLAYER_BUFFER_SIZE_IN_SECOND", n)
+                WebApisGlobal.avplay.setBufferingParam("PLAYER_BUFFER_FOR_RESUME", "PLAYER_BUFFER_SIZE_IN_SECOND", n)
+            }
+        }
         WebApisGlobal.avplay.prepareAsync(
-            { if (startPositionMs > 0) WebApisGlobal.avplay.seekTo(startPositionMs.toInt()); WebApisGlobal.avplay.play(); listener?.onPlaying() },
+            {
+                listener?.onPrepared((Date.now() - openedAtMs).toLong())
+                if (startPositionMs > 0) WebApisGlobal.avplay.seekTo(startPositionMs.toInt()); WebApisGlobal.avplay.play(); listener?.onPlaying()
+            },
             { e -> listener?.onError(e.toString()) },
         )
     }

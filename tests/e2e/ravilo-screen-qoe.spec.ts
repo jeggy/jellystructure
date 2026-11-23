@@ -230,6 +230,68 @@ test.describe("DEB-5024 FR-26 — the TV negotiates as an adaptive player", () =
   });
 });
 
+test.describe("DEB-5394 FR-37 — the start's three spans, and AVPlay's start buffer", () => {
+  /** The console lines the app writes for a start, read from the page the way the emulator's inspector would. */
+  const spanLines = (page: Page) => {
+    const lines: string[] = [];
+    page.on("console", (m) => { if (m.text().includes("start-spans")) lines.push(m.text()); });
+    return lines;
+  };
+
+  test("a start logs one line with the item id and the three spans, and nothing else about the item", async ({ page }) => {
+    const lines = spanLines(page);
+    await boot(page);
+    await openAndPlay(page);
+    await expect.poll(() => lines.length).toBe(1);
+    expect(lines[0]).toMatch(/^Ravilo screen: start-spans item=m1 request=\d+ open_to_prepared=\d+ prepared_to_first_frame=\d+ buffer_s=-$/);
+  });
+
+  test("with no debug key there is no setBufferingParam call", async ({ page }) => {
+    await boot(page);
+    await openAndPlay(page);
+    const calls = await page.evaluate(() => (window as any).__avplayCalls as Array<[string, ...unknown[]]>);
+    expect(calls.filter((c) => c[0] === "setBufferingParam")).toEqual([]);
+  });
+
+  test("the debug key sets PLAY and RESUME after open and before prepareAsync", async ({ page }) => {
+    const lines = spanLines(page);
+    await page.addInitScript(() => localStorage.setItem("ravilo.screen.debug.avplayBufferSeconds", "2"));
+    await boot(page);
+    await openAndPlay(page);
+    const calls = await page.evaluate(() => (window as any).__avplayCalls as Array<[string, ...unknown[]]>);
+    const open = calls.findIndex((c) => c[0] === "open");
+    const prepare = calls.findIndex((c) => c[0] === "prepareAsync");
+    expect(calls.filter((c) => c[0] === "setBufferingParam")).toEqual([
+      ["setBufferingParam", "PLAYER_BUFFER_FOR_PLAY", "PLAYER_BUFFER_SIZE_IN_SECOND", 2],
+      ["setBufferingParam", "PLAYER_BUFFER_FOR_RESUME", "PLAYER_BUFFER_SIZE_IN_SECOND", 2],
+    ]);
+    const first = calls.findIndex((c) => c[0] === "setBufferingParam");
+    expect(first).toBeGreaterThan(open);
+    expect(first).toBeLessThan(prepare);
+    await expect.poll(() => lines.length).toBe(1);
+    expect(lines[0]).toContain("buffer_s=2");
+  });
+
+  test("a set that refuses the call plays on", async ({ page }) => {
+    await page.addInitScript(() => localStorage.setItem("ravilo.screen.debug.avplayBufferSeconds", "4"));
+    await boot(page);
+    await page.evaluate(() => { (window as any).__avplay.refuseBufferingParam = true; });
+    await openAndPlay(page);
+    const calls = await page.evaluate(() => (window as any).__avplayCalls as Array<[string, ...unknown[]]>);
+    expect(calls.some((c) => c[0] === "setBufferingParam")).toBe(true);
+    expect(calls.some((c) => c[0] === "prepareAsync")).toBe(true);
+    expect(calls.some((c) => c[0] === "play")).toBe(true);
+  });
+
+  test("a key that is not a positive number makes no call", async ({ page }) => {
+    await page.addInitScript(() => localStorage.setItem("ravilo.screen.debug.avplayBufferSeconds", "0"));
+    await boot(page);
+    await openAndPlay(page);
+    const calls = await page.evaluate(() => (window as any).__avplayCalls as Array<[string, ...unknown[]]>);
+    expect(calls.filter((c) => c[0] === "setBufferingParam")).toEqual([]);
+  });
+});
+
 test.describe("DEB-5024 FR-27 — a stall with no lower rung asks for one", () => {
   test("two stalls on a single-rung stream make exactly one restream; a same-stream answer makes no second", async ({ page }) => {
     test.setTimeout(60_000);

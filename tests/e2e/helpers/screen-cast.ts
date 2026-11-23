@@ -37,6 +37,7 @@ export function fakeAvPlayInitScript() {
     event(type: string, data?: unknown) { listener.onevent?.(type, data); },
     setProperty(name: string, value: string | undefined) { properties[name] = value; },
     failPrepareWith: undefined as string | undefined,
+    refuseBufferingParam: false,
   };
   (window as any).webapis = {
     avplay: {
@@ -109,6 +110,12 @@ export function fakeAvPlayInitScript() {
         (window as any).__avplayCalls.push(["setStreamingProperty", type, value]);
       },
       getStreamingProperty(type: string) { return properties[type]; },
+      // DEB-5394 (FR-37) — legal from IDLE only, as on the device; a refusal is `__avplay.refuseBufferingParam`.
+      setBufferingParam(option: string, unit: string, amount: number) {
+        (window as any).__avplayCalls.push(["setBufferingParam", option, unit, amount]);
+        if ((window as any).__avplay.refuseBufferingParam) throw new Error("PLAYER_ERROR_INVALID_PARAMETER");
+        if (state !== "IDLE") throw new Error("PLAYER_ERROR_INVALID_STATE");
+      },
     },
   };
 }
