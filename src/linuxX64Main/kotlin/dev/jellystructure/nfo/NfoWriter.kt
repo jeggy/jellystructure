@@ -161,6 +161,11 @@ object NfoWriter {
         if (!episode.overview.isNullOrBlank()) {
             appendLine("  <plot>${episode.overview.esc()}</plot>")
         }
+        // DEB-5440 (FR-1): the release date. Jellyfin reads <aired> for an episode; <premiered> carries the same value.
+        isoDate(episode.airDate)?.let {
+            appendLine("  <aired>$it</aired>")
+            appendLine("  <premiered>$it</premiered>")
+        }
         if (episode.tmdbEpisodeId != null) {
             appendLine("""  <uniqueid type="tmdb">${episode.tmdbEpisodeId}</uniqueid>""")
         }
@@ -209,6 +214,11 @@ object NfoWriter {
             appendLine("  <originaltitle>${item.originalTitle.esc()}</originaltitle>")
         }
         if (item.year != null) appendLine("  <year>${item.year}</year>")
+        // DEB-5440 (FR-2): the release date, from the same TMDB `release_date` the year comes from.
+        isoDate(item.releaseDate)?.let {
+            appendLine("  <premiered>$it</premiered>")
+            appendLine("  <releasedate>$it</releasedate>")
+        }
         if (!item.overview.isNullOrBlank()) {
             appendLine("  <plot>${item.overview.esc()}</plot>")
         }
@@ -266,6 +276,8 @@ object NfoWriter {
             appendLine("  <originaltitle>${item.originalTitle.esc()}</originaltitle>")
         }
         if (item.year != null) appendLine("  <year>${item.year}</year>")
+        // DEB-5440 (FR-2): the first-air date (`MediaItem.releaseDate` holds TMDB's `first_air_date` for a show).
+        isoDate(item.releaseDate)?.let { appendLine("  <premiered>$it</premiered>") }
         if (!item.overview.isNullOrBlank()) {
             appendLine("  <plot>${item.overview.esc()}</plot>")
         }
@@ -379,6 +391,11 @@ object NfoWriter {
         }
         appendLine("</musicvideo>")
     }
+
+    /** DEB-5440: [raw] as `yyyy-MM-dd`, or null when it is absent or not a date — the tag is then omitted, never written empty. */
+    private fun isoDate(raw: String?): String? = raw?.trim()?.takeIf { ISO_DATE.matches(it) }
+
+    private val ISO_DATE = Regex("""\d{4}-\d{2}-\d{2}""")
 
     private fun String.esc() =
         replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")

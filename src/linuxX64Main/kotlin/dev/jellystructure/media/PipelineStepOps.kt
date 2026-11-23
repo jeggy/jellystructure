@@ -147,7 +147,9 @@ object PipelineStepOps {
                 }
             }
         }
-        if (includeEpisodes && current.kind == dev.jellystructure.model.MediaKind.TV_SHOW) {
+        // DEB-5440 (FR-3): a series whose own NFO was just rewritten (its hash moved, e.g. the one-time `<premiered>` addition) also
+        // refreshes its episode NFOs, which carry no hash of their own. A series whose NFO is unchanged writes none.
+        if ((includeEpisodes || result == NfoResult.WRITTEN) && current.kind == dev.jellystructure.model.MediaKind.TV_SHOW) {
             // Bug fix: writeEpisodeNfos groups by shared file first — a multi-episode file's contained
             // episodes get ONE combined NFO instead of each overwriting the last (see its doc comment).
             NfoWriter.writeEpisodeNfos(current.episodes, current.cast)
