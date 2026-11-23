@@ -27,6 +27,7 @@ ALLOWED="
   components/ServerMessageHost.kt               1
   components/SoftwareUpdate.kt                  5   # R386 — all on the accent's own fill: the buttons' labels, the switch's knob, the ready mark
   components/Tile.kt                            7
+  samsungtv/SamsungGuideScreen.kt               1   # DEB-4843 — the switch art's knob, white on the accent fill it sits on
   downloads/DownloadsScreen.kt                  3   # DEB-4071 — over poster art / a coloured fill: the thumb initials, the episode number, the watched tick
   music/BookPlayerScreens.kt                    2
   music/DesktopMusicBar.kt                      1
