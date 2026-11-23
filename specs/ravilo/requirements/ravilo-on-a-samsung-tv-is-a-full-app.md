@@ -1211,3 +1211,33 @@ phone's push. That is the path DEB-4865 left on `POST /api/remote/play`, and `/a
 *"DEB-4719's refusal of a Tizen 5.0 widget is the same as before for that path"*: on 5.0, a phone's push now plays its
 next episode by the same round trip as on 10.0. No client change. DEB-4865's TV-made path is unchanged and still never
 asks the route. A password sign-in on 5.0 is still refused (DEB-4719's code-only message stands).
+
+## Amendment 2026-11-23 (DEB-5024) — a picture that crawls is counted, not only one that stops
+
+QA rerun DEB-5220 (Tizen 5.0 emulator, `.wgt` from `c494d5099`, prod `v1.71-10-g5f47123c`) passed FR-32's freeze. A frozen copy
+stream restreamed once onto our ladder and played on, and the row read `frozen_count 1`. Under a 0.3 Mb/s cap, below the lowest
+rung, AVPlay stepped down once and then played at about half speed, in holds of up to 0.8 s each. That is under FR-32's 1 s, so
+the report said `rebuffer_count 1` for three minutes of a crawling picture. DEB-5067 read the same shape as 0. Nothing can play
+faster than the path once the lowest rung is reached, and FR-27 already asks for a lower one. What is wrong here is that the
+report calls it smooth. 14 days after the release, the field read rests on these rows.
+
+**FR-34 · Play that falls behind real time is a stall.**
+
+- **The window.** While AVPlay is `PLAYING`, the app keeps a sliding 10 s window of wall time against position. It leaves out
+  the 2 s after a pause, a seek or a restream, and any time already inside an FR-25 or FR-32 stall.
+- **When it counts.** If the position advanced less than **70 %** of the wall time in that window, the shortfall (wall − advance)
+  is one stall. It is a `QoeStall` with `cause = buffer_empty`, `phase` as FR-25 says, and the window's start as its position. It
+  counts in `rebuffer_count` and `rebuffer_ms`, and it is posted as FR-25 posts any stall. The window then starts over, so one
+  stretch of crawling is one stall per 10 s, not one per sample.
+- **It feeds FR-27, not FR-32.** A crawl is a thin path, not a frozen player. It counts toward FR-27's trigger, a second stall
+  within 2 minutes, which asks once for a lower rung. It never restreams on its own account.
+- **No wire change.**
+- **Proof (CI).** In `ravilo-screen-qoe.spec.ts`, the fake AVPlay advances `getCurrentTime()` by 400 ms in every 1 s of wall
+  time, in 0.6 s holds, for 20 s. The tests assert:
+  - two `buffer_empty` stalls are posted, each about 6 s;
+  - `frozen_count` stays 0;
+  - a stream advancing at 0.9× posts none;
+  - a pause inside the window posts none.
+- **Proof (QA).** Rerun DEB-5220's 0.3 Mb/s leg. It passes when `rebuffer_count` rises about once per 10 s of crawl, and when
+  one FR-27 restream is asked for. Our ladder at that point has nothing lower, so the server answers with the same stream and the
+  app does not ask again.
