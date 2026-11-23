@@ -1241,3 +1241,90 @@ report calls it smooth. 14 days after the release, the field read rests on these
 - **Proof (QA).** Rerun DEB-5220's 0.3 Mb/s leg. It passes when `rebuffer_count` rises about once per 10 s of crawl, and when
   one FR-27 restream is asked for. Our ladder at that point has nothing lower, so the server answers with the same stream and the
   app does not ask again.
+
+## Amendment 2026-11-23, second (DEB-5394) — the TV starts the encode before Play, as Android TV does
+
+Owner on DEB-5394, 2026-11-23: *"lets add the same pre buffering as we have in android, where opening a details page starts
+buffering before you actually click play and the same for next up episode when watching an episode. If more ideas then please
+add. We want to make it feel faster on tizen, currently it feels to slow to start playing things."*
+
+**What Android does, and what of it reaches this app.** Android has two moments.
+
+- **The title's page.** `DetailPrewarm` (309, FR-309-3/-6) waits 2 s on a page, runs the speed test, then posts
+  `/api/tv/playback/prewarm` for what Play would play. It re-posts every 30 s and cancels when the page is left without Play.
+  The server starts our encoder's job, and Play adopts it (`Encoder.adoptPrewarm`: same plan, a start within one segment).
+  This app runs only the speed test at that moment (FR-24).
+- **The next episode.** R381's `prepareNext` asks `/api/tv/playback/prepare`, and Android prefetches the next file's first 16 MB.
+  That works only for a **direct play**. A transcoded next episode gets nothing (R381, owner: *no transcode preload until
+  309/313*). This app negotiates `hls_only` and never direct-plays, so R381's prefetch has nothing to fetch here.
+
+So the part that carries over is 309's early encode, at both moments. It warms **our encoder only**. A play that Jellyfin copies
+on a proven path (DEB-4541 FR-1, `videoCopyRoute`) answers the prewarm `none`, and it starts as it does today. On prod over the 72 h to
+2026-11-23, the household's set (still on a 1.70 `.wgt`) lost a median 5.8 s of wall time per 5-minute episode (4.1–10.2 s,
+24 plays). It played Jellyfin copies throughout. The next episode's start reached the server 0.4–0.9 s after the last
+one's stop. The set has posted no `first_frame_ms` yet, because FR-25 is not on it. These two FRs therefore make a re-encode, or a copy
+sent to our ladder, start warm. FR-37 is about the time AVPlay itself takes, which every route pays.
+
+**FR-35 · A title's page starts the encode Play would use.** This is Android TV's `DetailPrewarm`, on `ScreenDetail`.
+
+- **When.** The page has drawn and Play's target is known: the film, or the series' primary episode (`seriesPrimary`, the
+  one the page's Play starts). After **2 s** on the page, the app posts `prewarmPlayback` with that item, `backend.capabilities()`
+  (the start's own) and FR-23's remembered audio (`rememberedAudio()` for that series). FR-24's probe stays where it is.
+- **While the page shows.** An answer `warm` is re-posted every **30 s**, so the job's idle timer does not end it. An answer `direct` or
+  `none`, or a failure (including a 404 from an older server), stops the loop. Nothing is retried, shown or waited on.
+- **Play.** Play on the page starts as today. The server adopts the warm job when the plan and the start match. *Start over*
+  and an episode tile that is not the primary one are different plays: the server stops the warm job and starts its own, as
+  on Android.
+- **Leaving.** Back or Home, a phone's push over the page, or hiding the app (FR-22) posts `cancelPrewarm` for that item
+  **at once**. Leaving by Play does not cancel. The app knows it left for Play, so Android's 1.5 s grace is not needed. A
+  page whose target changes, such as a season switch that moves the primary episode or a write-through from FR-31, cancels the
+  old item and starts the 2 s again for the new one.
+- **No wire change, no backend change.** `prewarmPlayback`/`cancelPrewarm` are in `TvApiClient` today, and the server's 309
+  budget already drops warm jobs before a play's.
+
+**FR-36 · The next episode's encode starts before the card.** Android has no equivalent for a transcode. Here it is the
+whole of the next-up half of the ask.
+
+- **When.** Playing an item with a `nextId`, the app posts `prewarmPlayback(nextId)` once the position reaches the credits
+  marker. With no trusted marker, it posts **60 s before the end**. That is R381's own trigger, which is earlier than this
+  app's card: the card waits for the last second (R384). It is the same with "play next automatically" on or off, because the card still offers *Next*.
+  The capabilities are the start's own, and the audio is FR-23's for the series.
+- **While it waits.** A `warm` answer is re-posted every 30 s until the next episode starts or the prewarm is dropped.
+- **Dropped.** A seek back before the trigger, Back, a stop, Home, hiding the app, the card's cancel, and a start of
+  anything other than `nextId` each post `cancelPrewarm(nextId)`. A viewer who stops at the credits leaves nothing running.
+- **Adopted.** The card (countdown, OK or *Next*) and the controls' Next start `nextId` as today. The server adopts the job
+  when the next episode starts where it was warmed (from 0, or at its own resume point). The playing item's stream is not touched:
+  the server keys a warm job by device **and** item.
+- **No wire change, no backend change.**
+
+**FR-37 · AVPlay starts on a short buffer, if the set shows it helps.** AVPlay chooses its own start buffer unless
+`setBufferingParam` sets one. That buffer is part of every start on every route, the Jellyfin copies included.
+
+- The build measures three spans per start, logged on the console with the item's id only: `startPlayback`'s round trip,
+  `open()` to `prepareAsync`'s success, and that to FR-25's first frame. It measures them on the `tizen-emulator` row, on a Jellyfin copy and on
+  our ladder, with and without `setBufferingParam("PLAYER_BUFFER_FOR_PLAY", "PLAYER_BUFFER_SIZE_IN_SECOND", n)` and the
+  matching `PLAYER_BUFFER_FOR_RESUME`, for n = 2 and 4. The call goes after `open()` and before `prepareAsync`. A set that refuses it
+  plays on as today.
+- The setting is kept only if the median start falls and the start's own stalls (FR-25 `phase = start`) do not rise. The
+  smallest such n is used. Otherwise the call is left out and the numbers go on this row. No wire change.
+
+**Proof (CI).** In `ravilo-screen-detail.spec.ts`, with the fake clock:
+
+- a page held 2 s posts one `/api/tv/playback/prewarm` for Play's target with the start's capabilities;
+- a `warm` answer is re-posted at 30 s, and a `none` answer is not;
+- Back posts `/prewarm/cancel` for that item, while Play does not;
+- a season switch that moves the primary episode cancels the old item and warms the new one.
+
+In `ravilo-screen-player.spec.ts`:
+
+- reaching the credits marker posts one prewarm for `nextId`, or 60 s before the end without one;
+- a seek back before it posts the cancel;
+- the card's countdown starting `nextId` posts no cancel;
+- Back on the card posts it.
+
+**Proof (QA, a `.wgt` carrying this on the `tizen-emulator` row).** Use an H.264 episode our ladder makes, such as a
+burned-in subtitle or a capped leg, and an uncapped control. The backend log shows `encoder: prewarm device=screen-…` within 3 s of the page opening,
+and `play adopted the prewarm` on Play. Leaving with Back shows `prewarm cancelled` at once. At the next episode's credits
+the log shows a prewarm for it, and the advance adopts it. QA compares `first_frame_ms` against the same start with the prewarm
+cancelled, and FR-37's three spans go on the row. *Field read, 14 days after the `.wgt` reaches the household's set:*
+the wall time lost per episode, read as in DEB-5024's baseline, against this amendment's 5.8 s.
