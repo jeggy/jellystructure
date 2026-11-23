@@ -256,7 +256,11 @@ internal data class RecordSample(
 )
 
 /** Per (device, item, play) between two posts: the stream held since when, and the stalls already seen. */
-internal data class HoldState(val variantBps: Long?, val sinceSec: Long, val stallsSeen: Int)
+internal data class HoldState(
+    val variantBps: Long?, val sinceSec: Long, val stallsSeen: Int,
+    /** DEB-5364 — the newest stall seen: a report keeps only the newest 20, so a full list grows no more and its last entry is what tells a new stall. */
+    val lastStall: QoeStall? = null,
+)
 
 /** FR-309-1 / owner Q8 — the stalls among [stalls] that count: ≥ 2 s, or two within a minute of each other. */
 internal fun countingStalls(stalls: List<QoeStall>): List<QoeStall> = dev.jellystructure.shared.tv.StallRule.counting(stalls)
@@ -267,11 +271,21 @@ internal fun countingStalls(stalls: List<QoeStall>): List<QoeStall> = dev.jellys
  * stall restarts the hold; a stream held ≥ 2 min with no new stall raises `proven` (or replaces an expired one).
  * Returns the new record (unchanged if nothing moved) and the new hold state.
  */
-internal fun foldRecord(record: StreamRecord, hold: HoldState?, sample: RecordSample, now: Long): Pair<StreamRecord, HoldState?> {
-    if (!sample.perItem) return record to hold
+internal fun foldRecord(record: StreamRecord, holdIn: HoldState?, sample: RecordSample, now: Long): Pair<StreamRecord, HoldState?> {
+    if (!sample.perItem) return record to holdIn
     var rec = record
+    // DEB-5364 (DEB-4541 FR-1) — the hold is per device and item, and a report's counts are per play. Fewer stalls than the hold has seen is
+    // another play of the item: its hold (stalls seen, and the clock a proof counts from) is not this play's. Kept, a play's first two stalls
+    // read as already seen (a QA leg after a 47-stall play never wrote a stall) and the old play's 2 minutes proved a rung and lifted the stall.
+    val hold = holdIn?.takeIf { sample.stalls.size >= it.stallsSeen }
     val seen = hold?.stallsSeen ?: 0
-    val newStalls = if (sample.stalls.size > seen) sample.stalls.drop(seen) else emptyList()
+    val last = sample.stalls.lastOrNull()
+    val newStalls = when {
+        sample.stalls.size > seen -> sample.stalls.drop(seen)
+        // A full list (20) grows no more: its newest entry is the sign of a stall the hold has not seen.
+        hold != null && last != null && sample.stalls.size == seen && last != hold.lastStall -> listOf(last)
+        else -> emptyList()
+    }
     if (newStalls.isNotEmpty()) {
         val counting = countingStalls(sample.stalls)
         val newCounting = counting.filter { it in newStalls }
@@ -282,11 +296,11 @@ internal fun foldRecord(record: StreamRecord, hold: HoldState?, sample: RecordSa
             if (on != null && on > 0) rec = rec.copy(stalledBps = on, stalledAt = now)
         }
         // Any new stall: the hold starts again from here.
-        return rec to HoldState(sample.variantBps, now, sample.stalls.size)
+        return rec to HoldState(sample.variantBps, now, sample.stalls.size, last)
     }
     val v = sample.variantBps
-    if (v == null || v <= 0) return rec to HoldState(null, now, sample.stalls.size)
-    if (hold == null || hold.variantBps != v) return rec to HoldState(v, now, sample.stalls.size)
+    if (v == null || v <= 0) return rec to HoldState(null, now, sample.stalls.size, last)
+    if (hold == null || hold.variantBps != v) return rec to HoldState(v, now, sample.stalls.size, last)
     // DEB-2508 — a hold that began before the record's stall is a proof older than that stall (a hand-over writes the stall on the new
     // play's first report, while the hold is still the previous play's on the same file): it neither proves nor clears. Hold from here.
     val stalledAt = rec.stalledAt

@@ -93,7 +93,13 @@ private class Screen(private val serverUrl: String) {
         platform = "tizen",
     )
     /** DEB-5024 (FR-25) — what each item went through, posted through the shared client's QoE call (it never throws). */
-    private val qoe = ScreenQoe(::nowMs, backend::currentBandwidthBps, ::onLowestRung, ::askForLowerRung, backend::availableBitratesBps, ::askAfterFreeze, ::showFrozen) { report -> GlobalScope.launch { api.postPlaybackQoe(report) } }
+    /**
+     * DEB-5364 (DEB-4541 FR-1) — the newest QoE post in flight. A restream a stall asks for waits for it ([afterReport]): FR-27 and FR-32
+     * say the report goes first, and the server reads the device's record (the stall's hold) when it negotiates the restream.
+     */
+    private var lastQoePost: Job? = null
+
+    private val qoe = ScreenQoe(::nowMs, backend::currentBandwidthBps, ::onLowestRung, ::askForLowerRung, backend::availableBitratesBps, ::askAfterFreeze, ::showFrozen) { report -> lastQoePost = GlobalScope.launch { api.postPlaybackQoe(report) } }
     private val shell = ScreenShell(api, serverUrl, ::reopenServerSetup, onProfileMenu = { openProfileMenu() }, onPlay = ::playFromTv)
 
     private val signIn = ScreenSignIn(api, deviceId, deviceName(), ::onPaired, onBack = { showPicker() }, onChangeServer = ::reopenServerSetup)
@@ -1236,10 +1242,13 @@ private class Screen(private val serverUrl: String) {
         return playing <= rungs.min()
     }
 
+    /** DEB-5364 — waits (3 s at most; a failed post ends it too) for the report that was posted just before a stall's restream. */
+    private suspend fun afterReport() { lastQoePost?.let { withTimeoutOrNull(3_000) { it.join() } } }
+
     /** DEB-5024 (FR-27) — the same stream, at its position, asked for again so the server answers with its ladder; once per item. */
     private fun askForLowerRung() {
         val t = ticket
-        GlobalScope.launch { restream(t?.burnedSubtitleIndex ?: -1, t?.audioStreamIndex, thenShow = selectedSub) }
+        GlobalScope.launch { afterReport(); restream(t?.burnedSubtitleIndex ?: -1, t?.audioStreamIndex, thenShow = selectedSub) }
     }
 
     /**
@@ -1248,7 +1257,7 @@ private class Screen(private val serverUrl: String) {
      */
     private fun askAfterFreeze(belowBandwidthBps: Long?) {
         val t = ticket
-        GlobalScope.launch { restream(t?.burnedSubtitleIndex ?: -1, t?.audioStreamIndex, thenShow = selectedSub, belowBandwidthBps = belowBandwidthBps) }
+        GlobalScope.launch { afterReport(); restream(t?.burnedSubtitleIndex ?: -1, t?.audioStreamIndex, thenShow = selectedSub, belowBandwidthBps = belowBandwidthBps) }
     }
 
     /** DEB-5024 (FR-32) — a freeze is on screen: the buffering view (R218) covers it until the position moves or a new stream plays. */

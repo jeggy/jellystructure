@@ -208,6 +208,45 @@ class EmbeddedSubtitleOrderTest {
         assertEquals(70_000_000, canTake(StreamRecord(provenBps = 12_000_000, provenAt = 100, stalledBps = 30_000_000, stalledAt = 1_000), 2_100, 100_000_000, 2_000))
     }
 
+    // ── DEB-5364 (DEB-4541 FR-1) — a stall of a later play of the same item is a stall ──
+
+    private fun bufferEmpty(afterMs: Long, durationMs: Long, variant: Long?) =
+        QoeStall(afterMs, afterMs, 0, durationMs, "mid", variantBps = variant, cause = "buffer_empty")
+
+    @Test fun `the first stalls of a later play of the item write a stall after a play with a full list and a stale proof does not lift it`() {
+        // The play before: 20 stalls (a report's newest 20), the last at t = 1 000, on the 984k rung; held there since.
+        val before = (1..20).map { bufferEmpty(it * 2_000L, 2_100, 250_000) }
+        val oldHold = HoldState(984_000, 1_000, before.size, before.last())
+        val rec = StreamRecord(stalledBps = 252_000, stalledAt = 1_000)
+        // This play posts its first stalls: two, one with no rung of its own. More than 2 min after the old hold began.
+        val now = 1_000 + PROOF_HOLD_SEC + 60
+        val mine = listOf(bufferEmpty(42_874, 1_553, 234_977), bufferEmpty(44_932, 4_356, null))
+        val (after, hold) = foldRecord(rec, oldHold, RecordSample(984_000, mine, true), now)
+        assertEquals(984_000L, after.stalledBps, "the 4.4 s stall (no rung of its own) is the play's rung's stall")
+        assertEquals(now, after.stalledAt)
+        assertNull(after.provenBps, "the old play's clock proved nothing")
+        assertEquals(2, hold!!.stallsSeen)
+        // And the next report with no new stall is not a proof of the old play either: the hold starts at the stall.
+        val (later, _) = foldRecord(after, hold, RecordSample(984_000, mine, true), now + 10)
+        assertEquals(984_000L, later.stalledBps)
+        assertNull(later.provenBps)
+    }
+
+    @Test fun `a full list of 20 still shows a new stall by its newest entry`() {
+        val twenty = (1..20).map { bufferEmpty(it * 3_000L, 2_500, 800_000) }
+        val (r1, h1) = foldRecord(StreamRecord(), null, RecordSample(984_000, twenty, true), 1_000)
+        assertEquals(800_000L, r1.stalledBps)
+        // The next report drops the oldest and adds one: still 20 entries, a new newest one.
+        val rolled = twenty.drop(1) + bufferEmpty(21 * 3_000L, 2_500, 700_000)
+        val (r2, _) = foldRecord(r1, h1, RecordSample(984_000, rolled, true), 1_010)
+        assertEquals(700_000L, r2.stalledBps)
+        assertEquals(1_010L, r2.stalledAt)
+        // The same report again changes nothing.
+        val (r3, h3) = foldRecord(r2, HoldState(984_000, 1_010, 20, rolled.last()), RecordSample(984_000, rolled, true), 1_020)
+        assertEquals(1_010L, r3.stalledAt)
+        assertEquals(20, h3!!.stallsSeen)
+    }
+
     @Test fun `a stall right after the server restarted a stream or answered 503 writes nothing`() {
         val hold = HoldState(24_000_000, 500, 0)
         val sample = { fault: Long? -> RecordSample(24_000_000, listOf(QoeStall(60_000, 60_000, 0, 3_000, "mid", variantBps = 24_000_000)), true, fault) }

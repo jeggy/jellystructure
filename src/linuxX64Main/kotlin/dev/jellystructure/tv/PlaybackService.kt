@@ -44,6 +44,8 @@ import platform.posix.CLOCK_REALTIME
 import platform.posix.clock_gettime
 import platform.posix.timespec
 
+/** DEB-5364 — a restream's negotiation waits this long for the folds of the device's earlier QoE posts. */
+private const val FOLD_WAIT_MS = 2_000L
 private const val TICKET_TTL_MS = 4 * 60 * 60 * 1000L // 4 hours
 // R381 (FR-R381-7, dev review item 8) — a prepared next item is valid for at most five minutes.
 private const val PREPARED_TTL_MS = 5 * 60 * 1000L
@@ -701,7 +703,7 @@ class PlaybackService(
     }
 
     /** DEB-3104 (FR-7) — the stalls this server itself caused (see [ServerFaults]); a backend start counts for every device. */
-    private val serverFaults = ServerFaults(nowMs() / 1000)
+    internal var serverFaults = ServerFaults(nowMs() / 1000)
 
     /** DEB-3104 (FR-7) — the stall's cap is what holds [device]'s start under what its measurements allow (an encoder summary's `held_by`). */
     private fun stallCappedOf(device: DeviceData?): Boolean {
@@ -715,6 +717,36 @@ class PlaybackService(
         device ?: return false
         val q = qoeMeasurementOf(device.deviceId)
         return stallCapOf(recordOf(device), nowMs() / 1000, q?.first, q?.second) != null
+    }
+
+    /**
+     * DEB-5364 (DEB-4541 FR-1) — the folds of a device's QoE posts still running. The route answers a post before its fold has written, and
+     * a restream follows a stall's report within milliseconds (FR-27, FR-32): without this the restream's negotiation could read the record
+     * before the stall's `stalled_bps` landed, see no hold, and hand a proven take its copy again. [stallHoldAfterReports] waits for them.
+     */
+    private val pendingFolds = kotlin.concurrent.AtomicReference<Map<String, List<kotlinx.coroutines.Job>>>(emptyMap())
+
+    private fun trackFold(deviceId: String, job: kotlinx.coroutines.Job) {
+        while (true) {
+            val old = pendingFolds.value
+            val next = old + (deviceId to (old[deviceId].orEmpty().filter { it.isActive } + job))
+            if (pendingFolds.compareAndSet(old, next)) break
+        }
+        job.invokeOnCompletion {
+            while (true) {
+                val old = pendingFolds.value
+                val left = old[deviceId].orEmpty().filter { it !== job }
+                if (pendingFolds.compareAndSet(old, if (left.isEmpty()) old - deviceId else old + (deviceId to left))) break
+            }
+        }
+    }
+
+    /** DEB-5364 — [stallHoldOf] once every fold of [device]'s earlier QoE posts has written (at most [FOLD_WAIT_MS] of waiting). */
+    internal suspend fun stallHoldAfterReports(device: DeviceData?): Boolean {
+        device ?: return false
+        val jobs = pendingFolds.value[device.deviceId].orEmpty()
+        if (jobs.isNotEmpty()) withTimeoutOrNull(FOLD_WAIT_MS) { jobs.forEach { it.join() } }
+        return stallHoldOf(device)
     }
 
     /** DEB-2205 — the record is read, changed and written whole: one writer at a time, or a hand-over's facts could be overwritten by a fold that read the row first. */
@@ -854,7 +886,7 @@ class PlaybackService(
         // Jellyfin transcode job (Jellyfin's URL is never handed out, so it never starts one). Otherwise, Jellyfin's.
         val reencodes = reencodesVideo(master, sourceVideoCodec, sourceVideoRange, sourceWidth, sourceHeight)
         // DEB-4541 (FR-1) — a copied picture goes to our ladder too, for a player that adapts, unless its path is proven.
-        val stallHold = stallHoldOf(device)
+        val stallHold = stallHoldAfterReports(device)
         var copyToLadder = false
         if (!reencodes && capabilities.hlsAdaptive && !notOurEncoder && configStore.current.encoder.enabled) {
             val copyAudioBps = queryParam(master, "AudioBitrate")?.toLongOrNull() ?: ticket.audioStreamIndex?.let { audioBps[it] } ?: 192_000L
@@ -2125,7 +2157,7 @@ class PlaybackService(
         }
         // 309 (FR-309-1) — the device's record learns from every post (a stall, a hold); never awaited by the route.
         val scope = backgroundScope
-        if (scope != null) scope.launch { runCatching { foldIntoRecord(device, report) }.onFailure { Logger.warn("record: fold failed: ${it.message}", "tv") } }
+        if (scope != null) trackFold(device.deviceId, scope.launch { runCatching { foldIntoRecord(device, report) }.onFailure { Logger.warn("record: fold failed: ${it.message}", "tv") } })
         else kotlinx.coroutines.runBlocking { runCatching { foldIntoRecord(device, report) } }
         // 308 (FR-308-5) — the variant it is on now, for the admin's *Playing now*.
         val key = PlaybackKey(device.deviceId, report.itemId)

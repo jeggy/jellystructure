@@ -12,6 +12,8 @@ import dev.jellystructure.model.Track
 import dev.jellystructure.model.TrackKind
 import dev.jellystructure.shared.tv.ClientCapabilities
 import dev.jellystructure.shared.tv.PlaybackQoeReport
+import dev.jellystructure.shared.tv.QoeStall
+import dev.jellystructure.shared.tv.QoeStallCause
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.call
@@ -147,6 +149,30 @@ class DecodeHealthNegotiationTest {
         // Facts that are not a hand-over's change nothing.
         service.recordHandoverFacts(tv, PlaybackQoeReport(itemId = "film", perItem = true, directPlay = true))
         assertNull(records.get(tv.deviceId)!!.decodeFailed["hevc"])
+    }
+
+    /**
+     * DEB-5364 (DEB-4541 FR-1, FR-27) — the second hazard (the first is the fold's, see StreamRecordTest): the route answers a QoE post before its fold has written the stall, and the Samsung's
+     * restream follows its report at once, so the restream's negotiation read a record with no hold and a proven take got its copy back.
+     * No wait between the post and the read here, as on the wire: the read must still see the hold.
+     */
+    @Test fun `a restream right after a report of two buffer_empty stalls sees the stall hold and goes to our ladder`() = rig("stallrace") { service, _, records ->
+        val tv = device("tv-stallrace")
+        service.serverFaults = ServerFaults(0)   // a stall within 2 min of this service's start is the server's (DEB-3104 FR-7): not what is tested here
+        val now = kotlin.time.Clock.System.now().epochSeconds
+        records.put(tv.deviceId, StreamRecord(provenBps = 50_000_000, provenAt = now, measuredBps = 60_000_000, measuredAt = now), now)
+        val copy = 2_600_000L
+        assertFalse(videoCopyRoute(service.takeOf(tv), copy, stallHold = service.stallHoldAfterReports(tv)).toLadder, "the proven path keeps its copy before any stall")
+        val stalls = listOf(
+            QoeStall(afterFirstFrameMs = 43_800, positionMs = 43_800, bufferedMs = 0, durationMs = 2_500, phase = "mid", variantBps = 600_000, cause = QoeStallCause.BUFFER_EMPTY),
+            // The 4.4 s stall's own variant is null, as AVPlay answered nothing: the report's rung stands for it.
+            QoeStall(afterFirstFrameMs = 80_000, positionMs = 80_000, bufferedMs = 0, durationMs = 4_400, phase = "mid", variantBps = null, cause = QoeStallCause.BUFFER_EMPTY),
+        )
+        service.recordQoe(tv, PlaybackQoeReport(itemId = "transcode-film", perItem = true, variantBandwidthBps = 600_000, rebufferCount = 2, stalls = stalls))
+        val route = videoCopyRoute(service.takeOf(tv), copy, stallHold = service.stallHoldAfterReports(tv))
+        assertTrue(route.toLadder, "the stall hold sends even a proven take to our ladder")
+        assertEquals("video copy → our ladder (stall hold)", route.text)
+        assertEquals(600_000L, records.get(tv.deviceId)!!.stalledBps)
     }
 
     @Test fun `a hand-over ticket starts where the player will switch and an ordinary restream where it is`() = rig("handover") { service, _, _ ->

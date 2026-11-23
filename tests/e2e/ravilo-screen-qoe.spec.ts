@@ -19,11 +19,11 @@ const ticket = {
   hls_url: `${API}/hls/m1/master.m3u8`, start_position_ms: 0, expires_at: 9_999_999_999, start_variant_bps: START_VARIANT_BPS,
 };
 
-type Seen = { qoe: any[]; probes: string[]; starts: any[]; restreams: any[] };
+type Seen = { qoe: any[]; probes: string[]; starts: any[]; restreams: any[]; order: string[] };
 
 /** `restreamAnswer`: what /api/tv/playback/restream answers with (default: the same single stream, as the server's DEB-4541 FR-1 would not). */
-async function boot(page: Page, restreamAnswer: object = ticket, startTicket: object = ticket, restreamDelayMs = 0): Promise<Seen> {
-  const seen: Seen = { qoe: [], probes: [], starts: [], restreams: [] };
+async function boot(page: Page, restreamAnswer: object = ticket, startTicket: object = ticket, restreamDelayMs = 0, qoeDelayMs = 0): Promise<Seen> {
+  const seen: Seen = { qoe: [], probes: [], starts: [], restreams: [], order: [] };
   await page.addInitScript(fakeAvPlayInitScript);
   await page.addInitScript(() => {
     localStorage.setItem("ravilo.screen.serverUrl", "http://app:9505");
@@ -38,10 +38,15 @@ async function boot(page: Page, restreamAnswer: object = ticket, startTicket: ob
     if (path === "/api/tv/movie/m1") return json(route, 200, movieDetail);
     if (path === "/api/tv/playstate") return json(route, 200, {});
     if (path === "/api/tv/probe") { seen.probes.push(req.method()); return route.fulfill({ status: 204 }); }   // measured within 24 h
-    if (path === "/api/tv/playback/qoe") { seen.qoe.push(JSON.parse(req.postData()!)); return route.fulfill({ status: 204 }); }
+    if (path === "/api/tv/playback/qoe") {
+      const report = JSON.parse(req.postData()!);
+      if (qoeDelayMs) await new Promise((r) => setTimeout(r, qoeDelayMs));
+      seen.qoe.push(report); seen.order.push("qoe");
+      return route.fulfill({ status: 204 });
+    }
     if (path === "/api/tv/playback/start") { seen.starts.push(JSON.parse(req.postData() ?? "{}")); return json(route, 200, startTicket); }
     if (path === "/api/tv/playback/restream") {
-      seen.restreams.push(JSON.parse(req.postData() ?? "{}"));
+      seen.restreams.push(JSON.parse(req.postData() ?? "{}")); seen.order.push("restream");
       if (restreamDelayMs) await new Promise((r) => setTimeout(r, restreamDelayMs));
       return json(route, 200, restreamAnswer);
     }
@@ -255,6 +260,22 @@ test.describe("DEB-5024 FR-27 — a stall with no lower rung asks for one", () =
     await ap.wait(1_500);
     await page.waitForTimeout(1_000);
     expect(seen.restreams).toHaveLength(1);
+  });
+
+  test("DEB-5364: a stall's restream is asked only after its report has been answered, so the server has the hold when it negotiates", async ({ page }) => {
+    test.setTimeout(60_000);
+    const seen = await boot(page, ticket, ticket, 0, 1_500);   // every report takes 1.5 s to be answered
+    const ap = avplay(page);
+    await openAndPlay(page);
+    await ap.property("AVAILABLE_BITRATE", "4000000");
+    await ap.property("CURRENT_BANDWIDTH", "4000000");
+
+    await ap.wait(4_500);   // one stall of 4 s or more asks at once
+    await expect.poll(() => seen.restreams.length, { timeout: 15_000 }).toBe(1);
+    // The report that carries the stall was answered before the restream reached the server.
+    expect(seen.order.indexOf("qoe")).toBeGreaterThanOrEqual(0);
+    expect(seen.order.indexOf("qoe")).toBeLessThan(seen.order.indexOf("restream"));
+    expect(seen.qoe[0].stalls[0]).toMatchObject({ cause: "buffer_empty" });
   });
 
   test("one stall of 4 s or more asks at once; with a lower rung in the master it does not ask", async ({ page }) => {
