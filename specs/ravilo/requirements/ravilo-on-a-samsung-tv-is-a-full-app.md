@@ -1503,3 +1503,103 @@ title page's vertical scrolling.
 3. **FR-38.** The hero carousel.
 
 QA on the emulator follows piece 3.
+
+## Amendment 2026-11-24 (DEB-5503) — the TV plays a file directly when it fits, as Android TV does
+
+> Owner on DEB-5394, 2026-11-24: *investigate direct play on the Samsung next*. On DEB-5503's card, the same day: **"Yes,
+> with an off switch on the server"**. Investigation: DEB-5503's `investigation` document.
+
+**What changes.** Since R264, this app has negotiated as the Chromecast receiver does: `hls_only`, so every start is an HLS
+stream. That is the receiver's limit, not a Samsung one: AVPlay plays MKV, MP4, WebM and TS files over HTTP on every set from
+2019 (Tizen 5.0) to 2026. The server already negotiates direct play from a `containers` list, as it does for Android TV, so
+**no wire change and no negotiation change is needed**. Every `.wgt` built before this keeps sending `hls_only = true` and
+keeps playing exactly as today.
+
+**What it is measured against.** The household's set, on 1.72 from 2026-11-23 13:14Z, which has FR-26 but not FR-35 to FR-37:
+- 27 of its 29 starts were on our ladder (`held_by: floor_rungs`);
+- its median `first_frame_ms` was **4 970 ms** (3 861–8 391);
+- its path has been measured at 8.4 Mb/s, and never proven.
+
+Under 309's rule, a file direct-plays only when it fits what the device takes. A file above that is still transcoded, as on
+Android TV.
+
+**FR-43 · The TV direct-plays a file that fits.** `AvPlayBackend.capabilities()` declares:
+- `hls_only = false`;
+- `containers = ["mkv", "mp4", "webm", "ts"]`;
+- video `h264` and `hevc`, as today. VP9 is not declared. AV1 is not declared: it is absent on 2019 sets and unprobed later.
+- audio `aac`, `ac3`, `eac3`, `mp3` and `opus`. DTS (unsupported on every Samsung since 2018), TrueHD and FLAC are left out,
+  so a file whose playing track uses one gets the transcode it gets today;
+- `hls_adaptive`, `hls_hevc` and the HDR probes as today. A start that the server answers with a transcode is today's
+  start, unchanged.
+- `HtmlVideoBackend`, the non-Tizen fallback, keeps `hls_only`.
+
+**FR-44 · A direct play starts where the viewer left off, with their audio.**
+- **The URL is the ticket's.** No `ADAPTIVE_INFO` is set on a direct play.
+- **Position.** Once `prepareAsync` succeeds, the app seeks to `start_position_ms` and then plays. A start at 0 seeks to
+  1 000 ms instead, because AVPlay's `seekTo(0)` fails, or does not seek at all. FR-25's first frame is counted after that seek.
+- **Audio.** If the audio to play is not the file's default (FR-23's remembered audio, or the picker's choice), the app calls
+  `setSelectTrack('AUDIO', n)` at the first `PLAYING`.
+  - `n` is the track's position among the ticket's container audio tracks, which the ticket lists in the container's
+    order. It is checked against `getTotalTrackInfo()`'s `AUDIO` entries.
+  - When the counts differ, or the track's codec is not one FR-43 declares, the app keeps today's restream with that
+    audio.
+  - A pick from the picker while playing does the same: in the file when it can, a restream otherwise.
+- **Subtitles.** Text tracks stay VTT sidecars, drawn by the app as today. The sidecar is fetched off the start path, after
+  the first frame, because Jellyfin extracts an embedded track on its first request (R381). A picture subtitle (PGS,
+  VobSub) stays a burn-in restream, so choosing one leaves direct play, as on Android TV.
+
+**FR-45 · A direct play that stalls goes to our ladder.**
+- **FR-25.** It reports `direct_play = true` and the ticket's `encoder`. It sends no `variant_bps`.
+- **FR-27.** A direct play has no `AVAILABLE_BITRATE`, so it counts as the lowest rung, and the trigger stays the same. Its
+  restream carries `below_bandwidth_bps` = the ticket's `stream_bps` (DEB-2205 FR-4). The server then negotiates under the
+  file, `recoveryNegotiationCap`, and the answer is our ladder rather than the same file. The "same single stream again → ask
+  no more" guard stays.
+- **FR-32.** A freeze on a direct play restreams with `below_bandwidth_bps` = `stream_bps` too. A direct play has no variant
+  to take it from.
+- **FR-34.** Unchanged: a crawl counts toward FR-27.
+- **Android's ahead-of-stall hand-over (DEB-2212) is not carried.** AVPlay exposes no buffer level, so there is nothing to act
+  on before the stall. FR-27 is the floor.
+- **FR-35 and FR-36 are unchanged.** A prewarm answered `direct` already stops its loop.
+
+**FR-46 · The server can turn it off.** `[ravilo] samsung_direct_play`, `true` by default.
+- When it is `false`, a start, prepare, prewarm or restream from a device whose platform is `tizen` is negotiated as if its
+  capabilities said `hls_only = true`. That is today's negotiation exactly.
+- It is read at each request, so a `PUT /api/config` applies to the next start without a restart.
+- No admin UI in this amendment. It is the rollback lever, not a viewer setting. No wire change.
+
+**Proof (CI).**
+- `ravilo-screen-player.spec.ts` / `ravilo-screen-qoe.spec.ts`, with the fake AVPlay:
+  - `/api/tv/playback/start` posts `hls_only: false` with FR-43's lists;
+  - a `direct_play` ticket opens its URL with no `ADAPTIVE_INFO`, seeks to `start_position_ms` (or 1 000 for 0) before
+    `play()`;
+  - a remembered non-default audio calls `setSelectTrack('AUDIO', n)` at `PLAYING`, while a DTS pick restreams;
+  - an FR-27 trigger and an FR-32 freeze on a direct play each restream with `below_bandwidth_bps` equal to `stream_bps`;
+  - the sidecar VTT is requested after the first frame.
+- `linuxX64Test`: with `samsung_direct_play = false`, a `tizen` start with `hls_only = false` negotiates with no
+  direct-play profile, and an Android TV start is untouched. With it `true`, the `tizen` start gets FR-43's containers.
+
+**Proof (QA, `tizen-emulator` row, Tizen 5.0 and one newer image).** Each leg below is run on the emulator:
+- a direct H.264 MKV, an HEVC MKV and a faststart MP4, each started at 0 and at a resume point;
+- seeks of ±30 s, ±10 min and to the last minute;
+- an in-file audio switch, a sidecar subtitle, and a PGS pick (burn-in);
+- a `cap.sh` leg under the file's bitrate, with an uncapped control: it must hand over to the ladder once and play on.
+
+`first_frame_ms` and the `start-spans` lines are read against the household baseline (4 970 ms) and the emulator's
+2.0–2.3 s. Seeking within a plain file over HTTP is not documented by Samsung, so a failed seek leg is the stop for the
+`.wgt`.
+
+**Field read**, 14 days after the `.wgt` reaches the household's set: `first_frame_ms` split by `encoder`, against 4 970 ms.
+
+**Not in this amendment:**
+- Pre-buffering the next episode with a second AVPlay instance (`avplaystore`). That is R381 on AVPlay. AVPlay has no cache
+  for Android's byte prefetch, the second instance is unproven on a progressive file and on a 2019 set's decoders, and A's
+  own numbers decide it.
+- AV1 and VP9.
+- AVPlay's own subtitle tracks, which need the TV's Caption setting.
+
+**Build order**, for one engineer:
+1. **FR-43 to FR-45** in `ravilo-screen`.
+2. **FR-46** in the backend. It is small, and junior-ready. It runs beside piece 1 and must land before a `.wgt` carrying
+   piece 1 is released.
+
+QA on the emulator follows both.
