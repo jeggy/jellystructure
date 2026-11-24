@@ -1603,3 +1603,16 @@ Android TV.
    piece 1 is released.
 
 QA on the emulator follows both.
+
+## Amendment 2026-11-24 (DEB-5024) — the end of a stream is not a freeze
+
+The household's set has run 1.72 since 2026-11-23 13:19Z. In its first 36 per-item reports, one stall was
+`frozen_with_buffer` at `position_ms 429280` of a 429 419 ms episode, followed by a `recovery` with reason `frozen`. The
+position had stopped because the stream had ended, and FR-32 restreamed it.
+
+**FR-32, amended.** A position that is within **3 s of the item's duration** (the ticket's or AVPlay's `getDuration()`) is
+the end of the stream, not a stall. FR-32's watcher and FR-34's window both stop counting there. They never restream there,
+and they leave the end to `onstreamcompleted` and the next-up path (FR-9). The rest of FR-32 is unchanged.
+- **Proof (CI).** Add to `ravilo-screen-qoe.spec.ts`. The fake AVPlay holds `getCurrentTime()` at duration − 1 s for 6 s and
+  then fires `onstreamcompleted`. The test asserts no stall, no `/api/tv/playback/restream`, and the normal end. A hold at
+  duration − 10 s still restreams at 5 s.
