@@ -1562,6 +1562,17 @@ no TMDB id, on purpose. Everything in this file holds for it except what this FR
    episode's `<base>-thumb.jpg`, the still Ravilo already serves (R133). There are no three stills to choose from and
    no *Pick a different moment*, because those belong to the queue. The page's own image is the programme's, never an
    episode's.
+   - **Amended 2026-11-24 (DEB-5432, owner's answer on card `92d6b313`): under `datetime`, the lead story.** A
+     programme that airs several times a day is a news bulletin. Its episode is the whole bulletin, and its title is
+     the bulletin's lead story. A frame from the middle shows whichever story is on air then, so the picture matches
+     a different headline from the title. Under `datetime` numbering, for a file longer than 150 s, the engine tries
+     90 s, 120 s and 150 s first. That is past the opening headlines and still outside FR-9.4's first minute. Each try
+     is kept only if it passes FR-9.4's black-frame check. If none passes, the engine falls back to FR-9.4's order.
+     Under `date`, `source` and `mapped`, and for a shorter file, nothing changes.
+     - Only episodes placed or replaced after the change get the new frame. Episodes already placed keep their
+       thumbnails until FR-16's retention ages them out, and no run re-cuts them.
+     - Rejected: finding the lead story by scene detection or by reading the caption. Both are guesses that cost more
+       than a fixed early moment, and the moment is right for the common shape of a bulletin.
 8. **The proof (FR-4.2) without TMDB.** All of these must hold:
    - the listing yields at least two items, each with a link and with either a title or a published date;
    - every item maps to exactly one identity, and no two items to the same one. For a `ytdlp` listing whose entries

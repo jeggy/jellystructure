@@ -46,6 +46,70 @@ date in Ravilo instead of the code would be a Ravilo spec of its own"*). That fi
    are labelled by the air date alone. These were the card's recommendations, and the owner took A as drawn. The
    reading was confirmed on the thread before this spec was written.
 
+## Amended 2026-11-24 (DEB-5432): the headline is the title, the date and time go under it
+
+> Owner, 2026-11-23 (DEB-5432), on a screenshot of a news programme's series page where four of five cards read
+> *Mon 23 Nov*: *"We need better titles for these episodes"*. Card answers, 2026-11-24 11:42Z:
+> 1. the headline is the title, with *Mon 23 Nov · 21.00* under it (A, of A/B/C);
+> 2. on **every** newest-first series, not only one that airs several times a day;
+> 3. on a programme that airs several times a day, the thumbnail is taken from the lead story.
+
+Decision 3 of 2026-10-29 (*labelled by the air date alone*) was taken for a programme that airs once a day. A news
+programme fetched under Auto-fetch's `datetime` numbering (auto-fetch FR-4.5, DEB-3567) places several bulletins on
+one date, so the date alone names none of them. Two bulletins on one day can also open with the same headline, so
+the **time** is what tells them apart. The investigation is the `investigation` document on DEB-5432.
+
+The stand-in is *Kvøldbók*, the auto-fetch spec's programme that airs more than once a day: bulletins at 18.30 and
+21.00 on Mon 23 Nov 2026 (`S2647E668`, `S2647E683`), with page titles such as *Storm closes the harbour*.
+
+What changes, each FR carrying a pointer back here:
+
+- **FR-1.** *Fed by an Auto-fetch whose recipe numbering is `date`* covers `datetime` too. The server already reads
+  it that way (`AutofetchStore.kt`, `dateFetchers`); this sentence makes the spec say so.
+- **FR-5a — The air time on the wire** (new, server).
+  - `Episode` gains `air_time: String? = null`, `HH:mm` on a 24-hour clock.
+  - `MediaCard` gains `episode_air_time: String? = null`, set where `episode_air_date` is set (FR-6) and only when
+    the episode has an air time.
+  - **Its source** is the time Auto-fetch wrote into the file name under `datetime` (FR-4.5's
+    `<Series> - S2647E683 - 2026-11-23 21.00 - <name>.mkv`). It is read only when the date in the name equals the
+    episode's `air_date`. Every other episode has none. The clock is the page's own, with no time zone, as FR-4.5
+    stores it: it is the bulletin's name (*the 21.00 bulletin*), not a local clock.
+  - It is set on every series, whether or not it is newest first. Only a newest-first series uses it today.
+- **FR-9 — Labels** (replaces the first two bullets of FR-9 for a newest-first series).
+  - **The card's main label is the episode's title.** The second line is its **when**: the air date in FR-9's
+    format, followed by ` · ` and the air time when the episode has one (*Mon 23 Nov · 21.00*).
+  - An episode whose title is blank keeps FR-9 as it was: the when is the main label, with no second line.
+  - **The time's format** follows the viewer's language: `21.00` in da and fo, `21:00` in en. One new key,
+    `time.hour_minute`, holds the pattern (`{h}.{m}` / `{h}:{m}`). An episode with no air time shows the date alone.
+  - **The resume kicker, the primary button (FR-10) and the Continue tile (FR-15)** show the when, never the
+    title: *Play newest · Mon 23 Nov · 21.00*, *Resume · Mon 23 Nov · 21.00*, *New · Mon 23 Nov · 21.00*. They
+    already sit next to the title, or have no room for it.
+  - **The player's title line** follows the card: the title, then the when.
+  - An episode with no `air_date` keeps its code where the when would be, as before.
+- **FR-16a — Strings.** `time.hour_minute` in en (`{h}:{m}`), da and fo (`{h}.{m}`). Nothing else is new.
+- **FR-18.** The wire gains `Episode.air_time` and `MediaCard.episode_air_time`. Both are optional, and nothing is
+  removed or retyped. An installed app ignores them and keeps the date label, the date as the main label included,
+  until it updates.
+- **The thumbnail** is auto-fetch FR-15.7, amended in that file on the same date: under `datetime`, the first frame
+  tried is in the lead story.
+
+**Acceptance (DEB-5432)**, on *Kvøldbók* with a new app:
+1. The page lists *Storm closes the harbour* first, with *Mon 23 Nov · 21.00* under it, and the 18.30 bulletin
+   second with *Mon 23 Nov · 18.30*. On a phone and a TV set to Danish, it reads *21.00*; in English, *21:00*.
+2. The button reads *Play newest · Mon 23 Nov · 21.00* and plays `S2647E683`.
+3. *Dagbók* (once a day, `date` numbering) shows each episode's page title with *Thu 29 Oct* under it, with no time.
+   An episode of it with a blank title shows *Thu 29 Oct* alone, as before.
+4. A series that is not newest first is unchanged, and so is any app installed before this change.
+
+**Tests:**
+- server: FR-5a's time from the file name, its absence when the name's date differs or there is no time, and
+  `WireCompatTest`;
+- client: FR-9's label with and without a title, with and without a time, in en and da, and the when on the button,
+  the kicker and the tile.
+
+**Build order:** the server (FR-5a, FR-18's fields) and auto-fetch FR-15.7, then the client (FR-9, FR-10, FR-15,
+FR-16a and the player's title line). The task ids are on DEB-5432.
+
 ## What is true today (verified 2026-10-29, `main` `872dbcb1`)
 
 - **Order.** The server sends seasons ascending with Specials last (`tv/DetailService.kt:139`) and episodes ascending
@@ -170,7 +234,7 @@ date in Ravilo instead of the code would be a Ravilo spec of its own"*). That fi
   episodes newest first.
 - It opens on the season holding the newest episode, with the rail on the newest (its first slot).
 
-**FR-9 — Labels by air date.**
+**FR-9 — Labels by air date.** *Amended 2026-11-24 (DEB-5432): the title is the main label and the date and time go under it; see the amendment above.*
 - On a newest-first series, an episode with an `air_date` is labelled by that date wherever a viewer would see its
   code:
   - the rail or list card's main label, with the episode's title as the second line;
@@ -183,7 +247,7 @@ date in Ravilo instead of the code would be a Ravilo spec of its own"*). That fi
 - An episode with no `air_date` keeps its code.
 - A series that is not newest first is unchanged.
 
-**FR-10 — The primary button** (replaces R375 FR-R375-5 for a newest-first series).
+**FR-10 — The primary button** (replaces R375 FR-R375-5 for a newest-first series). *Amended 2026-11-24 (DEB-5432): the label carries the air time when there is one.*
 - It always plays **the newest episode** (FR-4), from the client's own list, and never an older one.
 - It reads:
   - **Resume · Thu 29 Oct** (`action.resume`) when the newest is in progress;
@@ -232,7 +296,7 @@ Each card keeps its own ✓ when watched.
 **FR-14 — Casting.** Casting a newest-first episode from the app sends that episode alone as the queue, so the
 receiver has nothing to advance to. The receiver itself is unchanged.
 
-**FR-15 — The Continue tile.**
+**FR-15 — The Continue tile.** *Amended 2026-11-24 (DEB-5432): the badge carries `episode_air_time` when the card has it.*
 - When a card carries `episode_air_date`, its corner badge reads:
   - **New · Thu 29 Oct** (`tile.new_on`) when the card has no progress;
   - **Thu 29 Oct** with the progress bar when it has progress.
