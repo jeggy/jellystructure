@@ -82,3 +82,25 @@ When the TV's answer is *not known*, the phone uses the release tag it installed
 - `open()` landing on the overview for Approved and Ready, and on the old screens for Requested and Rejected.
 
 QA on DEB-5409's ticket: the real Samsung and the Tizen 10 emulator answer FR-11's route (record the raw answer for an installed and a missing app), and the owner's set shows *Approved* and the right two versions. **No wire change.** The phone reads fields the viewer route already returns. An installed v1.72 phone keeps its old screens and simply sees Ready sooner.
+
+## Amendment — 2026-11-24 (DEB-5504): step 1 asks which remote the viewer has
+
+The owner, on DEB-5504, attached a photo of a basic Samsung remote with physical 0–9 keys and no *123* key: *"We need better samsung tv guidelines as there are two types of remotes and this remote doesnt have the 123 button."* Step 1 is written for the Smart Remote. A remote with number keys gets only FR-3's hint line, under the body, in the quietest text on the screen. Samsung's newer Smart Remotes also don't label the key *123*: it's the **Number/Color** button, marked with coloured dots. The phone can't tell which remote a TV has, because the basic remote ships with every model year. So the viewer says which one they have. The owner picked this on card `e711cdd2` (2026-11-24): *Ask which remote*.
+
+**FR-13 · Step 1 asks which remote.** Step 1 (*Open the hidden menu*) is still *Step 1 of 4*. It no longer opens on an instruction. It opens on the question *Which remote do you have?*, answered by tapping one of two drawn remotes:
+- ***It has number keys*** — a long remote with a 0–9 keypad.
+- ***No number keys*** — a short Smart Remote.
+
+Each choice is one large tap target with its own drawing. The tap is the step's whole action, so this state has no primary button. After the tap, step 1 shows only that remote's instruction and an illustration of that remote. FR-3's one primary button follows, as before. Both instructions keep step 1's two rules: on a 2024-or-later TV (`appSettingsMenu`) the path goes through **App Settings**, and the instruction says plainly not to type in the search box.
+- **Number keys:** go to **Apps** (2024+: *then scroll down to **App Settings***), then press **1 2 3 4 5** on the remote's number keys.
+- **No number keys:** go to **Apps** (2024+: likewise), then press the **123** button, which on newer remotes is the button with coloured dots. Number keys appear on the TV. Pick **1 2 3 4 5** there.
+
+A quiet link under the instruction, *I have the other remote*, switches to the other instruction without going back. FR-3's hint line for remotes with number keys (`samsungtv.step1.hint`) is gone, because that case is now a full instruction. The choice is held in the guide's state for as long as the guide is open. A return to step 1, from *Back* or from an FR-4 check that names step 1, shows the chosen remote's instruction directly. Closing the guide forgets it. Nothing is persisted, and nothing reaches the server.
+
+**What it changes elsewhere.**
+- **FR-3** — the illustration *remote with 1 2 3 4 5 lit* becomes two drawings, one per remote, still our own vectors in the Ravilo theme: no photograph, no Samsung logo, no model number.
+- **FR-8** — new `samsungtv.*` keys in `en`, `da` and `fo`: the question, the two choice labels, the four instruction bodies (two remotes × pre-2024 / 2024+) and the switch link. `samsungtv.step1.body`, `samsungtv.step1.body_new` and `samsungtv.step1.hint` are retired in the same build. They are compiled into the app by `generateRaviloStrings`, so no installed client reads them from the server.
+- **FR-9 / FR-12 design gate.** Rannvá draws step 1 first: the question and both instructions, before any Kotlin. The owner picks from her pictures, and the picked direction is written back here as a dated amendment. FR-9's screenshot gate then applies to the build. `GuideScreenshotsTest` gains the question, both instructions on a pre-2024 TV, and the *No number keys* instruction on a 2024+ TV.
+- **Verification.** `:ravilo-ui:desktopTest` (`SamsungGuideTest`) covers: step 1 opening on the question; each choice leading to its own instruction; the switch link; and *Back* and an FR-4 *go back to step 1* landing on the chosen instruction, not on the question.
+
+**No wire change.** Phone only. A TV, Tizen, the web and the desktops are untouched.
