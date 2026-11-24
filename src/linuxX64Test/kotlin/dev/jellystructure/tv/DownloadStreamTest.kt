@@ -363,3 +363,27 @@ class DownloadStreamTest {
         assertTrue(resumed.url.startsWith("/api/tv/stream/dl-"), resumed.url)
     }
 }
+
+/** DEB-4250 (DEB-3995 FR-4, amended 2026-11-10) — a copy is listed only when clearly smaller than the choice above it. */
+class ClearlySmallerCopiesTest {
+    private val original = 1_000L
+
+    @Test fun lowBitrateSourceListsOnlyTheTallestCopy() {
+        val listed = clearlySmallerCopies(listOf(Triple("high", 1080, 260L), Triple("medium", 720, 260L), Triple("small", 480, 260L)), original)
+        assertEquals(listOf(Triple("high", 1080, 260L)), listed)
+    }
+
+    @Test fun normalSourceListsThreeEachUnderEightyPercentOfTheOneAbove() {
+        val listed = clearlySmallerCopies(listOf(Triple("high", 1080, 700L), Triple("medium", 720, 500L), Triple("small", 480, 300L)), original)
+        assertEquals(listOf(1080, 720, 480), listed.map { it.second })
+    }
+
+    @Test fun aCopyNotUnderEightyPercentOfTheLastListedIsDropped() {
+        val listed = clearlySmallerCopies(listOf(Triple("high", 1080, 700L), Triple("medium", 720, 600L), Triple("small", 480, 500L)), original)
+        assertEquals(listOf(1080, 480), listed.map { it.second })
+    }
+
+    @Test fun aCopyNotSmallerThanTheOriginalIsDropped() {
+        assertEquals(emptyList(), clearlySmallerCopies(listOf(Triple("high", 1080, 900L)), original))
+    }
+}

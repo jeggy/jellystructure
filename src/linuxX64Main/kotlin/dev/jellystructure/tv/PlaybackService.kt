@@ -1582,7 +1582,7 @@ class PlaybackService(
     /**
      * DEB-4062 (DEB-3995 FR-4) — the smaller copies of [jellyfinId] this server offers a phone that declared [caps]: the encoder's 1080p /
      * 720p / 480p rung for its codec family, each only when the encoder would serve the file, the file is that tall and the estimate is
-     * under [CLEARLY_SMALLER] of [originalBytes] (null: Jellyfin gave no size, nothing to compare, nothing offered). Asks nobody and
+     * under [CLEARLY_SMALLER] of the choice above it (the original, then the last copy listed) (null: Jellyfin gave no size, nothing to compare, nothing offered). Asks nobody and
      * places nothing: what is playing now never hides a choice.
      */
     internal suspend fun downloadCopies(
@@ -1602,10 +1602,12 @@ class PlaybackService(
             audioBitrate(audioRenditionFor(0, 0, audioFamilyFor(it.codec, caps.platformAudioDecoders), it.codec, it.channels, caps.maxAudioChannels,
                 audioBitratesOf(itemDetail, mediaSourceId)[it.index], it.language, it.label, true))
         } ?: 0L
-        return DOWNLOAD_COPIES.mapNotNull { (quality, box) ->
+        val estimates = DOWNLOAD_COPIES.mapNotNull { (quality, box) ->
             val (_, rung) = downloadRung(caps, source, box) ?: return@mapNotNull null
-            val bytes = downloadEstimateBytes(rung.videoBps, audioBps, durationMs)
-            if (bytes >= originalBytes * CLEARLY_SMALLER) null else dev.jellystructure.shared.tv.DownloadOption(quality = quality, height = rung.height, bytes = bytes, exact = false)
+            Triple(quality, box, downloadEstimateBytes(rung.videoBps, audioBps, durationMs))
+        }
+        return clearlySmallerCopies(estimates, originalBytes).map { (quality, box, bytes) ->
+            dev.jellystructure.shared.tv.DownloadOption(quality = quality, height = box, bytes = bytes, exact = false)
         }
     }
 

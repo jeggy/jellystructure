@@ -66,6 +66,15 @@ internal val DOWNLOAD_COPIES: List<Pair<String, Int>> = listOf("high" to 1080, "
 /** A copy is listed only when its estimate is under this share of the original (the ladder's "clearly lower" rule, `encoderRungs`). */
 internal const val CLEARLY_SMALLER = 0.8
 
+/**
+ * FR-4 (amended 2026-11-10) — going down from the original, a copy of (quality, box, estimate) is kept only when its estimate is under
+ * [CLEARLY_SMALLER] of the last choice kept, so a file whose rungs all cap at its own bitrate offers the tallest copy alone.
+ */
+internal fun clearlySmallerCopies(estimates: List<Triple<String, Int, Long>>, originalBytes: Long): List<Triple<String, Int, Long>> {
+    var above = originalBytes
+    return estimates.filter { (_, _, bytes) -> (bytes < above * CLEARLY_SMALLER).also { if (it) above = bytes } }
+}
+
 /** The capabilities a download plans under: one rung, one audio, no subtitles in the manifest (the phone saves text subtitles as VTT). */
 internal fun downloadCaps(caps: ClientCapabilities): ClientCapabilities =
     caps.copy(hlsAdaptive = false, hlsAudioRenditions = false, hlsSubtitles = false)
