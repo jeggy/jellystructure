@@ -417,6 +417,27 @@ test.describe("DEB-5024 FR-32 — a position that stops while playing is a stall
     expect(seen.restreams, "a second freeze on the same item does not restream again").toHaveLength(1);
   });
 
+  test("the end of the stream is not a freeze: a position 1 s from the duration, held for 6 s, makes no stall and no restream", async ({ page }) => {
+    test.setTimeout(60_000);
+    const seen = await boot(page);                         // the fake's stream is 60 s long
+    await openAndPlay(page);
+    await page.evaluate(() => { const av = (window as any).__avplay; av.jump(59_000); av.hold(); });
+    await page.waitForTimeout(6_000);
+    await page.evaluate(() => (window as any).__avplay.complete());
+    await page.waitForTimeout(1_000);
+    expect(seen.restreams, "the end is left to onstreamcompleted").toHaveLength(0);
+    expect(seen.qoe.flatMap((r) => r.stalls ?? []), "no stall at the end").toHaveLength(0);
+    expect(seen.qoe.every((r) => (r.frozen_count ?? 0) === 0 && (r.rebuffer_count ?? 0) === 0)).toBe(true);
+  });
+
+  test("a hold 10 s from the duration is a freeze: it still restreams at 5 s", async ({ page }) => {
+    test.setTimeout(60_000);
+    const seen = await boot(page);
+    await openAndPlay(page);
+    await page.evaluate(() => { const av = (window as any).__avplay; av.jump(50_000); av.hold(); });
+    await expect.poll(() => seen.restreams.length, { timeout: 12_000 }).toBe(1);
+  });
+
   test("a pause, a seek and an audio restream make no stall", async ({ page }) => {
     test.setTimeout(120_000);
     const seen = await boot(page, audioTicket, audioTicket);

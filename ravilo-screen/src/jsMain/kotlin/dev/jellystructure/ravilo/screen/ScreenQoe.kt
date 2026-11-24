@@ -26,6 +26,8 @@ private const val RESTREAM_ANSWER_WAIT_MS = 10_000L
 private const val CRAWL_WINDOW_MS = 10_000L
 /** DEB-5024 (FR-34) — a window whose position advanced less than this share (percent) of its wall time is one stall. */
 private const val CRAWL_MIN_ADVANCE_PCT = 70L
+/** DEB-5024 (FR-32) — a position this close to the item's duration is the end of the stream: it is neither watched nor restreamed. */
+private const val END_OF_STREAM_MS = 3_000L
 /** R381 — the report carries the item's newest 20. */
 private const val MAX_STALLS = 20
 
@@ -219,13 +221,20 @@ internal class ScreenQoe(
 
     /**
      * FR-32 — one reading of the position, every 500 ms ([avPlaying]: AVPlay's own state is PLAYING). Not a stall: a pause, a seek
-     * or a restream in the last 2 s, a wait AVPlay has said it is in (`onbufferingstart` open), or a play before its first frame.
+     * or a restream in the last 2 s, a wait AVPlay has said it is in (`onbufferingstart` open), or a play before its first frame,
+     * or a position within [END_OF_STREAM_MS] of [durationMs] (0 = unknown): that is the end, left to `onstreamcompleted`.
      */
-    fun watchPosition(positionMs: Long, avPlaying: Boolean) {
+    fun watchPosition(positionMs: Long, avPlaying: Boolean, durationMs: Long = 0L) {
         if (itemId == null) return
         val now = clock()
         if (!avPlaying || paused || firstFrameAtMs < 0 || waitStartMs >= 0 || now < quietUntilMs) {
             if (frozenStartMs >= 0) endFrozen(now, count = waitStartMs < 0, ladder = false, hideView = true)
+            watchPositionMs = -1L
+            crawlSinceMs = -1L
+            return
+        }
+        if (durationMs > 0 && positionMs >= durationMs - END_OF_STREAM_MS) {
+            if (frozenStartMs >= 0) endFrozen(now, count = true, ladder = false, hideView = true)
             watchPositionMs = -1L
             crawlSinceMs = -1L
             return

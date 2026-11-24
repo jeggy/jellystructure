@@ -42,6 +42,8 @@ export function fakeAvPlayInitScript() {
     setRate(r: number) { rate = r; },
     setDuration(ms: number) { durationMs = ms; },
     jump(ms: number) { posMs = ms; },
+    // DEB-5024 (FR-32) — AVPlay's own end of stream.
+    complete() { listener.onstreamcompleted?.(); },
     zeroAfterSeek(ms: number) { zeroAfterSeekMs = ms; },
     event(type: string, data?: unknown) { listener.onevent?.(type, data); },
     setProperty(name: string, value: string | undefined) { properties[name] = value; },

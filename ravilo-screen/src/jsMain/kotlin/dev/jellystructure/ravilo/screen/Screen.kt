@@ -1369,7 +1369,7 @@ private class Screen(private val serverUrl: String) {
         while (true) {
             delay(500)
             if (!loaded) continue
-            qoe.watchPosition(backend.positionMs(), playing && backend.state() == "PLAYING")
+            qoe.watchPosition(backend.positionMs(), playing && backend.state() == "PLAYING", backend.durationMs())
         }
     }
 
