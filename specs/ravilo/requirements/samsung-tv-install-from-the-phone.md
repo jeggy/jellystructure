@@ -104,3 +104,40 @@ A quiet link under the instruction, *I have the other remote*, switches to the o
 - **Verification.** `:ravilo-ui:desktopTest` (`SamsungGuideTest`) covers: step 1 opening on the question; each choice leading to its own instruction; the switch link; and *Back* and an FR-4 *go back to step 1* landing on the chosen instruction, not on the question.
 
 **No wire change.** Phone only. A TV, Tizen, the web and the desktops are untouched.
+
+## Amendment — 2026-11-25 (DEB-5504): the owner picked *Remote tabs* for FR-13
+
+Rannvá drew FR-13 three ways on DEB-5510 (`3b1b9f470`, `design/incoming/2026-11-24-samsung-tv-which-remote/`). The owner picked **C — Remote tabs** on card `c216750d` (2026-11-24). This amendment writes C into FR-13. Where it differs from FR-13 as written on 2026-11-24, this amendment wins. The reference pictures are that round's `png/samsung-tv-which-remote-c-*.png`. Its `swr-data.js` holds the strings, and `samsung-which-remote.css` (direction C, and the shared choice-card and drawing rules) holds the measurements.
+
+**FR-13a · The question state.** Step 1 keeps its title, *Open the hidden menu*, in every state. Under the step indicator and the title, the question *Which remote do you have?* is a prompt line in the body style (16 sp, secondary text colour). Under it are the two choices, side by side: two cards in a two-column grid with a 12 dp gap, each a drawn remote 140 dp tall over its label (*It has number keys* / *No number keys*). Neither drawing is lit before a choice is made. When the two labels don't fit side by side (the 200 % font setting), the cards stack into one column, each a row with a 124 dp drawing at the left and the label beside it. Compose decides this by measuring the label, not by reading the font setting. The question state has no primary button, and it stays top-aligned like every other guide screen.
+
+**FR-13b · The instruction state.** After a tap, the choice turns into a **two-tab control directly under the step indicator**: both labels, the chosen one raised. The tab bar is the full width, with 4 dp padding, 14 dp corners and a 6 % foreground tint behind it. Each tab is at least 44 dp tall, with 13.5 sp semibold text and 10 dp corners. The chosen tab takes the card surface colour, a 1 dp line and a small shadow. It **never** takes the accent colour, because the accent on this screen means "the key to press". Tapping the other tab switches the instruction in place. The tabs **replace** FR-13's *I have the other remote* link, which is not built, and `samsungtv.step1.other` is not added. Under the tabs come the illustration (the shipped 220 × 150 dp slot, unchanged), the title, the chosen remote's instruction body, and FR-3's *Next*.
+
+**FR-13c · The drawings.** Our own vectors (FR-3): no photograph, no Samsung logo, no model number.
+- **The two remotes share one scale** — the basic remote 300 units long, the Smart Remote 212 — so the long one looks longer at every size. They are never drawn at the same height.
+- The **basic remote** has a 3 × 3 + 0 keypad, a D-pad, and a row of four coloured keys.
+- The **Smart Remote** has a round D-pad, a few keys, and one **Number/Color key** drawn larger than true scale. It carries both `123` and four coloured dots, because the instruction names both.
+- The four key colours are fixed data, never the accent: `#e05260`, `#3fbf7f`, `#e8c045`, `#4aa3e8`.
+- In the instruction state the keys to press are lit, once, with no halo. Keys 1–5 are filled with the accent. The Number/Color key gets an accent ring, so its own marking stays readable.
+- The remote's face takes the card surface colour, so it doesn't vanish into the page.
+
+**FR-13d · Copy.** The new `samsungtv.*` keys are `step1.which`, `step1.keys`, `step1.nokeys`, `step1.keys_body`, `step1.keys_body_new`, `step1.nokeys_body` and `step1.nokeys_body_new`, in `en`, `da` and `fo`. The `en`, `da` and `fo` texts are the round's `swr-data.js` drafts. The `*_sub` lines there belong to direction B and are not added. **The spaces inside *1 2 3 4 5* are U+00A0 (no-break) in every language**, so the five digits never break across a line at large font. The `_new` bodies are the 2024+ (`appSettingsMenu`) path. FR-13's retirement of `step1.body`, `step1.body_new` and `step1.hint` stands.
+
+**Settled with the pick** (Rannvá's open rows, decided by Bárður; the owner can overrule them on the screenshot gate):
+- the title stays *Open the hidden menu* in the question state (C's own shape);
+- the Number/Color key keeps both markings;
+- the question state stays top-aligned and is not centred.
+
+**Verification.** FR-13's tests stand, with the switch link replaced by the tabs. `SamsungGuideTest` covers:
+- the question state;
+- each choice leading to its own instruction;
+- **a tab tap switching the instruction without leaving step 1**;
+- *Back* and FR-4's *go back to step 1* landing on the chosen instruction with its tab raised.
+
+`GuideScreenshotsTest` gains these states, light and dark:
+- the question;
+- *It has number keys* on a pre-2024 TV and on a 2024+ TV;
+- *No number keys* on a pre-2024 TV and on a 2024+ TV;
+- the question in `fo` at the 200 % font setting, with the cards stacked.
+
+FR-9's gate holds: the owner signs those screenshots off on DEB-5504 before the build merges to `main`. **No wire change.**
