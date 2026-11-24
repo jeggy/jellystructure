@@ -1,0 +1,276 @@
+/* samsung-which-remote.css — the round's own rules, on top of the shipped phone stylesheet.
+
+   Round slug `samsung-tv-which-remote`, 2026-11-24. Surface: the Ravilo ANDROID PHONE only,
+   412 x 915 dp portrait — Profile -> Samsung TV -> the guide, step 1. No TV, desktop, web, admin,
+   cast or Tizen frame is drawn: the row that opens this guide is null on every platform but an
+   Android phone (spec FR-1), so no other surface has this screen at all.
+
+   Loaded AFTER design/ravilo/mobile/ravilo-phone.css, so every colour, radius, font and easing in
+   these pictures is the shipped one: --bg, --bg-2, --card, --card-2, --ink, --ink-soft, --ink-dim,
+   --line, --line-2, --accent, --grad, --ease, --fg. Nothing here redefines one of those.
+
+   NOTHING here is production CSS. design/ravilo/ is reference only — no Gradle task consumes it —
+   so these rules are a specification of intent for the Compose port, which is why every hex, px,
+   weight, radius and easing is written out rather than left to the implementer.
+
+   WHAT IS REUSED FROM THE SHIPPED GUIDE, not authored here. Every number below is read out of
+   SamsungGuideScreen.kt, so a promotion is an addition and not a restyle:
+     - the step indicator: 11 sp Sora 700, letter-spacing 1.2 sp, uppercase, --ink-dim, 10 dp below;
+     - the illustration slot: 220 x 150 dp (Illustration's Canvas), 22 dp below;
+     - the title: 26/31 sp Space Grotesk 700, centred, 12 dp below;
+     - the body: 16/23 sp Sora, --ink-soft with **bold** runs in --ink, centred, 28 dp below;
+     - the primary button: full width, min 54 dp tall, radius 27, --grad, white Sora 16/600;
+     - the quiet link: 13 sp Sora --ink-dim;
+     - the card surface: --card at radius 14 (TvChoice);
+     - the page: a 12/10 dp back row over a centred column on 24 dp gutters, 8 dp of air on top.
+
+   TEXT SIZE. Every font-size and line-height is `calc(N * var(--sp))`, where --sp is 1 px at the
+   system default and 2 px at the 200 % font setting — which is how Android's sp actually behaves:
+   text grows, dp padding and dp drawings do not. frames.html's ?fs=200 sets the root size; no px
+   text size appears below.
+
+   CANVAS RULES HELD: dark ink (#12141b body, #262a35 secondary) for every label on the light-gray
+   backdrop; no content-visibility; no backdrop-filter; no large blur; no infinite animation. The
+   shipped phone stylesheet's .btn.ghost IS backdrop-filter; this round does not use it.
+
+   TOUCH TARGETS: the back chevron, both choice targets, the segmented tabs, the primary button and
+   the quiet link are 44 dp or more on their smaller axis. No text is below 11 sp.
+*/
+
+/* ---- the three faces, self-hosted from the repo's own copies. The render has no network, so
+   these blocks make the picture identical with or without one. No file is copied: the url points
+   at the repository's own woff2. --------------------------------------------------------------- */
+@font-face { font-family: 'Space Grotesk'; font-style: normal; font-weight: 100 900; font-display: block;
+  src: url('../../app/fonts/space-grotesk.woff2') format('woff2'); }
+@font-face { font-family: 'Sora'; font-style: normal; font-weight: 100 900; font-display: block;
+  src: url('../../app/fonts/sora.woff2') format('woff2'); }
+@font-face { font-family: 'JetBrains Mono'; font-style: normal; font-weight: 100 900; font-display: block;
+  src: url('../../app/fonts/jetbrains-mono.woff2') format('woff2'); }
+
+/* =================================================================================================
+   FRAME SCAFFOLDING — what the renderer points its element screenshots at. The shipped phone
+   stylesheet sets html,body to height:100% and overflow:hidden for its own phone-in-a-page frame;
+   a document of stacked frames needs the page to grow instead.
+   ================================================================================================= */
+
+html, body { height: auto; overflow: visible; background: #e9eaee; margin: 0; padding: 0; }
+html { font-size: 16px; }                 /* 1 rem = 16 px, so --sp = 1 px: the system default */
+html[data-fs="200"] { font-size: 32px; }  /* Android's largest font setting: --sp = 2 px */
+
+.swr-frames { padding: 0; margin: 0; }
+.swr-frames * { box-sizing: border-box; }
+.swr-frame { width: max-content; }
+
+/* The phone: Pixel 9, 412 x 915 portrait, the shipped size. The bezel is left off — the renderer
+   crops to the screen and the bezel is not the design. */
+.swr-ph { --sp: .0625rem;
+  width: 412px; height: 915px; position: relative; overflow: hidden;
+  background: var(--bg); color: var(--ink); font-family: 'Sora', sans-serif;
+  display: flex; flex-direction: column; }
+
+/* A `tall` frame renders the whole screen rather than the 915 dp a viewer meets first: at the
+   200 % font setting the phone-height frame shows where the fold falls and the tall one proves
+   nothing below it is clipped or overlapped. */
+.swr-ph.tall { height: auto; }
+.swr-ph.tall .swr-pg { overflow: visible; }
+
+/* A strip: several states side by side as one PNG, so they are compared rather than remembered.
+   Every cell is rendered on its own as well. The caption is canvas text, so it is dark ink. */
+.swr-strip { display: flex; gap: 20px; background: #e9eaee; width: max-content; padding: 0; }
+.swr-strip .swr-cell { flex: none; }
+.swr-strip .swr-cap { font-family: 'JetBrains Mono', monospace; font-size: 11px;
+  letter-spacing: .07em; text-transform: uppercase; color: #262a35; padding: 0 0 4px; }
+.swr-strip .swr-sub { font-family: 'Sora', sans-serif; font-size: 11px; color: #12141b;
+  padding: 0 0 10px; }
+
+/* =================================================================================================
+   THE PAGE — the shipped guide's chrome, identical in all three directions.
+   ================================================================================================= */
+
+/* The shipped status bar, 34 dp, opaque with a 1 px outset below it. */
+.swr-sb { position: relative; z-index: 60; flex: none; height: 34px;
+  background: var(--bg); box-shadow: 0 1px 0 0 var(--bg);
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 24px 0 26px; font-size: calc(13 * var(--sp)); font-weight: 600; color: var(--ink); }
+.swr-sbi { display: flex; gap: 5px; align-items: center; opacity: .95; }
+.swr-sb svg { width: 15px; height: 15px; display: block; }
+
+/* The guide's back row: 12 dp horizontal, 10 dp vertical, as shipped — but the glyph is the
+   phone app's stroked chevron in a real 44 dp target rather than a 26 sp "‹" with 10/4 dp of
+   padding. Reported as a change. */
+.swr-bar { flex: none; display: flex; align-items: center; padding: 10px 12px; }
+.swr-bk { width: 44px; height: 44px; flex: none; display: flex; align-items: center;
+  justify-content: center; border: 0; background: none; color: var(--ink); cursor: pointer;
+  padding: 0; }
+.swr-bk svg { width: 22px; height: 22px; }
+
+/* The step page: one centred column on 24 dp gutters, 8 dp of air above the indicator, 32 dp
+   below the last control. */
+.swr-pg { flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden; scrollbar-width: none;
+  display: flex; flex-direction: column; align-items: center;
+  padding: 8px 24px 32px; text-align: center; }
+.swr-pg::-webkit-scrollbar { display: none; }
+
+.swr-step { flex: none; margin: 0 0 10px; color: var(--ink-dim); font-weight: 700;
+  font-size: calc(11 * var(--sp)); line-height: calc(15 * var(--sp)); letter-spacing: .075em; }
+
+.swr-h1 { flex: none; margin: 0 0 12px; font-family: 'Space Grotesk', sans-serif; font-weight: 700;
+  font-size: calc(26 * var(--sp)); line-height: calc(31 * var(--sp)); letter-spacing: -.01em;
+  color: var(--ink); }
+
+.swr-body { flex: none; margin: 0 0 28px; color: var(--ink-soft);
+  font-size: calc(16 * var(--sp)); line-height: calc(23 * var(--sp)); }
+.swr-body b { color: var(--ink); font-weight: 700; }
+
+/* The illustration slot. 220 x 150 dp as shipped; `tall` is direction A's 220 x 190, which is the
+   one geometry change A asks for and the report names it. */
+.swr-art { flex: none; width: 220px; height: 150px; margin: 0 0 22px;
+  display: flex; align-items: center; justify-content: center; }
+.swr-art.tall { width: 220px; height: 260px; }
+.swr-art svg { display: block; height: 100%; width: auto; }
+
+/* The shipped primary button. */
+.swr-cta { flex: none; width: 100%; min-height: 54px; border: 0; border-radius: 27px;
+  background: var(--grad); color: #fff; font-family: 'Sora', sans-serif; font-weight: 600;
+  font-size: calc(16 * var(--sp)); line-height: calc(22 * var(--sp)); padding: 8px 16px;
+  cursor: pointer; }
+
+/* The shipped quiet link, in a real 44 dp target. */
+.swr-quiet { flex: none; margin: 14px 0 0; min-height: 44px; border: 0; background: none;
+  color: var(--ink-dim); font-family: 'Sora', sans-serif; font-weight: 500;
+  font-size: calc(13 * var(--sp)); line-height: calc(18 * var(--sp)); padding: 8px 10px;
+  cursor: pointer; }
+
+/* =================================================================================================
+   THE TWO REMOTE DRAWINGS — our own vectors, in the Ravilo theme.
+
+   Stroke widths are in the drawing's own units and so scale with it: a key outline is the same
+   fraction of the remote at every size, which is what makes one geometry serve a 104 dp thumbnail
+   and a 190 dp illustration.
+   ================================================================================================= */
+
+/* BOTH DRAWINGS CLIP AT THEIR VIEWBOX. Written `overflow: visible` at first, which is harmless
+   for the two whole remotes — their geometry is inside the box — and a defect for direction B's
+   detail crop, whose face rect deliberately runs past the top and bottom edges to BE a crop.
+   Visible, it painted a white remote face over the step indicator and across the title. That is
+   round 8's pictures-overflowing-their-card, and no fence can see it: only the render does. */
+.swr-rm, .swr-dt { overflow: hidden; }
+
+/* ONE SCALE, NOT ONE HEIGHT. The whole decision this screen asks the viewer to make is long
+   remote or short remote, so the two drawings share a scale and the basic remote is visibly the
+   longer object: its drawing is 300 units tall against the Smart Remote's 212, and 212/300 is
+   70.7 %. Drawn at equal heights in the first render, which flattened the one cue the choice
+   rests on — both read as "a remote", and only the keypad told them apart. The container gives
+   the full height; the Smart Remote takes its share of it. */
+.swr-rm.keypad { height: 100%; }
+.swr-rm.smart { height: 70.7%; }
+
+/* The remote's body: THE SURFACE IT IS NOT STANDING ON. A face filled --bg vanished into the
+   page in the instruction states — the first render of direction B showed two side rails and a
+   floating keypad, because the remote's face and the screen behind it were the same colour. So
+   the face takes --card on the page and --bg inside a card, and its 50 % ink outline reads in
+   both themes either way. */
+.swr-face { fill: var(--card); stroke: rgba(var(--fg), .5); stroke-width: 2.4; }
+.swr-pk .swr-face, .swr-rw .swr-face { fill: var(--bg); }
+
+/* A key at rest, and the D-pad ring. */
+.swr-k { fill: rgba(var(--fg), .14); stroke: none; }
+.swr-ring { fill: none; stroke: rgba(var(--fg), .26); stroke-width: 4.6; }
+
+/* A key the viewer is told to press: the shipped accent, filled. Five keys are a block, and a
+   fill reads them as one target. No halo ring — see swr-kit.js's key(): a ring outside a lit key
+   magnified into two outlines around one target, and into a chain across 1-2-3. */
+.swr-k.lit { fill: var(--accent); }
+
+/* The Number/Color key is RINGED, not filled: the key IS its own marking, and an accent fill would
+   paint over the coloured dots and the digits that identify it on a real remote. The ring is the
+   same accent and so says the same thing as the filled keys opposite. */
+.swr-k.ringed { fill: rgba(var(--fg), .07); stroke: var(--accent); stroke-width: 2.6; }
+
+/* The four coloured keys. Data, not styling (SWR.KEYCOLORS): the viewer matches them against a
+   real remote, and none of them is the brand accent — a key's colour is the key's own identity. */
+.swr-ck { stroke: none; }
+
+/* A printed digit. Off below about 120 dp of drawing height, where a digit falls under 4 px and a
+   smudge is worse than a clean key — swr-kit.js decides, this only styles it. */
+.swr-kn { fill: rgba(var(--fg), .62); font-family: 'Sora', sans-serif; font-weight: 700;
+  text-anchor: middle; dominant-baseline: central; }
+/* A digit on a FILLED lit key is white, on the accent it sits on. */
+.swr-kn.lit { fill: #fff; }
+/* A digit on the RINGED key is the accent, because that key's face stayed light. Two classes
+   rather than one selector chain: the two cases are different drawings, not a cascade. */
+.swr-kn.onring { fill: var(--accent); }
+
+/* =================================================================================================
+   DIRECTION A — "Two remotes": the choice is two tall cards side by side.
+   ================================================================================================= */
+
+.swr-pick { flex: none; width: 100%; display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+  margin: 6px 0 0; }
+
+.swr-pk { display: flex; flex-direction: column; align-items: center; gap: 12px;
+  min-height: 44px; padding: 16px 10px 14px; border: 1px solid var(--line); border-radius: 14px;
+  background: var(--card); color: var(--ink); font-family: 'Sora', sans-serif; cursor: pointer;
+  text-align: center; }
+.swr-pkart { display: flex; align-items: flex-end; justify-content: center; height: 240px; }
+.swr-pkart svg { display: block; height: 100%; width: auto; }
+/* Faroese *tal-knappar* is the longest of the six labels; it breaks inside the word rather than
+   out of the card. In Compose this is a soft hyphen in the string. */
+.swr-pklb { font-weight: 600; font-size: calc(15 * var(--sp)); line-height: calc(20 * var(--sp));
+  overflow-wrap: anywhere; hyphens: auto; }
+
+/* Direction C's cards keep the shipped illustration height instead of A's taller drawing. */
+.swr-pick.c .swr-pkart { height: 140px; }
+
+/* THE 200 % FONT RULE. Two 15 sp labels side by side at 412 dp hold at the default setting; at the
+   200 % setting they do not — the x2 study is that picture, and it is why this rule exists. The
+   pair becomes one column, and each card turns its drawing beside its label rather than above it,
+   so two stacked cards still fit above the fold. Compose does this by measuring the label, not by
+   reading a font setting. `.sbs` forces the side-by-side layout, which is how the study is drawn. */
+html[data-fs="200"] .swr-pick:not(.sbs) { grid-template-columns: 1fr; gap: 10px; }
+html[data-fs="200"] .swr-pick:not(.sbs) .swr-pk { flex-direction: row; align-items: center;
+  gap: 14px; text-align: left; padding: 12px 14px; }
+/* 124 dp, not the 104 dp of the first render: stacked, the drawing is the only thing on the row
+   that is not text, and at 104 dp the long-against-short cue — the whole reason this screen is
+   drawn rather than written — had almost gone. */
+html[data-fs="200"] .swr-pick:not(.sbs) .swr-pkart { height: 124px; flex: none; }
+html[data-fs="200"] .swr-pick:not(.sbs) .swr-pklb { flex: 1; }
+
+/* =================================================================================================
+   DIRECTION B — "Keys up close": the choice is two full-width rows.
+   ================================================================================================= */
+
+.swr-rows { flex: none; width: 100%; display: flex; flex-direction: column; gap: 10px;
+  margin: 6px 0 0; }
+.swr-rw { display: flex; align-items: center; gap: 14px; width: 100%; min-height: 142px;
+  padding: 12px 12px 12px 14px; border: 1px solid var(--line); border-radius: 14px;
+  background: var(--card); color: var(--ink); font-family: 'Sora', sans-serif; cursor: pointer;
+  text-align: left; }
+.swr-rwart { flex: none; width: 52px; height: 124px; display: flex; align-items: center;
+  justify-content: center; }
+.swr-rwart svg { display: block; height: 100%; width: auto; }
+.swr-rwt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.swr-rwt b { font-weight: 600; font-size: calc(16 * var(--sp)); line-height: calc(21 * var(--sp));
+  overflow-wrap: anywhere; }
+.swr-rwt em { font-style: normal; color: var(--ink-dim); font-size: calc(13 * var(--sp));
+  line-height: calc(18 * var(--sp)); }
+.swr-rwc { flex: none; width: 22px; height: 22px; color: var(--ink-dim); fill: none;
+  stroke: currentColor; }
+
+/* =================================================================================================
+   DIRECTION C — "Remote tabs": the choice stays on screen as a two-tab control.
+   ================================================================================================= */
+
+.swr-prompt { flex: none; margin: 0 0 18px; color: var(--ink-soft);
+  font-size: calc(16 * var(--sp)); line-height: calc(23 * var(--sp)); }
+
+.swr-seg { flex: none; width: 100%; display: grid; grid-template-columns: 1fr 1fr; gap: 6px;
+  padding: 4px; margin: 0 0 18px; border-radius: 14px; background: rgba(var(--fg), .06); }
+.swr-sg { min-height: 44px; padding: 6px 8px; border: 0; border-radius: 10px; background: none;
+  color: var(--ink-dim); font-family: 'Sora', sans-serif; font-weight: 600;
+  font-size: calc(13.5 * var(--sp)); line-height: calc(18 * var(--sp)); cursor: pointer;
+  overflow-wrap: anywhere; }
+/* The chosen tab is a raised surface, not an accent fill: the accent on this screen means "the key
+   to press", and a tab wearing it would read as part of the instruction. */
+.swr-sg.on { background: var(--card); color: var(--ink);
+  box-shadow: inset 0 0 0 1px var(--line-2), 0 1px 2px rgba(0, 0, 0, .18); }

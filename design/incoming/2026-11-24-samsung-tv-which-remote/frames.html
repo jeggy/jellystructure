@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Samsung TV — which remote — frames</title>
+<!--
+  frames.html — every frame this round renders, built from swr-data.js through swr-kit.js.
+
+  One document, parameterised, rather than one document per picture:
+      ?dir=a|b|c          the direction (a Two remotes, b Keys up close, c Remote tabs)
+      &set=states|studies|strip
+      &lang=en|da|fo
+      &skin=daylight|aurora     light (the brief's default) or dark
+      &fs=100|200               the system font setting
+      &tall=1                   render the whole screen rather than the 915 dp above the fold
+
+  The surface is the Ravilo ANDROID PHONE's Samsung TV guide only (412 x 915 dp portrait), so
+  there is exactly one shipped stylesheet to load — design/ravilo/mobile/ravilo-phone.css. It is
+  LINKED, not copied, so every token, radius, weight and font in these pictures is the production
+  one. The round's own stylesheet comes last, so it extends the shipped system and never precedes
+  it.
+
+  No TV, desktop, web, admin, cast or Tizen frame exists in this round: the Profile row that opens
+  this guide is null on every platform but an Android phone (spec FR-1), so ravilo.css,
+  ravilo-desktop.css and ravilo-music.css are not loaded — no file that could answer for the
+  phone's tokens is in the document.
+
+  ravilo-data.js is NOT loaded. This screen shows no library content at all — no title, no poster,
+  no episode — so the shipped corpus has nothing to lend it. The brief's one TV name and two model
+  codes are the whole stand-in, they live in swr-data.js, and the step screens do not print them
+  at all (the shipped guide names the TV on no step): they decide which body text the screen
+  carries, and they appear as text only in a strip caption, which is canvas.
+
+  Opened by hand in a browser this page works exactly as the renderer sees it;
+  scripts/render-design.sh drives it over the parameter combinations and screenshots one element
+  per frame, naming each PNG after the element's id.
+-->
+<script>
+  (function () {
+    var q = new URLSearchParams(location.search);
+    var dir = q.get('dir') || 'a';
+    var set = q.get('set') || 'states';
+    var lang = q.get('lang') || 'en';
+    var skin = q.get('skin') || 'daylight';
+    var fs = q.get('fs') || '100';
+    var tall = q.get('tall') === '1';
+    document.documentElement.lang = lang;
+    /* Daylight is the phone's own LIGHT theme and aurora is its default dark one. The brief's
+       state set is light; the recommended direction is also drawn dark. */
+    document.documentElement.setAttribute('data-skin', skin);
+    if (skin === 'daylight') document.documentElement.setAttribute('data-appearance', 'light');
+    document.documentElement.setAttribute('data-fs', fs);
+    document.write('<link rel="stylesheet" href="../../ravilo/mobile/ravilo-phone.css">');
+    document.write('<link rel="stylesheet" href="samsung-which-remote.css">');
+    window.SWROPT = { dir: dir, set: set, lang: lang, skin: skin, fs: fs, tall: tall };
+  })();
+</script>
+</head>
+<body>
+<div class="swr-frames" id="frames"></div>
+
+<script src="swr-data.js"></script>
+<script src="swr-kit.js"></script>
+<script>
+(function () {
+  'use strict';
+  var O = window.SWROPT;
+  var D = window.SWR, K = window.SWRKit;
+  K.setLang(O.lang);
+  var root = document.getElementById('frames');
+
+  /* The file-name suffix. English frames at the default font on the light theme carry none, so
+     `a-s1-question` is the brief's main picture and `a-s1-question-fo-200` says what it is
+     without anyone opening it. */
+  var sfx = '';
+  if (O.skin !== 'daylight') sfx += '-dark';
+  if (O.lang !== 'en') sfx += '-' + O.lang;
+  if (O.fs !== '100') sfx += '-' + O.fs;
+  if (O.tall) sfx += '-tall';
+
+  /* `swr-frame` is the renderer's handle and carries no style beyond shrinking to its content:
+     --all targets it, so a phone nested INSIDE a strip is never mistaken for a frame of its own. */
+  function frame(id, html) {
+    var d = document.createElement('div');
+    d.id = id; d.className = 'swr-frame';
+    d.innerHTML = html;
+    root.appendChild(d);
+    return d;
+  }
+  function phone(state) {
+    return '<div class="swr-ph' + (O.tall ? ' tall' : '') + '">'
+      + K.screen(O.dir, state) + '</div>';
+  }
+
+  var LIST = O.set === 'studies' ? D.STUDIES : D.STATES;
+
+  if (O.set === 'strip') {
+    /* One PNG with every state of this direction side by side, for the directions document and
+       for the comment that puts the pick to the owner. Each cell is also rendered on its own.
+       The caption is the only place a TV name and model is printed: it is canvas, not phone. */
+    var cells = D.STATES.map(function (s) {
+      var tv = D.TVS[s.tv];
+      return '<div class="swr-cell"><div class="swr-cap">' + K.esc(s.id) + '</div>'
+        + '<div class="swr-sub">' + K.esc(tv.name) + ' · ' + K.esc(tv.model) + '</div>'
+        + phone(s) + '</div>';
+    }).join('');
+    frame(O.dir + '-strip' + sfx, '<div class="swr-strip">' + cells + '</div>');
+  } else {
+    LIST.forEach(function (s) { frame(O.dir + '-' + s.id + sfx, phone(s)); });
+  }
+
+  /* A render-time assertion, printed into the page title so a broken build is visible in the
+     renderer's own log rather than only in a picture. Three invariants:
+       - every frame produced exactly one phone;
+       - every phone has exactly one h1 (the question OR the step title, never both);
+       - a question state has NO primary button and an instruction state has exactly one
+         (FR-13: the tap is the step's whole action). */
+  var phones = root.querySelectorAll('.swr-ph').length;
+  var heads = root.querySelectorAll('.swr-ph .swr-h1').length;
+  var bad = 0;
+  Array.prototype.forEach.call(root.querySelectorAll('.swr-ph'), function (p) {
+    var isQuestion = !!p.querySelector('.swr-pick, .swr-rows');
+    var ctas = p.querySelectorAll('.swr-cta').length;
+    if (isQuestion ? ctas !== 0 : ctas !== 1) bad += 1;
+  });
+  document.title = 'frames: ' + root.children.length + ' / phones: ' + phones
+    + ' / heads: ' + heads + ' / cta-errors: ' + bad
+    + (phones === heads && bad === 0 ? ' / ok' : ' / MISMATCH');
+})();
+</script>
+</body>
+</html>

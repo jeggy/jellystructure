@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Samsung TV — which remote do you have? — directions</title>
+<!--
+  The round's directions document: what is fixed, the three directions, how they compare, every
+  state the recommended direction holds, the decided rows, and the new strings.
+
+  Self-contained but not portable, by design (PROCESS.md step 3): the three faces are the
+  repository's own woff2 and the pictures are the round's own PNGs, both by relative path. There
+  is no network reference of any kind in this file.
+-->
+<style>
+@font-face { font-family: 'Space Grotesk'; font-weight: 100 900; font-display: block;
+  src: url('../../app/fonts/space-grotesk.woff2') format('woff2'); }
+@font-face { font-family: 'Sora'; font-weight: 100 900; font-display: block;
+  src: url('../../app/fonts/sora.woff2') format('woff2'); }
+@font-face { font-family: 'JetBrains Mono'; font-weight: 100 900; font-display: block;
+  src: url('../../app/fonts/jetbrains-mono.woff2') format('woff2'); }
+
+/* Canvas rules: dark ink on the light-gray backdrop, no backdrop-filter, no blur, no infinite
+   animation, no content-visibility. */
+* { box-sizing: border-box; }
+body { margin: 0; padding: 40px 32px 80px; background: #e9eaee; color: #12141b;
+  font-family: 'Sora', sans-serif; font-size: 15px; line-height: 1.55; }
+.wrap { max-width: 1180px; margin: 0 auto; }
+h1 { font-family: 'Space Grotesk', sans-serif; font-size: 38px; line-height: 1.12;
+  letter-spacing: -.01em; margin: 0 0 8px; }
+h2 { font-family: 'Space Grotesk', sans-serif; font-size: 25px; line-height: 1.16; margin: 52px 0 10px;
+  letter-spacing: -.01em; }
+h3 { font-family: 'Space Grotesk', sans-serif; font-size: 18px; margin: 26px 0 8px; }
+p, li { color: #262a35; max-width: 78ch; }
+.lede { font-size: 17px; color: #262a35; max-width: 84ch; }
+code, .mono { font-family: 'JetBrains Mono', monospace; font-size: 13px; }
+.rec { display: inline-block; font-family: 'JetBrains Mono', monospace; font-size: 11px;
+  letter-spacing: .08em; text-transform: uppercase; background: #12141b; color: #fff;
+  border-radius: 5px; padding: 3px 8px; vertical-align: 3px; margin-left: 8px; }
+.card { background: #fff; border: 1px solid #d3d6de; border-radius: 16px; padding: 22px 24px;
+  margin: 16px 0; }
+.shots { display: flex; gap: 14px; flex-wrap: wrap; margin: 14px 0 4px; }
+.shot { width: 206px; }
+.shot img { display: block; width: 206px; border: 1px solid #c9ccd6; border-radius: 10px;
+  background: #fff; }
+.shot .cap { font-family: 'JetBrains Mono', monospace; font-size: 10.5px; letter-spacing: .05em;
+  text-transform: uppercase; color: #262a35; padding: 7px 0 0; }
+.wide img { width: 100%; max-width: 1120px; display: block; border: 1px solid #c9ccd6;
+  border-radius: 10px; }
+table { border-collapse: collapse; margin: 14px 0; width: 100%; max-width: 1120px; }
+th, td { border: 1px solid #c9ccd6; padding: 8px 11px; text-align: left; vertical-align: top;
+  font-size: 13.5px; color: #262a35; background: #fff; }
+th { background: #dfe1e8; color: #12141b; font-weight: 700; }
+.good { color: #1d6b4a; font-weight: 600; }
+.cost { color: #8a3a2e; font-weight: 600; }
+ul { margin: 8px 0; padding-left: 20px; }
+.note { border-left: 3px solid #12141b; padding: 2px 0 2px 14px; margin: 14px 0; color: #262a35; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>Which remote do you have?</h1>
+<p class="lede">Step 1 of the Android phone's Samsung TV guide, drawn three ways. The owner holds a
+basic Samsung remote with real number keys and no <strong>123</strong> button; today's step 1 is
+written only for the Smart Remote. He picked <em>step 1 asks which remote you have</em>. This is
+how that question, and the two instructions it leads to, could look. The recommended direction is
+first.</p>
+
+<h2>What is fixed</h2>
+<div class="card">
+<ul>
+  <li>Step 1 is still <strong>Step 1 of 4</strong>. It opens on the question, answered by tapping
+    one of two drawn remotes — <strong>It has number keys</strong> and <strong>No number
+    keys</strong>. Each choice is one large tap target with its own drawing, and
+    <strong>the tap is the step's whole action, so this state has no primary button</strong>.</li>
+  <li>After the tap, step 1 shows only that remote's instruction and an illustration of that
+    remote; the one primary button follows, as before. A quiet link,
+    <strong>I have the other remote</strong>, switches without going back.</li>
+  <li>Both instructions keep step 1's two rules: on a 2024-or-later TV the path goes through
+    <strong>App Settings</strong>, and both say plainly not to type in the search box.</li>
+  <li>One action and one big primary button per screen, under about 40 words of body, light and
+    dark, readable at large font sizes.</li>
+  <li>Illustrations are <strong>our own vector drawings in the Ravilo theme</strong> — no
+    photographs, no Samsung screenshots, no Samsung logo, no model number.
+    <em>Developer Mode</em> is the only technical term on screen, and no string names Jellyfin.</li>
+</ul>
+</div>
+
+<h2>The two drawings</h2>
+<p>The drawings carry the decision, so they are one geometry each, used at every size — the remote
+the viewer taps and the remote they are then shown are the same object, re-scaled. Three things
+about them are deliberate:</p>
+<div class="card">
+<ul>
+  <li><strong>One scale, not one height.</strong> The basic remote's drawing is 300 units tall
+    against the Smart Remote's 212, so the long-against-short silhouette — the one cue the choice
+    actually rests on — survives at every size.</li>
+  <li><strong>The accent means "press this", drawn once.</strong> The five number keys are
+    <em>filled</em> accent, because five keys are one block; the Number/Color key is
+    <em>ringed</em>, because that key <em>is</em> its own marking and a fill would paint over the
+    coloured dots and the digits that identify it.</li>
+  <li><strong>The Number/Color key carries both markings</strong> — <code>123</code> above four
+    coloured dots, in one pill — because Samsung labels it <code>123</code> on an older Smart
+    Remote and prints coloured dots on a newer one, and the instruction names both.</li>
+</ul>
+</div>
+
+<h2>Direction A — Two remotes <span class="rec">recommended</span></h2>
+<p>The question is the screen's headline and the two drawn remotes are two tall cards side by
+side. After the tap the same drawing, bigger, is the step's illustration with the keys to press
+lit. The switch is the guide's own quiet link.</p>
+<div class="shots">
+  <div class="shot"><img src="png/samsung-tv-which-remote-a-s1-question.png" alt="A, the question"><div class="cap">a · s1 question</div></div>
+  <div class="shot"><img src="png/samsung-tv-which-remote-a-s2-keys.png" alt="A, number keys"><div class="cap">a · s2 number keys</div></div>
+  <div class="shot"><img src="png/samsung-tv-which-remote-a-s3-nokeys.png" alt="A, no number keys"><div class="cap">a · s3 no number keys</div></div>
+  <div class="shot"><img src="png/samsung-tv-which-remote-a-s4-nokeys-2024.png" alt="A, no number keys on a 2024 TV"><div class="cap">a · s4 no keys, 2024+</div></div>
+</div>
+<p><span class="good">What it gives:</span> the silhouette is the biggest thing on the question
+screen and it is the same object on the instruction, so a viewer who chose wrongly sees it at
+once. The keypad's digits are readable, so the picture and the sentence say the same thing.<br>
+<span class="cost">What it costs:</span> step 1's illustration slot grows from 220 × 150 dp to
+220 × 260 dp — on this step only — and at the 200 % font setting the pair stacks into one column
+with the drawing beside the label, which is direction B's row shape.</p>
+
+<h2>Direction B — Keys up close</h2>
+<p>The question is the headline and the choices are two full-width rows, a small drawing at the
+left and one line saying what that remote is. The instruction's illustration is not the remote but
+the <em>keys</em>, cropped into the shipped 220 × 150 dp slot at four times A's size.</p>
+<div class="shots">
+  <div class="shot"><img src="png/samsung-tv-which-remote-b-s1-question.png" alt="B, the question"><div class="cap">b · s1 question</div></div>
+  <div class="shot"><img src="png/samsung-tv-which-remote-b-s2-keys.png" alt="B, number keys"><div class="cap">b · s2 number keys</div></div>
+  <div class="shot"><img src="png/samsung-tv-which-remote-b-s3-nokeys.png" alt="B, no number keys"><div class="cap">b · s3 no number keys</div></div>
+  <div class="shot"><img src="png/samsung-tv-which-remote-b-s4-nokeys-2024.png" alt="B, no number keys on a 2024 TV"><div class="cap">b · s4 no keys, 2024+</div></div>
+</div>
+<p><span class="good">What it gives:</span> the keys to press are unmistakable, and the shipped
+illustration slot is untouched. The rows carry a second line, so the choice is named twice — once
+by shape and once in words.<br>
+<span class="cost">What it costs:</span> the silhouette that identified the remote on the question
+screen is <em>gone</em> from the instruction, so a wrong choice has less to notice it by; the row
+thumbnails are small enough that only long-against-short survives in them; and it needs two extra
+strings.</p>
+
+<h2>Direction C — Remote tabs</h2>
+<p>The smallest change to the shipped screen. Step 1 keeps its own title on every state and the
+question is a prompt line under it; the drawings stay at the shipped 220 × 150 dp. After the tap
+the choice does not disappear — it becomes a two-tab control under the step indicator, which is
+both where the viewer sees what they chose and how they switch, so no quiet link is needed.</p>
+<div class="shots">
+  <div class="shot"><img src="png/samsung-tv-which-remote-c-s1-question.png" alt="C, the question"><div class="cap">c · s1 question</div></div>
+  <div class="shot"><img src="png/samsung-tv-which-remote-c-s2-keys.png" alt="C, number keys"><div class="cap">c · s2 number keys</div></div>
+  <div class="shot"><img src="png/samsung-tv-which-remote-c-s3-nokeys.png" alt="C, no number keys"><div class="cap">c · s3 no number keys</div></div>
+  <div class="shot"><img src="png/samsung-tv-which-remote-c-s4-nokeys-2024.png" alt="C, no number keys on a 2024 TV"><div class="cap">c · s4 no keys, 2024+</div></div>
+</div>
+<p><span class="good">What it gives:</span> continuity — the step is never not itself — one
+affordance instead of two, and no change to the illustration slot.<br>
+<span class="cost">What it costs:</span> a tab bar is the most prominent thing on a screen whose
+one action is <em>Next</em>; the drawings are the smallest of the three, and at 220 × 150 the
+Number/Color key is a speck, so its marking is carried by the body text alone.</p>
+
+<h2>How they compare</h2>
+<table>
+<tr><th>&nbsp;</th><th>A — Two remotes</th><th>B — Keys up close</th><th>C — Remote tabs</th></tr>
+<tr><th>The question's place</th><td>Replaces the illustration and body; the question is the H1</td><td>Replaces them; the question is the H1</td><td>Step title stays; the question is a prompt line</td></tr>
+<tr><th>Choice layout</th><td>Two tall cards, side by side</td><td>Two full-width rows</td><td>Two cards, side by side, shipped drawing size</td></tr>
+<tr><th>The switch</th><td>Quiet link, <em>I have the other remote</em></td><td>Quiet link</td><td>Two-tab control, always on screen</td></tr>
+<tr><th>Instruction art</th><td>The whole remote, 220 × 260</td><td>A crop of the keys, 220 × 150</td><td>The whole remote, 220 × 150</td></tr>
+<tr><th>New components</th><td>The two-remote choice</td><td>The choice rows + the detail crop</td><td>The two-remote choice + a segmented control</td></tr>
+<tr><th>New strings beyond FR-13</th><td>None</td><td>Two (the rows' second lines)</td><td>None</td></tr>
+<tr><th>At 200 % font</th><td>Stacks to one column, drawing beside label</td><td>Rows already stack</td><td>Tab labels wrap inside the tabs</td></tr>
+</table>
+
+<h2>Every state the recommended direction holds</h2>
+<p>Four states, in English light; then dark, Danish, Faroese, the 200 % font setting and Faroese at
+200 %. A <code>-tall</code> frame renders the whole screen rather than the 915 dp above the fold.</p>
+
+<h3>The four states, side by side</h3>
+<div class="wide"><img src="png/samsung-tv-which-remote-a-strip.png" alt="A, the four states side by side"></div>
+
+<h3>Dark</h3>
+<div class="shots">
+  <div class="shot"><img src="png/samsung-tv-which-remote-a-s1-question-dark.png" alt=""><div class="cap">a · s1 · dark</div></div>
+  <div class="shot"><img src="png/samsung-tv-which-remote-a-s2-keys-dark.png" alt=""><div class="cap">a · s2 · dark</div></div>
+  <div class="shot"><img src="png/samsung-tv-which-remote-a-s3-nokeys-dark.png" alt=""><div class="cap">a · s3 · dark</div></div>
+  <div class="shot"><img src="png/samsung-tv-which-remote-a-s4-nokeys-2024-dark.png" alt=""><div class="cap">a · s4 · dark</div></div>
+</div>
+
+<h3>Danish and Faroese</h3>
+<div class="shots">
+  <div class="shot"><img src="png/samsung-tv-which-remote-a-s1-question-da.png" alt=""><div class="cap">a · s1 · da</div></div>
+  <div class="shot"><img src="png/samsung-tv-which-remote-a-s4-nokeys-2024-da.png" alt=""><div class="cap">a · s4 · da</div></div>
+  <div class="shot"><img src="png/samsung-tv-which-remote-a-s1-question-fo.png" alt=""><div class="cap">a · s1 · fo</div></div>
+  <div class="shot"><img src="png/samsung-tv-which-remote-a-s4-nokeys-2024-fo.png" alt=""><div class="cap">a · s4 · fo</div></div>
+</div>
+
+<h3>The 200 % font setting, and Faroese at 200 %</h3>
+<div class="shots">
+  <div class="shot"><img src="png/samsung-tv-which-remote-a-s1-question-200.png" alt=""><div class="cap">a · s1 · 200 %</div></div>
+  <div class="shot"><img src="png/samsung-tv-which-remote-a-s4-nokeys-2024-200-tall.png" alt=""><div class="cap">a · s4 · 200 % · whole screen</div></div>
+  <div class="shot"><img src="png/samsung-tv-which-remote-a-s1-question-fo-200.png" alt=""><div class="cap">a · s1 · fo · 200 %</div></div>
+  <div class="shot"><img src="png/samsung-tv-which-remote-a-s1-question-dark-fo-200.png" alt=""><div class="cap">a · s1 · dark · fo · 200 %</div></div>
+</div>
+
+<h3>Two studies</h3>
+<p><code>x1</code> is the fourth body FR-13 writes and the brief's state list does not hold —
+number keys on a 2024-or-later TV. <code>x2</code> is the side-by-side choice <em>forced</em> to
+stay side by side at 200 %, which is the evidence behind A's stacking rule: in English the label
+breaks mid-word, and Faroese is longer.</p>
+<div class="shots">
+  <div class="shot"><img src="png/samsung-tv-which-remote-a-x1-keys-2024.png" alt=""><div class="cap">x1 · number keys, 2024+</div></div>
+  <div class="shot"><img src="png/samsung-tv-which-remote-a-x2-sbs-forced-200.png" alt=""><div class="cap">x2 · side by side forced, 200 %</div></div>
+</div>
+
+<h2>Decided in the drawing</h2>
+<table>
+<tr><th>Row</th><th>Decided</th><th>Why</th></tr>
+<tr><td>Choice layout</td><td>Side by side at the default font, stacking to one column at 200 %</td><td>The silhouettes are the cue and a tall drawing shows a silhouette; forced side by side at 200 % the labels break mid-word (study x2)</td></tr>
+<tr><td>The question's place</td><td>It replaces the illustration and the body, and it is the screen's H1 (A and B); C keeps the step title and makes the question a prompt</td><td>Step 1 stays one screen that changes state. Which of the two the title should be is an open row below</td></tr>
+<tr><td>The switch link</td><td>Quiet link under the body in A and B; a segmented control in C</td><td>The guide already uses quiet links; C exists to draw the alternative rather than argue it</td></tr>
+<tr><td>Lit keys</td><td>Accent fill on the five number keys, accent ring on the Number/Color key, no halo</td><td>A halo ring magnified into two outlines around one target and a chain across 1-2-3</td></tr>
+<tr><td>The five digits</td><td>No-break spaces between them, in all three languages</td><td>At 200 % <em>press 1 2 3 4 5</em> broke as "1 2 3" / "4 5", which reads as two numbers rather than five keys</td></tr>
+<tr><td>The TV on screen</td><td>Not named at all</td><td>No step of the shipped guide names the TV; the model only decides which body text the screen carries</td></tr>
+</table>
+
+<h2>The strings</h2>
+<p>English source with Danish and Faroese drafts. <code>samsungtv.step</code>,
+<code>samsungtv.step1.title</code> and <code>samsungtv.next</code> are shipped and quoted
+unchanged. The two <code>*_sub</code> lines are direction B's only.
+<code>samsungtv.step1.body</code>, <code>.body_new</code> and <code>.hint</code> are retired by
+FR-13. The spaces inside <em>1 2 3 4 5</em> are U+00A0.</p>
+<table>
+<tr><th>Key</th><th>en</th><th>da</th><th>fo</th></tr>
+<tr><td class="mono">step1.which</td><td>Which remote do you have?</td><td>Hvilken fjernbetjening har du?</td><td>Hvørja fjarstýring hevur tú?</td></tr>
+<tr><td class="mono">step1.keys</td><td>It has number keys</td><td>Den har taltaster</td><td>Hon hevur tal-knappar</td></tr>
+<tr><td class="mono">step1.nokeys</td><td>No number keys</td><td>Ingen taltaster</td><td>Ongir tal-knappar</td></tr>
+<tr><td class="mono">step1.keys_sub <em>(B only)</em></td><td>A long remote with 0–9</td><td>Lang fjernbetjening med 0–9</td><td>Long fjarstýring við 0–9</td></tr>
+<tr><td class="mono">step1.nokeys_sub <em>(B only)</em></td><td>A short Smart Remote</td><td>Kort Smart Remote</td><td>Stutt Smart Remote</td></tr>
+<tr><td class="mono">step1.keys_body</td><td>On the TV, go to **Apps**. Don’t type in the search box: press **1 2 3 4 5** on the remote’s number keys.</td><td>Gå til **Apps** på TV’et. Skriv ikke i søgefeltet: tryk **1 2 3 4 5** på fjernbetjeningens taltaster.</td><td>Far til **Apps** á sjónvarpinum. Skriva ikki í leititeigin: trýst **1 2 3 4 5** á tal-knappunum á fjarstýringini.</td></tr>
+<tr><td class="mono">step1.keys_body_new</td><td>On the TV, go to **Apps**, then scroll down to **App Settings**. Don’t type in the search box: press **1 2 3 4 5** on the remote’s number keys.</td><td>Gå til **Apps** på TV’et og rul ned til **App Settings**. Skriv ikke i søgefeltet: tryk **1 2 3 4 5** på fjernbetjeningens taltaster.</td><td>Far til **Apps** á sjónvarpinum og rulla niður til **App Settings**. Skriva ikki í leititeigin: trýst **1 2 3 4 5** á tal-knappunum á fjarstýringini.</td></tr>
+<tr><td class="mono">step1.nokeys_body</td><td>On the TV, go to **Apps**. Don’t type in the search box: press the **123** key — coloured dots on newer remotes — and number keys appear on the TV. Pick **1 2 3 4 5** there.</td><td>Gå til **Apps** på TV’et. Skriv ikke i søgefeltet: tryk på **123**-tasten — farvede prikker på nyere fjernbetjeninger — så kommer taltasterne frem på TV’et. Vælg **1 2 3 4 5**.</td><td>Far til **Apps** á sjónvarpinum. Skriva ikki í leititeigin: trýst á **123**-knappin — litað punkt á nýrri fjarstýringum — so koma tal-knappar fram á sjónvarpinum. Vel **1 2 3 4 5** har.</td></tr>
+<tr><td class="mono">step1.nokeys_body_new</td><td>On the TV, go to **Apps**, then scroll down to **App Settings**. Don’t type in the search box: press the **123** key — coloured dots on newer remotes — then pick **1 2 3 4 5** on the TV.</td><td>Gå til **Apps** på TV’et og rul ned til **App Settings**. Skriv ikke i søgefeltet: tryk på **123**-tasten — farvede prikker på nyere fjernbetjeninger — og vælg **1 2 3 4 5** på TV’et.</td><td>Far til **Apps** á sjónvarpinum og rulla niður til **App Settings**. Skriva ikki í leititeigin: trýst á **123**-knappin — litað punkt á nýrri fjarstýringum — og vel **1 2 3 4 5** á sjónvarpinum.</td></tr>
+<tr><td class="mono">step1.other</td><td>I have the other remote</td><td>Jeg har den anden fjernbetjening</td><td>Eg havi hina fjarstýringina</td></tr>
+</table>
+
+<h2>Still open</h2>
+<div class="note">
+<ul>
+  <li><strong>What the title says in the question state.</strong> The brief does not name it. A and
+    B make the question the H1 and drop <em>Open the hidden menu</em> until a remote is chosen; C
+    keeps the step title and puts the question under it. This is a real choice and it is not one
+    this round should make alone.</li>
+  <li><strong>Two markings on one key.</strong> The Number/Color key is drawn with
+    <code>123</code> and four coloured dots together. If the owner's own set labels it one way
+    only, one of the two can come off the drawing and out of the sentence.</li>
+  <li><strong>The question screen is half empty</strong> at the default font, because it is
+    top-aligned like every other guide screen and has no primary button. Centring it would balance
+    the screen and break step 1's alignment with steps 2–4. Left top-aligned, deliberately.</li>
+</ul>
+</div>
+
+</div>
+</body>
+</html>
