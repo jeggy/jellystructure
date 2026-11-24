@@ -139,7 +139,13 @@ object PipelineStepOps {
             else -> {
                 val onDiskHash = NfoWriter.onDiskHash(current)
                 val isForeign = onDiskHash != null && onDiskHash != current.nfoHash
-                if (isForeign && !allowForeign) NfoResult.FOREIGN_SKIPPED
+                if (onDiskHash == wouldBeHash) {
+                    // DEB-5458 (FR-5): the file already holds these bytes, so only the stored hash lagged. Record it; write nothing,
+                    // bump no nfoWrittenAt and send no Jellyfin refresh.
+                    store.updateOne(current.copy(nfoHash = wouldBeHash))
+                    NfoResult.UNCHANGED
+                }
+                else if (isForeign && !allowForeign) NfoResult.FOREIGN_SKIPPED
                 else {
                     val r = NfoWriter.writeTracked(current, serverUrl, ageRatingCascade).getOrThrow()
                     store.updateOne(current.copy(nfoWrittenAt = r.writtenAt, nfoHash = r.hash))
@@ -152,7 +158,8 @@ object PipelineStepOps {
         if ((includeEpisodes || result == NfoResult.WRITTEN) && current.kind == dev.jellystructure.model.MediaKind.TV_SHOW) {
             // Bug fix: writeEpisodeNfos groups by shared file first — a multi-episode file's contained
             // episodes get ONE combined NFO instead of each overwriting the last (see its doc comment).
-            NfoWriter.writeEpisodeNfos(current.episodes, current.cast)
+            // DEB-5458 (FR-4): only a file that differs from the one on disk is written.
+            NfoWriter.writeEpisodeNfosIfChanged(current.episodes, current.cast)
         } else if (current.kind == dev.jellystructure.model.MediaKind.TV_SHOW) {
             // Phase 153 — jellystructure owns Jellyfin's metadata; an episode it can confidently number
             // from its own filename parse but never got a jellyfinId for (Phase 152's Triage signal)
@@ -169,11 +176,12 @@ object PipelineStepOps {
                 .filter { it.episodeNumber != null && (it.jellyfinId == null || it.jellyfinIndexMissing) }
                 .mapTo(mutableSetOf()) { it.path }
             if (filesNeedingRepair.isNotEmpty()) {
-                NfoWriter.writeEpisodeNfos(current.episodes.filter { it.path in filesNeedingRepair }, current.cast)
+                val repaired = NfoWriter.writeEpisodeNfosIfChanged(current.episodes.filter { it.path in filesNeedingRepair }, current.cast)
                 // Bump nfoWrittenAt even though the series-level tvshow.nfo content may be unchanged —
                 // otherwise sync_jellyfin's staleness gate never notices this repair and never refreshes
                 // Jellyfin, leaving the new episode NFO on disk but never read.
-                store.updateOne((store.get(current.id) ?: current).copy(nfoWrittenAt = nowEpochSec()))
+                // DEB-5458 (FR-6): only when a file was written. A repair whose files are already current sends no refresh.
+                if (repaired > 0) store.updateOne((store.get(current.id) ?: current).copy(nfoWrittenAt = nowEpochSec()))
             }
         }
         return result

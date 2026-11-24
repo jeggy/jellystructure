@@ -127,6 +127,29 @@ object NfoWriter {
             group to (if (group.size > 1) writeEpisodeGroup(group, inheritedCast) else writeEpisode(group.first(), inheritedCast))
         }
 
+    /**
+     * DEB-5458 (FR-4) — [writeEpisodeNfos] for the bulk `write_nfo` step: each shared-file group is built, compared with the
+     * file at its path, and written only when none exists or its bytes differ. Returns the number of files written. A group
+     * whose write fails is logged and not counted. The manual "Write NFO" routes keep [writeEpisodeNfos], which is unconditional.
+     */
+    suspend fun writeEpisodeNfosIfChanged(episodes: List<Episode>, inheritedCast: List<Person> = emptyList()): Int {
+        var written = 0
+        for (group in episodes.groupBy { it.path }.values) {
+            val ordered = group.sortedBy { it.partIndex }
+            val first = ordered.first()
+            val nfoPath = "${first.path.substringBeforeLast('/')}/${first.filename.substringBeforeLast('.')}.nfo"
+            val xml = buildString {
+                appendLine("""<?xml version="1.0" encoding="utf-8" standalone="yes"?>""")
+                for (ep in ordered) append(buildEpisodeDetailsBlock(ep, inheritedCast))
+            }
+            if (readRawEpisode(first) == xml) continue
+            runCatching { writeAtomically(nfoPath, xml) }
+                .onSuccess { written++; Logger.info("Wrote episode NFO: $nfoPath", "nfo") }
+                .onFailure { Logger.warn("Episode NFO write failed: $nfoPath: ${it.message}", "nfo") }
+        }
+        return written
+    }
+
     fun episodeNfoExists(episode: Episode): Boolean {
         val dir = episode.path.substringBeforeLast('/')
         val baseName = episode.filename.substringBeforeLast('.')
@@ -181,7 +204,8 @@ object NfoWriter {
         // Items with no presence data yet (pre-Phase-80, not re-pulled) inherit all (back-compat).
         val sn = episode.seasonNumber?.toString()
         val en = episode.episodeNumber
-        val presentMainCast = inheritedCast.filter { p ->
+        // DEB-5458 (FR-5): the actor `<order>` below is the list index, so the list is put in the series' own order first.
+        val presentMainCast = inheritedCast.sortedWith(compareBy({ it.order }, { it.tmdbId })).filter { p ->
             if (sn == null || en == null) return@filter true
             val override = p.episodePresence[sn]
             when {
@@ -317,7 +341,8 @@ object NfoWriter {
         for (p in item.crew.filter { it.department?.lowercase() == "writing" }) {
             appendLine("  <writer>${p.name.esc()}</writer>")
         }
-        for (p in item.cast.sortedBy { it.order }) {
+        // DEB-5458 (FR-5): ties on `order` (TMDB hands out duplicates) break on the person id, so the file does not depend on list order.
+        for (p in item.cast.sortedWith(compareBy({ it.order }, { it.tmdbId }))) {
             appendLine("  <actor>")
             appendLine("    <name>${p.name.esc()}</name>")
             val roleText = p.role?.takeIf { it.isNotBlank() } ?: p.character?.takeIf { it.isNotBlank() }

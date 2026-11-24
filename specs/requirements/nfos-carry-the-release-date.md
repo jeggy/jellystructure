@@ -67,6 +67,12 @@ marker and would miss a real change such as a cast edit, which also reaches the 
   FR-5 names it so that a fix can cite it. The cause is not yet known. Start from the two on-disk versions of one
   affected series' `tvshow.nfo`, and from the `realtime_ingest` that `media_history` shows for the every-pass series at
   every `:30`.
+  What the build does for FR-5 (DEB-5458): a series whose stored hash differs from the would-be hash, but whose file on disk
+  already holds the would-be bytes, records the hash and writes nothing; and cast members that tie on `order` (TMDB hands out
+  duplicates, 93 of 272 prod series have one) are written in `tmdbId` order, in the series and in the episode NFOs, so the
+  bytes do not depend on the order of the stored list. The prod forensics on 2026-11-24 found every `tvshow.nfo` equal to
+  what its stored fields build, so the movers (4 of 272 across the QA passes, 3 of them with tied cast) are not proven to
+  be the tie order. QA's second forced pass decides it.
 - **FR-6.** `writeNfo` bumps `nfoWrittenAt` for an episode write only when FR-4 wrote at least one file. A repair whose
   files are already on disk and current sends no Jellyfin refresh. That episode stays on Triage
   (`unresolved_jellyfin_id`, or the missing `IndexNumber`) until a scan resolves it or its NFO content changes. This
