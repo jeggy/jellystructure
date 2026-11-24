@@ -71,6 +71,8 @@ internal class ScreenQoe(
     private var itemId: String? = null
     private var startVariantBps: Long? = null
     private var directPlay = false
+    /** DEB-5503 (FR-45) — the bitrate of the direct play's file ([StreamTicket.streamBps]); null on a transcode. A direct play has no rung to bound a restream by, so the file is the bound. */
+    private var streamBps: Long? = null
     private var linkKind = "unknown"
     private var rebufferCount = 0
     private var rebufferMs = 0L
@@ -119,9 +121,13 @@ internal class ScreenQoe(
 
     val active: Boolean get() = itemId != null
 
+    /** DEB-5503 (FR-44) — this load has shown its first frame: what waits for it (a direct play's sidecar subtitle) may go. */
+    val firstFrameShown: Boolean get() = firstFrameAtMs >= 0
+
     /** A new item: every count starts from zero. Call as the stream is opened. */
-    fun beginItem(itemId: String, startVariantBps: Long?, directPlay: Boolean, linkKind: String) {
+    fun beginItem(itemId: String, startVariantBps: Long?, directPlay: Boolean, linkKind: String, streamBps: Long? = null) {
         this.itemId = itemId
+        this.streamBps = streamBps
         this.startVariantBps = startVariantBps
         this.directPlay = directPlay
         this.linkKind = linkKind
@@ -147,9 +153,10 @@ internal class ScreenQoe(
         preparedAtMs = clock()
     }
 
-    /** The same item opened again (a restream): its first wait is its start, and its counts stay. */
-    fun restreamed() {
+    /** The same item opened again (a restream): its first wait is its start, and its counts stay. [streamBps]: the new stream's, when it is a direct play. */
+    fun restreamed(streamBps: Long? = null) {
         if (itemId == null) return
+        this.streamBps = streamBps
         if (frozenStartMs >= 0) endFrozen(clock(), count = true, ladder = false, hideView = false)   // a freeze an audio pick or FR-27 replaced
         resetLoad()
         quietUntilMs = clock() + POSITION_QUIET_MS
@@ -300,7 +307,7 @@ internal class ScreenQoe(
     private fun restreamFrozen(now: Long) {
         frozenRestreamed = true
         askedLowerRung = true   // it is the step FR-27 would ask for: the stall that ends it must not ask for a second restream
-        val below = frozenRungBps
+        val below = streamBps ?: frozenRungBps   // DEB-5503 (FR-45) — a direct play has no variant to take the bound from: the file's own bitrate is it
         recoveryAtMs = now
         recoveryAfterMs = frozenStartMs - firstFrameAtMs
         recoveryPositionMs = frozenPositionMs

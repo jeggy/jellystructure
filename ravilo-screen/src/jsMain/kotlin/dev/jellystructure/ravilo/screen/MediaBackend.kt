@@ -18,8 +18,12 @@ import kotlin.js.Date
  * which one it's driving.
  */
 interface MediaBackend {
-    /** [startVariantBps] is the ticket's own start rung (DEB-5024 FR-26): AVPlay is told to begin there, before it prepares. */
-    fun open(hlsUrl: String, startPositionMs: Long, startVariantBps: Long? = null)
+    /**
+     * [startVariantBps] is the ticket's own start rung (DEB-5024 FR-26): AVPlay is told to begin there, before it prepares.
+     * [directPlay] (DEB-5503 FR-44) — [hlsUrl] is the file itself, not a master: no start rung is set, and the stream is seeked to
+     * [startPositionMs] (1 000 ms for a start at 0) before it plays.
+     */
+    fun open(hlsUrl: String, startPositionMs: Long, startVariantBps: Long? = null, directPlay: Boolean = false)
     fun play()
     fun pause()
     fun seekTo(ms: Long)
@@ -42,6 +46,12 @@ interface MediaBackend {
      *  container-embedded selection is wired here for now. */
     fun selectAudioTrack(index: Int) {}
     fun selectSubtitleTrack(index: Int) {}
+    /**
+     * DEB-5503 (FR-44) — on a direct play, make the [position]th of the file's audio tracks the one that plays, in place. [fileAudioTracks]
+     * is how many container audio tracks the ticket lists; false when the player lists a different number (or cannot select), and the
+     * caller restreams with that audio instead.
+     */
+    fun selectFileAudio(position: Int, fileAudioTracks: Int): Boolean = false
     /** DEB-5024 (FR-25) — the bitrate of the rung playing now, when the player answers a number (AVPlay's `CURRENT_BANDWIDTH`). */
     fun currentBandwidthBps(): Long? = null
     /** DEB-5024 (FR-27) — the bitrates of the master's rungs, when the player answers (AVPlay's `AVAILABLE_BITRATE`); empty = unknown. */
@@ -84,7 +94,7 @@ const val AVPLAY_ON = "avplay-on"
 class AvPlayBackend(private val serverUrl: String) : MediaBackend {
     private var listener: MediaBackendListener? = null
 
-    override fun open(hlsUrl: String, startPositionMs: Long, startVariantBps: Long?) {
+    override fun open(hlsUrl: String, startPositionMs: Long, startVariantBps: Long?, directPlay: Boolean) {
         // DEB-4874 — `avplay.open` is only legal from NONE: over a stream that is still open (the episode the next-up card leaves,
         // whoever started it) it throws PLAYER_ERROR_INVALID_STATE. Leave AVPlay closed first, so every start is safe, not one path.
         runCatching { WebApisGlobal.avplay.close() }
@@ -106,11 +116,20 @@ class AvPlayBackend(private val serverUrl: String) : MediaBackend {
             onEvent = { type, data -> listener?.onPlayerEvent(type.toString(), if (data == null || data == undefined) null else data.toString()) },
         ))
         // DEB-5024 (FR-26) — the first picture comes from the server's start rung, not from AVPlay's own guess.
-        if (startVariantBps != null && startVariantBps > 0) runCatching { WebApisGlobal.avplay.setStreamingProperty("ADAPTIVE_INFO", "STARTBITRATE=$startVariantBps") }
+        // DEB-5503 (FR-44) — a direct play is one file, not a master: there is no rung to start on.
+        if (!directPlay && startVariantBps != null && startVariantBps > 0) runCatching { WebApisGlobal.avplay.setStreamingProperty("ADAPTIVE_INFO", "STARTBITRATE=$startVariantBps") }
         WebApisGlobal.avplay.prepareAsync(
             {
                 listener?.onPrepared((Date.now() - openedAtMs).toLong())
-                if (startPositionMs > 0) WebApisGlobal.avplay.seekTo(startPositionMs.toInt()); WebApisGlobal.avplay.play(); listener?.onPlaying()
+                if (directPlay) {
+                    // DEB-5503 (FR-44) — AVPlay's seekTo(0) fails or does nothing, so a start at 0 seeks to 1 000 ms; play follows the seek's answer, a failed seek included.
+                    val startPlaying = { runCatching { WebApisGlobal.avplay.play() }; listener?.onPlaying(); Unit }
+                    val at = if (startPositionMs > 0) startPositionMs else DIRECT_START_AT_ZERO_MS
+                    val seeking = runCatching { WebApisGlobal.avplay.seekTo(at.toInt(), { startPlaying() }, { startPlaying() }) }
+                    if (seeking.isFailure) startPlaying()
+                } else {
+                    if (startPositionMs > 0) WebApisGlobal.avplay.seekTo(startPositionMs.toInt()); WebApisGlobal.avplay.play(); listener?.onPlaying()
+                }
             },
             { e -> listener?.onError(e.toString()) },
         )
@@ -130,11 +149,13 @@ class AvPlayBackend(private val serverUrl: String) : MediaBackend {
     override fun setListener(listener: MediaBackendListener) { this.listener = listener }
 
     override fun capabilities(): ClientCapabilities = ClientCapabilities(
-        containers = listOf("mp4", "ts"),
+        // DEB-5503 (FR-43) — AVPlay plays these files over HTTP on every set since 2019. DTS (unsupported on a Samsung since 2018), TrueHD
+        // and FLAC are left out, so a file whose playing track uses one is transcoded as before; VP9 and AV1 are not declared.
+        containers = listOf("mkv", "mp4", "webm", "ts"),
         videoCodecs = listOf("h264", "hevc"), // AVPlay's own getTotalTrackInfo/canPlay probes are per-track, not a single yes/no gate
-        audioCodecs = listOf("aac", "ac3", "eac3"),
+        audioCodecs = listOf("aac", "ac3", "eac3", "mp3", "opus"),
         maxAudioChannels = 6,
-        hlsOnly = true,
+        hlsOnly = false,
         hlsAdaptive = true,   // DEB-5024 (FR-26) — AVPlay plays a multi-variant master and picks its own rung
         linkKind = "unknown",
     )
@@ -151,7 +172,19 @@ class AvPlayBackend(private val serverUrl: String) : MediaBackend {
 
     override fun selectAudioTrack(index: Int) { runCatching { WebApisGlobal.avplay.setSelectTrack("AUDIO", index) } }
     override fun selectSubtitleTrack(index: Int) { runCatching { WebApisGlobal.avplay.setSelectTrack("TEXT", index) } }
+
+    /** DEB-5503 (FR-44) — the ticket's container order is the player's: its [position]th audio is the [position]th `AUDIO` entry, checked against the count first. */
+    override fun selectFileAudio(position: Int, fileAudioTracks: Int): Boolean = runCatching {
+        val audio = WebApisGlobal.avplay.getTotalTrackInfo().filter { it.type == "AUDIO" }
+        if (audio.size != fileAudioTracks) return@runCatching false
+        val track = audio.getOrNull(position) ?: return@runCatching false
+        WebApisGlobal.avplay.setSelectTrack("AUDIO", track.index)
+        true
+    }.getOrDefault(false)
 }
+
+/** DEB-5503 (FR-44) — AVPlay's `seekTo(0)` fails or does not seek, so a direct play that starts at 0 seeks here. */
+const val DIRECT_START_AT_ZERO_MS = 1_000L
 
 /** webOS / any newer TV browser with real MSE-HLS support — the same `<video>` + hls.js path
  *  ravilo-web's own player uses (FR-235-9's vendored hls.js), self-hosted for the same "no CDN on a TV
@@ -160,7 +193,7 @@ class HtmlVideoBackend(private val video: HTMLVideoElement, private val serverUr
     private var listener: MediaBackendListener? = null
     private var hls: dynamic = null
 
-    override fun open(hlsUrl: String, startPositionMs: Long, startVariantBps: Long?) {
+    override fun open(hlsUrl: String, startPositionMs: Long, startVariantBps: Long?, directPlay: Boolean) {
         val url = resolveStreamUrl(serverUrl, hlsUrl)
         val canNative = (video.asDynamic().canPlayType("application/vnd.apple.mpegurl") as String).isNotBlank()
         if (canNative) {

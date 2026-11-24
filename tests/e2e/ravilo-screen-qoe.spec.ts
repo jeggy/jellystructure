@@ -19,11 +19,12 @@ const ticket = {
   hls_url: `${API}/hls/m1/master.m3u8`, start_position_ms: 0, expires_at: 9_999_999_999, start_variant_bps: START_VARIANT_BPS,
 };
 
-type Seen = { qoe: any[]; probes: string[]; starts: any[]; restreams: any[]; order: string[] };
+/** `subs`: the fake AVPlay's position when each sidecar subtitle was asked for (DEB-5503 FR-44). */
+type Seen = { qoe: any[]; probes: string[]; starts: any[]; restreams: any[]; order: string[]; subs: number[] };
 
 /** `restreamAnswer`: what /api/tv/playback/restream answers with (default: the same single stream, as the server's DEB-4541 FR-1 would not). */
 async function boot(page: Page, restreamAnswer: object = ticket, startTicket: object = ticket, restreamDelayMs = 0, qoeDelayMs = 0): Promise<Seen> {
-  const seen: Seen = { qoe: [], probes: [], starts: [], restreams: [], order: [] };
+  const seen: Seen = { qoe: [], probes: [], starts: [], restreams: [], order: [], subs: [] };
   await page.addInitScript(fakeAvPlayInitScript);
   await page.addInitScript(() => {
     localStorage.setItem("ravilo.screen.serverUrl", "http://app:9505");
@@ -49,6 +50,10 @@ async function boot(page: Page, restreamAnswer: object = ticket, startTicket: ob
       seen.restreams.push(JSON.parse(req.postData() ?? "{}")); seen.order.push("restream");
       if (restreamDelayMs) await new Promise((r) => setTimeout(r, restreamDelayMs));
       return json(route, 200, restreamAnswer);
+    }
+    if (path.startsWith("/sub/")) {
+      seen.subs.push(await page.evaluate(() => (window as any).webapis.avplay.getCurrentTime()));
+      return route.fulfill({ status: 200, contentType: "text/vtt", body: "WEBVTT\n\n00:00:00.000 --> 00:30:00.000\nHello\n" });
     }
     if (path.startsWith("/api/tv/playback/")) return route.fulfill({ status: 204 });
     if (path.startsWith("/api/tv/image/")) return route.fulfill({ status: 204 });
@@ -497,5 +502,122 @@ test.describe("DEB-5024 FR-34 — play that falls behind real time is a stall", 
     await page.keyboard.press("Enter");                    // play again
     await page.waitForTimeout(14_000);
     expect(seen.qoe, "the pause and the 2 s after it are not counted").toEqual([]);
+  });
+});
+
+// DEB-5503 (FR-43 to FR-45) — the TV plays a file that fits, as Android TV does. The ticket below is what the server answers a
+// device that declares containers: a direct play of an MKV with three audio tracks (E-AC-3 default, AC-3 Danish, DTS French).
+test.describe("DEB-5503 — a direct play on AVPlay", () => {
+  const FILE_BPS = 14_000_000;
+  const { start_variant_bps: _noRung, ...plain } = ticket;
+  const direct = {
+    ...plain, container: "mkv", direct_play: true, hls_url: `${API}/file/m1.mkv`, encoder: "direct", stream_bps: FILE_BPS,
+    audio: [
+      { index: 1, language: "eng", label: "English", codec: "eac3", channels: 6, is_default: true },
+      { index: 2, language: "dan", label: "Dansk", codec: "ac3", channels: 6 },
+      { index: 3, language: "fra", label: "Français", codec: "dts", channels: 6 },
+    ],
+    subtitles: [{ index: 7, language: "eng", label: "English", is_default: true, url: `${API}/sub/m1.vtt`, delivery_method: "external" }],
+  };
+  /** What the server answers a restream under the file's own bitrate: the ladder (a transcode, with a start rung). */
+  const ladder = { ...ticket, audio: direct.audio, audio_stream_index: 2 };
+  const remember = (page: Page, audio: string) => page.addInitScript((a) => localStorage.setItem("ravilo.screen.tracks.viewer", JSON.stringify({ global: { audio: a } })), audio);
+  const calls = (page: Page) => page.evaluate(() => (window as any).__avplayCalls as Array<[string, ...unknown[]]>);
+
+  test("FR-43: the start declares the files AVPlay plays and no longer asks for HLS only", async ({ page }) => {
+    const seen = await boot(page, ladder, direct);
+    await openAndPlay(page);
+    const caps = seen.starts[0].capabilities;
+    expect(caps.hls_only ?? false).toBe(false);
+    expect(caps.containers).toEqual(["mkv", "mp4", "webm", "ts"]);
+    expect(caps.video_codecs).toEqual(["h264", "hevc"]);
+    expect(caps.audio_codecs).toEqual(["aac", "ac3", "eac3", "mp3", "opus"]);
+    expect(caps.hls_adaptive).toBe(true);
+  });
+
+  test("FR-44: a direct play opens the ticket's URL with no start rung, and seeks to 1 000 ms before it plays from 0", async ({ page }) => {
+    await boot(page, ladder, direct);
+    await openAndPlay(page);
+    const c = await calls(page);
+    expect(c.find((x) => x[0] === "open")![1]).toBe(`${API}/file/m1.mkv`);
+    expect(c.some((x) => x[0] === "setStreamingProperty" && x[1] === "ADAPTIVE_INFO"), "a file has no rung to start on").toBe(false);
+    const names = c.map((x) => x[0]);
+    expect(names.indexOf("prepareAsync")).toBeLessThan(names.indexOf("seekTo"));
+    expect(names.indexOf("seekTo")).toBeLessThan(names.indexOf("play"));
+    expect(c.find((x) => x[0] === "seekTo")![1]).toBe(1_000);
+  });
+
+  test("FR-44: a resume point is the seek", async ({ page }) => {
+    await boot(page, ladder, { ...direct, start_position_ms: 42_000 });
+    await openAndPlay(page);
+    const c = await calls(page);
+    expect(c.filter((x) => x[0] === "seekTo")).toEqual([["seekTo", 42_000]]);
+    expect(c.map((x) => x[0]).indexOf("seekTo")).toBeLessThan(c.map((x) => x[0]).indexOf("play"));
+  });
+
+  test("FR-44: a remembered audio in the file is selected in the file at PLAYING, with no restream", async ({ page }) => {
+    await remember(page, "dan");
+    const seen = await boot(page, ladder, direct);
+    await page.evaluate(() => (window as any).__avplay.setAudioTracks(3));
+    await openAndPlay(page);
+    expect((await calls(page)).filter((x) => x[0] === "setSelectTrack")).toEqual([["setSelectTrack", "AUDIO", 1]]);
+    expect(seen.restreams).toHaveLength(0);
+    expect((await calls(page)).filter((x) => x[0] === "open")).toHaveLength(1);
+  });
+
+  test("FR-44: a remembered audio whose codec is not declared (DTS) restreams with that audio, before the stream opens", async ({ page }) => {
+    await remember(page, "fra");
+    const seen = await boot(page, ladder, direct);
+    await page.evaluate(() => (window as any).__avplay.setAudioTracks(3));
+    await openAndPlay(page);
+    expect(seen.restreams).toHaveLength(1);
+    expect(seen.restreams[0]).toMatchObject({ item_id: "m1", audio_stream_index: 3 });
+    expect((await calls(page)).some((x) => x[0] === "setSelectTrack")).toBe(false);
+  });
+
+  test("FR-44: a player that lists a different number of audio tracks than the ticket is not selected into; the audio is a restream", async ({ page }) => {
+    await remember(page, "dan");
+    const seen = await boot(page, ladder, direct);
+    await page.evaluate(() => (window as any).__avplay.setAudioTracks(2));
+    await openAndPlay(page);
+    await expect.poll(() => seen.restreams.length, { timeout: 10_000 }).toBe(1);
+    expect(seen.restreams[0]).toMatchObject({ item_id: "m1", audio_stream_index: 2 });
+    expect((await calls(page)).some((x) => x[0] === "setSelectTrack")).toBe(false);
+  });
+
+  test("FR-44: the sidecar subtitle is asked for after the first frame, not on the start path", async ({ page }) => {
+    const seen = await boot(page, ladder, direct);
+    await openAndPlay(page);
+    await expect.poll(() => seen.subs.length, { timeout: 10_000 }).toBe(1);
+    // The fake's playhead starts at the 1 000 ms seek and moves 250 ms a tick: the second tick is the first frame.
+    expect(seen.subs[0]).toBeGreaterThanOrEqual(1_500);
+  });
+
+  test("FR-45: two stalls on a direct play restream once, under the file's own bitrate, and FR-25 reports a direct play with no rung", async ({ page }) => {
+    test.setTimeout(60_000);
+    const seen = await boot(page, ladder, direct);
+    const ap = avplay(page);
+    await openAndPlay(page);                       // AVPlay answers no AVAILABLE_BITRATE: a file is the lowest rung there is
+    await ap.wait(1_500);
+    await expect.poll(() => seen.qoe.length, { timeout: 10_000 }).toBe(1);
+    expect(seen.restreams, "one short stall is not yet the trigger").toHaveLength(0);
+    await ap.wait(1_500);
+    await expect.poll(() => seen.restreams.length, { timeout: 10_000 }).toBe(1);
+    expect(seen.restreams[0]).toMatchObject({ item_id: "m1", below_bandwidth_bps: FILE_BPS });
+    expect(seen.qoe[0]).toMatchObject({ item_id: "m1", direct_play: true, per_item: true });
+    expect(seen.qoe[0].variant_bandwidth_bps ?? null).toBeNull();
+    expect(seen.qoe[0].start_variant_bps ?? null).toBeNull();
+  });
+
+  test("FR-45: a 5 s freeze on a direct play restreams under the file's own bitrate, not under what AVPlay measures", async ({ page }) => {
+    test.setTimeout(90_000);
+    const seen = await boot(page, ladder, direct);
+    const ap = avplay(page);
+    await openAndPlay(page);
+    await page.waitForTimeout(10_000);
+    await ap.property("CURRENT_BANDWIDTH", "6000000");
+    await page.evaluate(() => (window as any).__avplay.hold());
+    await expect.poll(() => seen.restreams.length, { timeout: 10_000 }).toBe(1);
+    expect(seen.restreams[0]).toMatchObject({ item_id: "m1", below_bandwidth_bps: FILE_BPS });
   });
 });

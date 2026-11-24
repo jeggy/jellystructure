@@ -117,12 +117,14 @@ internal fun variantLineKey(kind: VariantKind): String = when (kind) {
 internal fun pickerRows(
     ticket: StreamTicket?, tab: PickerTab, group: Int?, selectedText: Int,
     t: (String) -> String, tn: (String, Int) -> String,
+    /** DEB-5503 (FR-44) — on a direct play the ticket names no audio stream, so the audio the app selected in the file is the selection. */
+    fileAudio: Int? = null,
 ): List<PickerRow> {
     val subs = receiverSubtitles(ticket)
     val audio = ticket?.audio ?: emptyList()
     val labels = if (tab == PickerTab.SUBTITLES) subs.map { it.label } else audio.map { it.label }
     val languages = if (tab == PickerTab.SUBTITLES) subs.map { it.language } else audio.map { it.language }
-    val selected = if (tab == PickerTab.SUBTITLES) receiverSelectedSub(ticket, selectedText) else receiverSelectedAudio(ticket)
+    val selected = if (tab == PickerTab.SUBTITLES) receiverSelectedSub(ticket, selectedText) else fileAudio ?: receiverSelectedAudio(ticket)
     val groups = if (tab == PickerTab.SUBTITLES) subtitleGroups(ticket) else audioGroups(ticket)
     fun pick(i: Int) = if (tab == PickerTab.SUBTITLES) PickerAction.Subtitle(i) else PickerAction.Audio(i)
     fun detail(i: Int): String? = trackDetail(

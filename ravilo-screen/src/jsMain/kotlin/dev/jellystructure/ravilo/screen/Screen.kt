@@ -132,6 +132,8 @@ private class Screen(private val serverUrl: String) {
     /** DEB-5394 (FR-37) — the last successful `startPlayback` round trip, handed to the QoE when its item begins. */
     private var startRequestMs = 0L
     private var selectedAudio = 0
+    /** DEB-5503 (FR-44) — the audio of a direct play that is not the file's default, to be selected in the file at the first PLAYING (null = nothing to select). */
+    private var pendingFileAudio: Int? = null
     private var selectedSub = -1
     private var subSize = "M"
     private var ticket: StreamTicket? = null
@@ -193,6 +195,7 @@ private class Screen(private val serverUrl: String) {
             override fun onPlaying() {
                 if (pauseOnNextPlaying) { pauseOnNextPlaying = false; backend.pause(); return }
                 playing = true; buffering = false; loaded = true; qoe.paused(false); show(); sendStatus()
+                pendingFileAudio?.let { pendingFileAudio = null; chooseFileAudio(it) }
             }
             override fun onPaused() { playing = false; qoe.paused(true); showChrome(); sendStatus() }
             override fun onPlayTime(ms: Long) = qoe.playTime(ms)
@@ -450,16 +453,17 @@ private class Screen(private val serverUrl: String) {
         }
         val t = remembered.ticket
         ticket = t
-        selectedAudio = receiverSelectedAudio(t)
+        selectedAudio = remembered.fileAudio ?: currentAudioPos(t)
+        pendingFileAudio = remembered.fileAudio
         // R285 — positions in receiverSubtitles(), the list the remote is shown; this used to index
         // the ticket's raw list, which stops matching the moment a ticket interleaves PGS and text.
         showSubtitle(if (t.burnedSubtitleIndex != null) -1 else remembered.subtitle)
         loaded = true
         playing = false
         lastProgressAt = nowMs()
-        qoe.beginItem(env.jellyfinId, t.startVariantBps, t.directPlay, backend.capabilities().linkKind)
+        qoe.beginItem(env.jellyfinId, t.startVariantBps, t.directPlay, backend.capabilities().linkKind, streamBps = t.streamBps.takeIf { t.directPlay })
         qoe.startRequested(startRequestMs)   // DEB-5394 (FR-37)
-        val opened = runCatching { backend.open(t.hlsUrl ?: "", env.startPositionMs.takeIf { it > 0 } ?: t.startPositionMs, t.startVariantBps) }
+        val opened = runCatching { backend.open(t.hlsUrl ?: "", env.startPositionMs.takeIf { it > 0 } ?: t.startPositionMs, t.startVariantBps, t.directPlay) }
         if (opened.isFailure) {
             // DEB-4874 — a start that never opened has played nothing: the server's session for it is closed at 0, never at the
             // length of whatever was open before (which marked the episode watched), and the viewer is told once.
@@ -486,7 +490,30 @@ private class Screen(private val serverUrl: String) {
     private fun subtitleInputs(t: StreamTicket) = receiverSubtitles(t).mapIndexed { i, s -> TrackInput(i, s.language, s.label, s.forced, s.isDefault) }
 
     /** What a start ends up with once the profile's remembered choice is applied: the ticket to play and the text subtitle to draw (-1 = none). */
-    private class RememberedStart(val ticket: StreamTicket, val subtitle: Int)
+    private class RememberedStart(val ticket: StreamTicket, val subtitle: Int, val fileAudio: Int? = null)
+
+    /** DEB-5503 (FR-44) — the audio that plays on a ticket before anyone picks: a transcode's own, or the file's default on a direct play. */
+    private fun currentAudioPos(t: StreamTicket): Int = if (t.directPlay) defaultAudioPos(t) else receiverSelectedAudio(t)
+
+    private fun defaultAudioPos(t: StreamTicket): Int = t.audio.indexOfFirst { it.isDefault }.takeIf { it >= 0 } ?: 0
+
+    /** DEB-5503 (FR-44) — audio [pos] of a direct play can be selected in the file: it is one of the container's tracks, in a codec this app declares. */
+    private fun fileAudioSelectable(t: StreamTicket, pos: Int): Boolean {
+        val a = t.audio.getOrNull(pos) ?: return false
+        return t.directPlay && !a.external && a.codec?.lowercase() in backend.capabilities().audioCodecs
+    }
+
+    /** DEB-5503 (FR-44) — make audio [pos] the one that plays in the file; false when the player lists other tracks than the ticket (the caller restreams). */
+    private fun selectFileAudio(t: StreamTicket, pos: Int): Boolean {
+        val inContainer = t.audio.filter { !it.external }
+        return fileAudioSelectable(t, pos) && backend.selectFileAudio(inContainer.indexOf(t.audio[pos]), inContainer.size)
+    }
+
+    /** DEB-5503 (FR-44) — Jellyfin's stream index of the audio a restream of this ticket must keep: a transcode's own, or the pick made in a direct play's file. */
+    private fun carriedAudio(): Int? {
+        val t = ticket ?: return null
+        return t.audioStreamIndex ?: t.audio.getOrNull(selectedAudio)?.index?.takeIf { t.directPlay && selectedAudio != defaultAudioPos(t) }
+    }
 
     /**
      * DEB-4932 (FR-23) — apply this profile's remembered audio and subtitle to a fresh [t]. Audio went out with the start, so the
@@ -501,7 +528,7 @@ private class Screen(private val serverUrl: String) {
         val series = seriesId?.let { ScreenTrackMemory.series(user, it) }
         val global = ScreenTrackMemory.global(user)
         val audioPos = (rememberedAudioIndex(series, audioInputs(t)) ?: rememberedAudioIndex(global, audioInputs(t)))
-            ?.takeIf { it != receiverSelectedAudio(t) }
+            ?.takeIf { it != currentAudioPos(t) }
         val subPos = rememberedSubtitleIndex(series, subtitleInputs(t)) ?: rememberedSubtitleIndex(global, subtitleInputs(t))
         val pick = subPos?.let { receiverSubPick(t, it) }
         val burn = (pick as? ReceiverSubPick.Burn)?.streamIndex
@@ -513,6 +540,8 @@ private class Screen(private val serverUrl: String) {
             else -> -1
         }
         if (audioPos == null && burn == null && !unburn) return RememberedStart(t, text)
+        // DEB-5503 (FR-44) — a direct play's audio is chosen inside the file at the first PLAYING; a burn-in (or an audio the player cannot take) is a restream, as before.
+        if (audioPos != null && burn == null && !unburn && fileAudioSelectable(t, audioPos)) return RememberedStart(t, text, fileAudio = audioPos)
         val audioStream = audioPos?.let { t.audio[it].index } ?: t.audioStreamIndex
         val subStream = burn ?: if (unburn) -1 else (t.burnedSubtitleIndex ?: -1)
         val next = runCatching { api.restream(id, subStream, startAt, backend.capabilities(), audioStream) }.getOrNull()
@@ -696,10 +725,22 @@ private class Screen(private val serverUrl: String) {
 
     /** R285 (FR-R285-2) — audio is a restream; shared by the phone's command and the TV's own picker. */
     private fun applyAudio(idx: Int) {
-        val wanted = ticket?.audio?.getOrNull(idx) ?: return
+        val t = ticket ?: return
+        val wanted = t.audio.getOrNull(idx) ?: return
         rememberAudioPick(idx)
+        if (t.directPlay) { if (idx != selectedAudio) chooseFileAudio(idx); return }
         if (wanted.index == ticket?.audioStreamIndex) return
         GlobalScope.launch { restream(ticket?.burnedSubtitleIndex ?: -1, wanted.index, thenShow = selectedSub) }
+    }
+
+    /** DEB-5503 (FR-44) — audio [idx] of a direct play: in the file when the player lists the ticket's tracks, a restream with that audio when it does not. */
+    private fun chooseFileAudio(idx: Int) {
+        val t = ticket ?: return
+        val before = selectedAudio
+        if (selectFileAudio(t, idx)) { selectedAudio = idx; sendStatus(); return }
+        selectedAudio = before
+        val wanted = t.audio.getOrNull(idx) ?: return
+        GlobalScope.launch { restream(t.burnedSubtitleIndex ?: -1, wanted.index, thenShow = selectedSub) }
     }
 
     /** R285 — text is drawn here, a picture subtitle is a burn-in restream. False when nothing changed
@@ -708,9 +749,9 @@ private class Screen(private val serverUrl: String) {
         rememberSubtitlePick(idx)
         return when (val pick = receiverSubPick(ticket, idx)) {
             ReceiverSubPick.Nothing -> false
-            is ReceiverSubPick.Burn -> { GlobalScope.launch { restream(pick.streamIndex, ticket?.audioStreamIndex, thenShow = -1) }; false }
+            is ReceiverSubPick.Burn -> { val audio = carriedAudio(); GlobalScope.launch { restream(pick.streamIndex, audio, thenShow = -1) }; false }
             is ReceiverSubPick.Text ->
-                if (pick.unburnFirst) { GlobalScope.launch { restream(-1, ticket?.audioStreamIndex, thenShow = idx) }; false }
+                if (pick.unburnFirst) { val audio = carriedAudio(); GlobalScope.launch { restream(-1, audio, thenShow = idx) }; false }
                 else { showSubtitle(idx); true }
         }
     }
@@ -889,6 +930,7 @@ private class Screen(private val serverUrl: String) {
     private fun currentRows(): List<PickerRow> = pickerRows(
         ticket, pickerTab, pickerGroup, selectedSub,
         t = { ScreenLanguage.t(it) }, tn = { k, n -> ScreenLanguage.t(k, n) },
+        fileAudio = selectedAudio.takeIf { ticket?.directPlay == true },
     )
 
     private fun renderPicker() {
@@ -1275,17 +1317,19 @@ private class Screen(private val serverUrl: String) {
             ?: run { if (loaded && !buffering) show(); sendStatus(); return }   // FR-32 — a freeze's buffering view must not outlive a restream that never came
         if (itemId != id) return                       // the viewer moved on while we were negotiating
         ticket = t
-        selectedAudio = receiverSelectedAudio(t)
+        selectedAudio = currentAudioPos(t)
+        pendingFileAudio = null
         showSubtitle(if (t.burnedSubtitleIndex != null) -1 else thenShow)   // never draw over a burn-in
         pauseOnNextPlaying = !wasPlaying
         backend.close()
-        qoe.restreamed()   // FR-25 — the same item again: its counts stay, its own start is not a stall
-        backend.open(t.hlsUrl ?: "", pos, t.startVariantBps)
+        qoe.restreamed(t.streamBps.takeIf { t.directPlay })   // FR-25 — the same item again: its counts stay, its own start is not a stall
+        backend.open(t.hlsUrl ?: "", pos, t.startVariantBps, t.directPlay)
         sendStatus()
     }
 
     /** DEB-5024 (FR-27) — no rung in the master is below the one playing; no answer from AVPlay counts as none. */
     private fun onLowestRung(): Boolean {
+        if (ticket?.directPlay == true) return true   // DEB-5503 (FR-45) — a direct play has no AVAILABLE_BITRATE: it is the lowest rung there is
         val rungs = backend.availableBitratesBps()
         if (rungs.isEmpty()) return true
         val playing = backend.currentBandwidthBps() ?: return false
@@ -1298,7 +1342,10 @@ private class Screen(private val serverUrl: String) {
     /** DEB-5024 (FR-27) — the same stream, at its position, asked for again so the server answers with its ladder; once per item. */
     private fun askForLowerRung() {
         val t = ticket
-        GlobalScope.launch { afterReport(); restream(t?.burnedSubtitleIndex ?: -1, t?.audioStreamIndex, thenShow = selectedSub) }
+        val audio = carriedAudio()
+        // DEB-5503 (FR-45) — a direct play asks under the file's own bitrate, so the server's answer is our ladder and not the same file.
+        val below = t?.takeIf { it.directPlay }?.streamBps
+        GlobalScope.launch { afterReport(); restream(t?.burnedSubtitleIndex ?: -1, audio, thenShow = selectedSub, belowBandwidthBps = below) }
     }
 
     /**
@@ -1307,7 +1354,8 @@ private class Screen(private val serverUrl: String) {
      */
     private fun askAfterFreeze(belowBandwidthBps: Long?) {
         val t = ticket
-        GlobalScope.launch { afterReport(); restream(t?.burnedSubtitleIndex ?: -1, t?.audioStreamIndex, thenShow = selectedSub, belowBandwidthBps = belowBandwidthBps) }
+        val audio = carriedAudio()
+        GlobalScope.launch { afterReport(); restream(t?.burnedSubtitleIndex ?: -1, audio, thenShow = selectedSub, belowBandwidthBps = belowBandwidthBps) }
     }
 
     /** DEB-5024 (FR-32) — a freeze is on screen: the buffering view (R218) covers it until the position moves or a new stream plays. */
@@ -1334,9 +1382,15 @@ private class Screen(private val serverUrl: String) {
         applySubSize()
         subtitleJob?.cancel(); subtitleJob = null
         if (url == null) return
+        val afterFirstFrame = ticket?.directPlay == true
         // DEB-4692 (DEB-2205 FR-6) — through the API client: our own subtitle path is resolved on the server and sent with the
         // device token (it was a bare GET: a 401, or this widget's own origin), and a 202 is asked again until the track arrives.
         subtitleJob = GlobalScope.launch {
+            // DEB-5503 (FR-44) — a direct play's picture is the start path: Jellyfin extracts an embedded track on the first request (R381), so the sidecar waits for the first frame.
+            if (afterFirstFrame) {
+                while (generation == cueGeneration && loaded && !qoe.firstFrameShown) delay(250)
+                if (generation != cueGeneration || !loaded) return@launch
+            }
             val body = TicketSubtitles.fetch({ api.subtitleAttempt(url) }, { nowMs() }) { delay(it) }?.text ?: return@launch
             if (generation == cueGeneration) cues = parseVtt(body)
         }

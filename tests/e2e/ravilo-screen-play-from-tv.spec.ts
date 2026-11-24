@@ -141,7 +141,7 @@ test.describe("DEB-4661 — Ravilo on a Samsung TV plays from its own remote", (
     await expect(page.locator("#shell-body")).not.toContainText(/cast|play on/i);
     await page.keyboard.press("Enter");                      // Play
 
-    // Same negotiation as the receiver (hls_only), asked by the TV itself: no round trip through /api/remote/play, which
+    // Asked by the TV itself (DEB-5503: no longer hls_only): no round trip through /api/remote/play, which
     // a Tizen 5.0 widget is refused (DEB-4719).
     const opened = await waitForAvplayCall(page, "open");
     expect(String(opened.call[1])).toContain("/hls/ep-1/");
@@ -149,7 +149,8 @@ test.describe("DEB-4661 — Ravilo on a Samsung TV plays from its own remote", (
     expect(seen.starts).toHaveLength(1);
     expect(seen.starts[0].item_id).toBe("ep-1");
     expect(seen.starts[0].start_position_ms ?? 0).toBe(0);   // the server's playstate decides where it resumes
-    expect(JSON.stringify(seen.starts[0])).toContain("\"hls_only\":true");
+    // DEB-5503 (FR-43) — AVPlay plays a file that fits; an HLS-only start is the Chromecast receiver's limit, not this app's.
+    expect(JSON.stringify(seen.starts[0])).not.toContain("\"hls_only\":true");
     await shellOff(page);
 
     // Resumes from the server's playstate: the ticket said 42 s.

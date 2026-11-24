@@ -30,7 +30,11 @@ export function fakeAvPlayInitScript() {
   let zeroAfterSeekMs = 0;
   let seekedAt = 0;
   const properties: Record<string, string | undefined> = {};
+  // DEB-5503 (FR-44) — the tracks `getTotalTrackInfo()` lists: `setAudioTracks(n)` is a file with n audio tracks (indexed per type, as the
+  // ticket's container order is), the default being none; a test that sets another count is a file the player lists differently.
+  let audioTracks = 0;
   (window as any).__avplay = {
+    setAudioTracks(n: number) { audioTracks = n; },
     bufferStart() { buffering = true; listener.onbufferingstart?.(); },
     bufferComplete() { buffering = false; listener.onbufferingcomplete?.(); },
     hold() { held = true; },
@@ -107,7 +111,9 @@ export function fakeAvPlayInitScript() {
       getState() { return state; },
       getCurrentTime() { return Date.now() - seekedAt < zeroAfterSeekMs ? 0 : posMs; },
       getDuration() { return durationMs; },
-      getTotalTrackInfo() { return []; },
+      getTotalTrackInfo() {
+        return [{ index: 0, type: "VIDEO", extra_info: "{}" }, ...Array.from({ length: audioTracks }, (_, i) => ({ index: i, type: "AUDIO", extra_info: "{}" }))];
+      },
       setSelectTrack(type: string, index: number) {
         (window as any).__avplayCalls.push(["setSelectTrack", type, index]);
       },
