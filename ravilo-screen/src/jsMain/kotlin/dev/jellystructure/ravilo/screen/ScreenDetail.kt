@@ -345,6 +345,8 @@ internal class ScreenDetail(
             section.appendChild(strip)
         }
         val rail = node("div", "detail-rail")
+        val lane = node("div", "rail-track")
+        rail.appendChild(lane)
         val list = seasonEpisodes()
         val groups = series?.seasons?.firstOrNull { it.index == season }?.episodes.orEmpty().filter { it.playable() }
         list.forEachIndexed { index, (seasonIndex, episode) ->
@@ -369,7 +371,7 @@ internal class ScreenDetail(
             val last = groups.filter { it.id == episode.id }.maxOfOrNull { it.episodeNumber } ?: episode.episodeNumber
             tile.appendChild(label("div", "detail-ep-code", episodeCode(seasonIndex, episode.episodeNumber, last)))
             tile.appendChild(label("div", "tile-title", episode.title))
-            rail.appendChild(tile)
+            lane.appendChild(tile)
         }
         section.appendChild(rail)
         return section

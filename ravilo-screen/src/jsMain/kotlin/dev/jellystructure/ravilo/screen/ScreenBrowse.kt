@@ -33,7 +33,7 @@ internal class ScreenBrowse(val kind: String, private val tiles: ScreenHome) {
 
     fun render(mount: HTMLElement, fade: Boolean = false) {
         mount.textContent = ""
-        val pageNode = node("div", "browse-page")
+        val pageNode = node("div", "browse-page lane-page")
         val key = if (kind == "mylist") "nav.my_list" else "nav.${if (kind == "movie") "movies" else "series"}"
         pageNode.appendChild(node("h1", "browse-heading").also { it.textContent = ScreenLanguage.t(key) })
         if (page == 0) {

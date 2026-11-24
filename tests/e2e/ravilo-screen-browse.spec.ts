@@ -80,3 +80,28 @@ test("My List opens from the avatar and shows the Android TV empty line (DEB-465
   await page.keyboard.press("Escape");
   await expect(page.locator("#nav-profile.focused")).toBeVisible();
 });
+
+test("a grid's first row keeps the page at its top and a later row rests 248 px from the top (DEB-5487, FR-39)", async ({ page }) => {
+  await page.route("**/api/tv/browse?**", route => route.fulfill({ status: 200, contentType: "application/json",
+    body: JSON.stringify({ query: "", items: Array.from({ length: 30 }, (_, i) => card(`movie-${i}`)), total: 30 }) }));
+  await boot(page);
+  await page.keyboard.press("ArrowRight");
+  await page.keyboard.press("Enter");
+  await expect(page.locator("#browse-tile-0.focused")).toBeVisible();
+  const layoutTop = (selector: string) => page.locator(selector).evaluate(element => {
+    const rect = element.getBoundingClientRect();
+    return rect.top + (rect.height - (element as HTMLElement).offsetHeight) / 2;
+  });
+  const natural = await layoutTop("#browse-tile-0");
+  expect(await page.locator(".browse-page").evaluate(element => new DOMMatrix(getComputedStyle(element).transform).m42)).toBe(0);
+  for (const row of [1, 2, 4]) {
+    for (let step = 0; step < (row === 4 ? 2 : 1); step++) await page.keyboard.press("ArrowDown");
+    await expect(page.locator(`#browse-tile-${row * 6}.focused`)).toBeVisible();
+    await expect.poll(async () => Math.abs(await layoutTop(`#browse-tile-${row * 6}`) - 248), { timeout: 4000 }).toBeLessThanOrEqual(2);
+    expect(await page.locator("#shell-body").evaluate(body => body.scrollTop)).toBe(0);
+  }
+  // Back to the first row: the page returns to its top.
+  for (let i = 0; i < 4; i++) await page.keyboard.press("ArrowUp");
+  await expect(page.locator("#browse-tile-0.focused")).toBeVisible();
+  await expect.poll(() => layoutTop("#browse-tile-0"), { timeout: 4000 }).toBeCloseTo(natural, 0);
+});

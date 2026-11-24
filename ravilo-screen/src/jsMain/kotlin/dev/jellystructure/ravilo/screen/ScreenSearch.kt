@@ -34,7 +34,7 @@ internal class ScreenSearch(
 
     fun render(mount: HTMLElement) {
         mount.textContent = ""
-        val page = node("div", "browse-page search-page")
+        val page = node("div", "browse-page search-page lane-page")
         page.appendChild(node("h1", "browse-heading").also { it.textContent = ScreenLanguage.t("nav.search") })
         val field = node("input", "shell-target search-field") as HTMLInputElement
         field.id = FIELD_ID

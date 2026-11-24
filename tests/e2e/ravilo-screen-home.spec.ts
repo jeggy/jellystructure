@@ -165,3 +165,118 @@ test("Tizen every on-screen tile keeps its poster while focus moves along a row 
   expect(bare).toBe(0);
   expect(await page.locator("#shell-body .tile-art img[src]").count()).toBeLessThanOrEqual(60);
 });
+
+// DEB-5487 FR-39/FR-41 — where the feed rests and how rails and tiles move. A tile's layout top is its rect with the grow undone.
+const LINE_PX = 248;
+const layoutTop = (page: Page, selector: string) => page.locator(selector).evaluate(element => {
+  const rect = element.getBoundingClientRect();
+  return rect.top + (rect.height - (element as HTMLElement).offsetHeight) / 2;
+});
+const layoutLeft = (page: Page, selector: string) => page.locator(selector).evaluate(element => {
+  const rect = element.getBoundingClientRect();
+  return rect.left + (rect.width - (element as HTMLElement).offsetWidth) / 2;
+});
+const trackShift = (page: Page, row: number) => page.locator(`#home-row-${row}-tile-0`).evaluate(
+  tile => new DOMMatrix(getComputedStyle(tile.parentElement!).transform).m41);
+async function onTheLine(page: Page, selector: string) {
+  await expect.poll(async () => Math.abs(await layoutTop(page, selector) - LINE_PX), { timeout: 4000 }).toBeLessThanOrEqual(2);
+}
+const wideFeed = (rows: number, tiles: number, shape = "POSTER") => ({
+  heroes: homeFeed.heroes, channels: [],
+  rows: Array.from({ length: rows }, (_, row) => ({
+    id: `row-${row}`, title: `Shelf ${row}`, kind: "CUSTOM",
+    items: Array.from({ length: tiles }, (_, tile) => card(`r${row}-t${tile}`, `Story ${row}-${tile}`)),
+  })),
+  tile_shape: shape, hero_height_pct: 48, focus_detail: "none",
+});
+
+test("Tizen the focused row rests 248 px from the top, the last row too, and the hero brings the feed back (DEB-5487, FR-39)", async ({ page }) => {
+  await boot(page, wideFeed(5, 8));
+  const heroTop = await page.locator("#home-hero-0").evaluate(element => element.getBoundingClientRect().top);
+  for (let row = 0; row < 5; row++) {
+    await page.keyboard.press("ArrowDown");
+    await expect(page.locator("#shell-body .home-tile.focused")).toHaveAttribute("data-row", `row-${row}`);
+    await onTheLine(page, `#home-row-${row}-tile-0`);
+    expect(await page.locator("#shell-body").evaluate(body => body.scrollTop)).toBe(0);
+  }
+  // The row above rests on the line again, and the way back to the hero is the feed at its top.
+  await page.keyboard.press("ArrowUp");
+  await onTheLine(page, "#home-row-3-tile-0");
+  for (let row = 3; row > 0; row--) await page.keyboard.press("ArrowUp");
+  await expect(page.locator("#home-row-0-tile-0, #shell-body .home-tile.focused[data-row=\"row-0\"]").first()).toHaveClass(/focused/);
+  await page.keyboard.press("ArrowUp");
+  await expect(page.locator("#home-hero-0")).toHaveClass(/focused/);
+  await expect.poll(() => page.locator("#home-hero-0").evaluate(element => element.getBoundingClientRect().top), { timeout: 4000 }).toBeCloseTo(heroTop, 0);
+});
+
+test("Tizen the feed moves by a 220 ms transform, never by scrolling, and a key mid-move goes on from where it is (DEB-5487, FR-39)", async ({ page }) => {
+  await boot(page, wideFeed(5, 8));
+  const feed = page.locator(".home-feed");
+  expect(await feed.evaluate(element => getComputedStyle(element).transitionDuration)).toBe("0.22s");
+  expect(await feed.evaluate(element => getComputedStyle(element).transitionTimingFunction)).toBe("cubic-bezier(0.22, 0.61, 0.36, 1)");
+  expect(await page.locator("#shell-body").evaluate(body => getComputedStyle(body).overflowY)).toBe("hidden");
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("ArrowDown");
+  await expect(page.locator("#home-row-3-tile-0")).toHaveClass(/focused/);
+  await onTheLine(page, "#home-row-3-tile-0");
+  expect(await page.locator("#shell-body").evaluate(body => body.scrollTop)).toBe(0);
+});
+
+test("Tizen the focused tile grows to 1.10 and the tile it left goes back (DEB-5487, FR-41)", async ({ page }) => {
+  await boot(page, wideFeed(2, 8));
+  await page.keyboard.press("ArrowDown");
+  await expect(page.locator("#home-row-0-tile-0")).toHaveCSS("transform", "matrix(1.1, 0, 0, 1.1, 0, 0)");
+  await expect(page.locator("#home-row-0-tile-1")).toHaveCSS("transform", "none");
+  await page.keyboard.press("ArrowRight");
+  await expect(page.locator("#home-row-0-tile-1")).toHaveCSS("transform", "matrix(1.1, 0, 0, 1.1, 0, 0)");
+  await expect(page.locator("#home-row-0-tile-0")).toHaveCSS("transform", "none");
+  expect(await page.locator("#home-row-0-tile-1").evaluate(element => getComputedStyle(element).transitionDuration)).toBe("0.2s");
+});
+
+test("Tizen a rail moves only when the new tile would be cut: to the gutter at the start, just fully visible at the end (DEB-5487, FR-41)", async ({ page }) => {
+  await boot(page, wideFeed(2, 20));
+  await page.keyboard.press("ArrowDown");
+  const width = page.viewportSize()!.width;
+  // Tiles that are fully visible do not move the rail.
+  for (let i = 1; i <= 4; i++) {
+    await page.keyboard.press("ArrowRight");
+    await expect(page.locator(`#home-row-0-tile-${i}`)).toHaveClass(/focused/);
+    await page.waitForTimeout(300);
+    expect(await trackShift(page, 0)).toBe(0);
+  }
+  // Right until a tile is cut at the end: the rail moves, and the grown tile with its ring ends fully on screen.
+  let tile = 4;
+  while (await trackShift(page, 0) === 0 && tile < 19) {
+    tile++;
+    await page.keyboard.press("ArrowRight");
+    await expect(page.locator(`#home-row-0-tile-${tile}`)).toHaveClass(/focused/);
+    await page.waitForTimeout(350);
+  }
+  expect(await trackShift(page, 0)).toBeLessThan(0);
+  const box = await page.locator(`#home-row-0-tile-${tile}`).evaluate(element => {
+    const rect = element.getBoundingClientRect();
+    return { left: rect.left, right: rect.right };
+  });
+  expect(box.right + 4).toBeLessThanOrEqual(width);       // the ring is 4 px and has grown with the tile
+  expect(box.right + 4).toBeGreaterThan(width - 20);      // and the rail moved no further than it had to
+  // Left onto a tile that is fully visible: the rail stays where it is.
+  const shifted = await trackShift(page, 0);
+  tile--;
+  await page.keyboard.press("ArrowLeft");
+  await expect(page.locator(`#home-row-0-tile-${tile}`)).toHaveClass(/focused/);
+  await page.waitForTimeout(350);
+  expect(await trackShift(page, 0)).toBe(shifted);
+  // Left until a tile is cut at the start: the rail moves and that tile comes to the 72 px gutter.
+  let moved = false;
+  for (let i = 0; i < 19 && !moved; i++) {
+    tile--;
+    await page.keyboard.press("ArrowLeft");
+    await expect(page.locator(`#home-row-0-tile-${tile}`)).toHaveClass(/focused/);
+    await page.waitForTimeout(350);
+    moved = await trackShift(page, 0) !== shifted;
+  }
+  expect(moved).toBe(true);
+  expect(await layoutLeft(page, `#home-row-0-tile-${tile}`)).toBeCloseTo(72, 0);
+});

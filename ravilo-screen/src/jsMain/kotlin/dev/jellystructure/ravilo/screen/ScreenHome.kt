@@ -16,7 +16,7 @@ internal class ScreenHome(private val serverUrl: String) {
     fun render(feed: HomeFeed, mount: HTMLElement, language: String) {
         body = mount
         mount.textContent = ""
-        val home = node("div", "home-feed")
+        val home = node("div", "home-feed lane-page")
         val heroes = node("div", "home-heroes")
         feed.heroes.forEachIndexed { index, hero ->
             val target = target("home-hero-$index", "heroes", "hero")
@@ -41,6 +41,8 @@ internal class ScreenHome(private val serverUrl: String) {
             val section = node("section", "home-section")
             section.appendChild(label("h2", "home-heading", t("section.channels", language)))
             val rail = node("div", "home-rail")
+            val track = node("div", "rail-track")
+            rail.appendChild(track)
             feed.channels.forEachIndexed { index, channel ->
                 val target = target("home-channel-$index", "channels", "channel")
                 target.setAttribute("data-channel-id", channel.id)
@@ -49,7 +51,7 @@ internal class ScreenHome(private val serverUrl: String) {
                     ?.let { target.style.background = it }
                 channel.logoUrl?.let(::image)?.let { target.appendChild(it) }
                 target.appendChild(label("span", "channel-name", channel.name))
-                rail.appendChild(target)
+                track.appendChild(target)
             }
             section.appendChild(rail)
             home.appendChild(section)
@@ -58,9 +60,11 @@ internal class ScreenHome(private val serverUrl: String) {
             val section = node("section", "home-section home-content-row")
             section.appendChild(label("h2", "home-heading", row.title))
             val rail = node("div", "home-rail")
+            val track = node("div", "rail-track")
+            rail.appendChild(track)
             val shape = if (row.kind == RowKind.CONTINUE) TileShape.LANDSCAPE else feed.tileShape
             row.items.forEachIndexed { tileIndex, card ->
-                rail.appendChild(tile(card, "home-row-$rowIndex-tile-$tileIndex", "row-$rowIndex", shape,
+                track.appendChild(tile(card, "home-row-$rowIndex-tile-$tileIndex", "row-$rowIndex", shape,
                     row.kind == RowKind.CONTINUE))
             }
             section.appendChild(rail)
@@ -76,27 +80,28 @@ internal class ScreenHome(private val serverUrl: String) {
      */
     fun updateImages(focusId: String) {
         val mount = body ?: return
+        val shell = document.getElementById("shell") as? HTMLElement ?: return
         val focus = document.getElementById(focusId) as? HTMLElement ?: return
-        val focusRect = focus.getBoundingClientRect()
+        val focusBox = ScreenLane.restBox(focus, shell)
         val screenHeight = mount.clientHeight.toDouble().coerceAtLeast(1.0)
         val viewWidth = window.innerWidth.toDouble()
         val viewHeight = window.innerHeight.toDouble()
+        fun showing(box: ScreenLane.Box) = box.width > 0 && box.height > 0 &&
+            box.right > 0 && box.left < viewWidth && box.bottom > 0 && box.top < viewHeight
         val holders = mount.getElementsByClassName("tile-art")
-        val focusX = (focusRect.left + focusRect.right) / 2
-        val focusY = (focusRect.top + focusRect.bottom) / 2
         val onScreen = mutableListOf<Pair<HTMLElement, Double>>()
         val nearby = mutableListOf<Pair<HTMLElement, Double>>()
         for (index in 0 until holders.length) {
             val holder = holders.item(index) as? HTMLElement ?: continue
             if (holder.getAttribute("data-art-url") == null) continue
-            val rect = holder.getBoundingClientRect()
-            val dx = (rect.left + rect.right) / 2 - focusX
-            val dy = (rect.top + rect.bottom) / 2 - focusY
+            // Where it rests after the move, or where it is drawn now: a tile still sliding out keeps its image until it is gone.
+            val rest = ScreenLane.restBox(holder, shell)
+            val dx = rest.centerX - focusBox.centerX
+            val dy = rest.centerY - focusBox.centerY
             val distance = dx * dx + dy * dy
-            val visible = rect.width > 0 && rect.height > 0 &&
-                rect.right > 0 && rect.left < viewWidth && rect.bottom > 0 && rect.top < viewHeight
-            val near = rect.top <= focusRect.bottom + screenHeight && rect.bottom >= focusRect.top - screenHeight
-            if (visible) onScreen.add(holder to distance) else if (near) nearby.add(holder to distance)
+            val near = rest.top <= focusBox.bottom + screenHeight && rest.bottom >= focusBox.top - screenHeight
+            if (showing(rest) || showing(ScreenLane.screenBox(holder))) onScreen.add(holder to distance)
+            else if (near) nearby.add(holder to distance)
         }
         val selected = mutableSetOf<HTMLElement>()
         for ((holder, _) in onScreen.sortedBy { it.second }.take(IMAGE_CAP)) selected.add(holder)
@@ -104,7 +109,8 @@ internal class ScreenHome(private val serverUrl: String) {
         for (index in 0 until holders.length) {
             val holder = holders.item(index) as? HTMLElement ?: continue
             if (holder in selected) {
-                if (holder.firstChild == null) holder.getAttribute("data-art-url")?.let(::image)?.let { holder.appendChild(it) }
+                if (holder.firstChild == null) holder.getAttribute("data-art-url")?.let(::image)
+                    ?.let { holder.appendChild(ScreenSkeleton.fadeOnLoad(it)) }
             } else if (holder.firstChild != null) {
                 holder.textContent = ""
             }
