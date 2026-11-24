@@ -182,6 +182,31 @@ class WriteNfoSettlesTest {
     }
 
     @Test
+    fun `includeEpisodes writing a missing episode NFO under an unchanged series NFO stamps nfoWrittenAt`() = runBlocking {
+        val ep = episode("jf-ep")
+        val s = series(ep, nfoHash = null)
+        val current = s.copy(nfoHash = hashOf(s))
+        store.updateOne(current)
+        val result = PipelineStepOps.writeNfo(current, store, "", emptyList(), allowForeign = true, includeEpisodes = true)
+        assertEquals(PipelineStepOps.NfoResult.WRITTEN, result)
+        assertNotNull(NfoWriter.readRawEpisode(ep))
+        assertTrue(store.get("show")?.nfoWrittenAt != null)
+    }
+
+    @Test
+    fun `includeEpisodes with every episode NFO current writes nothing and stamps nothing`() = runBlocking {
+        val ep = episode("jf-ep")
+        val path = currentEpisodeNfo(ep)
+        val s = series(ep, nfoHash = null)
+        val current = s.copy(nfoHash = hashOf(s))
+        store.updateOne(current)
+        val result = PipelineStepOps.writeNfo(current, store, "", emptyList(), allowForeign = true, includeEpisodes = true)
+        assertEquals(PipelineStepOps.NfoResult.UNCHANGED, result)
+        assertEquals(oldMtime, mtime(path))
+        assertNull(store.get("show")?.nfoWrittenAt)
+    }
+
+    @Test
     fun `the series NFO does not depend on the order of cast members that tie`() {
         val a = Person(tmdbId = 1, name = "A", order = 3)
         val b = Person(tmdbId = 2, name = "B", order = 3)

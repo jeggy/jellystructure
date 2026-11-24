@@ -1595,7 +1595,7 @@ class Scanner(
                     tmdbId = m.id,
                     name = m.name,
                     profilePath = m.profilePath,
-                    character = m.roles.firstOrNull()?.character?.takeIf { it.isNotBlank() },
+                    character = primaryCharacter(m.roles),
                     order = m.order,
                     type = "Actor",
                     episodeCount = m.totalEpisodeCount,
@@ -1725,3 +1725,14 @@ class Scanner(
     @OptIn(ExperimentalForeignApi::class)
     private fun epochSeconds(): Long = platform.posix.time(null)
 }
+
+/**
+ * DEB-5479 (FR-5): the one credit string a series-level cast member is stored with. TMDB's aggregate credits list several
+ * `roles` for a person (another character, or the same one with and without a "(voice)" suffix) and does not keep their order
+ * between two requests when their episode counts tie, so `roles.first()` made the stored text, and with it `tvshow.nfo` and
+ * every episode NFO, flip from one forced pass to the next. The role with the most episodes wins; a tie takes the string that sorts first.
+ */
+internal fun primaryCharacter(roles: List<dev.jellystructure.tmdb.TmdbAggregateRole>): String? =
+    roles.filter { it.character.isNotBlank() }
+        .sortedWith(compareByDescending<dev.jellystructure.tmdb.TmdbAggregateRole> { it.episodeCount }.thenBy { it.character })
+        .firstOrNull()?.character

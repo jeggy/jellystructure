@@ -132,3 +132,10 @@ recursive refresh recomputes the rollup for every other client.
 - Its tile shows no false ✓.
 - A `linuxX64Test` over `runPipeline` with a fake Jellyfin records zero `Library/Refresh` calls and one
   item refresh for a `SingleItem` run, and one `Library/Refresh` plus one `Finished` for a `Library` run.
+
+## Amendment 2026-11-24 — the closing refresh needs a file to read (DEB-5479)
+
+FR-145-7's one closing refresh stands for a title that is new to the store, and for any run that wrote an NFO, an episode
+NFO or artwork. A run of a title that was **already stored** and **wrote none of those** sends no closing refresh: there is
+nothing on disk for Jellyfin to re-read. The library sweep re-ingests the same unresolved titles every pass, and each one used to cost
+Jellyfin a refresh. See `nfos-carry-the-release-date.md`, amendment 2026-11-24 (FR-6).

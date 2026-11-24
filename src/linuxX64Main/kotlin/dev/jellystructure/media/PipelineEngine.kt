@@ -38,7 +38,8 @@ import kotlinx.coroutines.withContext
  */
 sealed interface RunTarget {
     data class Library(val libraryJellyfinId: String? = null, val resumeSkipIds: Set<String> = emptySet()) : RunTarget
-    data class SingleItem(val item: MediaItem) : RunTarget
+    /** [known]: the title was already in the store before this run (DEB-5479, FR-6) — a run of it that writes nothing sends no closing refresh. */
+    data class SingleItem(val item: MediaItem, val known: Boolean = false) : RunTarget
 }
 
 /** Bundles every collaborator [runPipeline] needs, replacing the long positional parameter list
@@ -275,10 +276,13 @@ suspend fun runPipeline(
     // (a series recursively, so its children and rollup are recomputed), unless sync_jellyfin already
     // refreshed that title in this run. Never a /Library/Refresh.
     val syncedByStep = mutableSetOf<String>()
+    // DEB-5479 (FR-6): set when a step put a file on disk that Jellyfin has to read (NFO, episode NFO, artwork).
+    val wroteFiles = AtomicInt(0)
     val syncedByStepLock = kotlinx.coroutines.sync.Mutex()
     suspend fun refreshTriggeredTitle() {
         if (target !is RunTarget.SingleItem || scanTracker.cancelRequested) return
         if (syncedByStepLock.withLock { syncedByStep.contains(target.item.id) }) return
+        if (target.known && wroteFiles.value == 0) return
         val cfg = configStore.current
         if (cfg.apiKeys.jellyfinUrl.isBlank() || cfg.apiKeys.jellyfinToken.isBlank()) return
         val item = store.get(target.item.id) ?: target.item
@@ -562,7 +566,7 @@ suspend fun runPipeline(
                     jobId, step.step, toProcess, { pipelineStepConcurrency(step.step, configStore.current.behavior.scanWorkers) },
                     scanTracker, broadcaster, labelOf = { it.title }, onItemFailure = failedRun(step.step),
                 ) { item, _ ->
-                    PipelineStepOps.fetchArtwork(item, store, artworkDownloader)
+                    if (PipelineStepOps.fetchArtwork(item, store, artworkDownloader)) wroteFiles.value = 1
                     ran(item, step.step)
                     // Phase 220 (FR-220-1) — pre-size in the same step, on the same (background) gate.
                     deps.artworkPresize?.let { presize -> runCatching { presize(store.get(item.id) ?: item) }.onFailure { Logger.warn("fetch_artwork: presize failed for ${item.id}: ${it.message}", "tv-image") } }
@@ -615,7 +619,7 @@ suspend fun runPipeline(
                         allowForeign = step.overwrite || cfg.behavior.overwriteNfo,
                         includeEpisodes = includeEpisodes,
                     )) {
-                        PipelineStepOps.NfoResult.WRITTEN -> { written.incrementAndGet(); ran(item, step.step, StepRunStore.CHANGED, "NFO written") }
+                        PipelineStepOps.NfoResult.WRITTEN -> { written.incrementAndGet(); wroteFiles.value = 1; ran(item, step.step, StepRunStore.CHANGED, "NFO written") }
                         PipelineStepOps.NfoResult.UNCHANGED -> { unchanged.incrementAndGet(); ran(item, step.step) }
                         PipelineStepOps.NfoResult.FOREIGN_SKIPPED -> { foreignSkipped.incrementAndGet(); ran(item, step.step, StepRunStore.SKIPPED, "another tool's NFO is there (overwrite is off)") }
                     }

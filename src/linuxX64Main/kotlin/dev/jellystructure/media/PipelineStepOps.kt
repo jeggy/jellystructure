@@ -51,10 +51,13 @@ object PipelineStepOps {
      *  either is a real, valid still); `Episode.hasStill` is a persisted snapshot (Phase 121), so it must
      *  be re-stamped + saved here, or triage/Library/Dashboard keep reporting these episodes "missing"
      *  indefinitely (`stampHasStill` no-ops for movies). */
-    suspend fun fetchArtwork(item: MediaItem, store: MediaStore, artwork: ArtworkDownloader) {
+    suspend fun fetchArtwork(item: MediaItem, store: MediaStore, artwork: ArtworkDownloader): Boolean {
         val current = store.get(item.id) ?: item
+        // DEB-5479 (FR-6): true when there was something to download, so a closing Jellyfin refresh has a file to read; false = nothing was missing.
+        val hadGaps = artwork.isArtworkIncomplete(current)
         artwork.fetch(current)
         store.updateOne(artwork.stampHasStill(current))
+        return hadGaps
     }
 
     /** `prewarm_subtitles`'s outcomes (DEB-2205 FR-6). [Warmed]: how many video files have every text track cached now (zero is a
@@ -159,7 +162,12 @@ object PipelineStepOps {
             // Bug fix: writeEpisodeNfos groups by shared file first — a multi-episode file's contained
             // episodes get ONE combined NFO instead of each overwriting the last (see its doc comment).
             // DEB-5458 (FR-4): only a file that differs from the one on disk is written.
-            NfoWriter.writeEpisodeNfosIfChanged(current.episodes, current.cast)
+            val episodesWritten = NfoWriter.writeEpisodeNfosIfChanged(current.episodes, current.cast)
+            // DEB-5479 (FR-6): an episode file written under an unchanged series NFO is still a write — stamp it, so sync_jellyfin and the closing refresh see it.
+            if (episodesWritten > 0 && result != NfoResult.WRITTEN) {
+                store.updateOne((store.get(current.id) ?: current).copy(nfoWrittenAt = nowEpochSec()))
+                return NfoResult.WRITTEN
+            }
         } else if (current.kind == dev.jellystructure.model.MediaKind.TV_SHOW) {
             // Phase 153 — jellystructure owns Jellyfin's metadata; an episode it can confidently number
             // from its own filename parse but never got a jellyfinId for (Phase 152's Triage signal)

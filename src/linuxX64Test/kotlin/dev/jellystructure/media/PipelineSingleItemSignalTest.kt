@@ -134,6 +134,20 @@ class PipelineSingleItemSignalTest {
     }
 
     @Test
+    fun `a title already in the store whose run wrote nothing sends no closing refresh`() {
+        val series = title(MediaKind.TV_SHOW, "jf-known").also { runBlocking { store.addOrUpdate(it) } }
+        run(RunTarget.SingleItem(series, known = true), scanOnly)
+        assertEquals(emptyList(), posts.value, "DEB-5479 FR-6: nothing was written, so nothing for Jellyfin to read: ${posts.value}")
+    }
+
+    @Test
+    fun `a title new to the store still gets its one closing refresh`() {
+        val series = title(MediaKind.TV_SHOW, "jf-new").also { runBlocking { store.addOrUpdate(it) } }
+        run(RunTarget.SingleItem(series, known = false), scanOnly)
+        assertEquals(1, posts.value.count { it.startsWith("POST /Items/jf-new/Refresh?") }, "${posts.value}")
+    }
+
+    @Test
     fun `a title sync_jellyfin already refreshed is not refreshed a second time`() {
         val film = title(MediaKind.MOVIE, "jf-synced", nfoWrittenAt = 100L)
         runBlocking { store.addOrUpdate(film); store.updateOne(film) }   // addOrUpdate does not carry nfoWrittenAt

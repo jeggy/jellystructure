@@ -84,3 +84,19 @@ series that has an unresolved episode. A unit test covers each of these: a serie
 NFOs are unchanged writes no episode file; a cast change on the series rewrites the episode files that change; a repair
 episode whose NFO is already current writes nothing and leaves `nfoWrittenAt` alone; a missing repair NFO is written
 and bumps it.
+
+## Amendment 2026-11-24 — the credit string and the closing refresh (DEB-5479)
+
+Task: DEB-5479. Prod QA of DEB-5458 (DEB-5470, `v1.72-16-g7fbae5a2c`) still moved 4 series and 182 NFO files in the fourth
+forced pass, and two titles still got a Jellyfin refresh every pass. This restores FR-5 and FR-6; it adds no requirement.
+
+- **FR-5, found.** The only byte that moved in a mover's `tvshow.nfo` was one actor's `<role>`. The stored `character` came from
+  `roles.first()` of TMDB's aggregate credits, and TMDB does not keep the order of a person's `roles` between two requests
+  when their episode counts tie. The tie-break on `(order, tmdbId)` cannot reach it: the person and the order are the same.
+  The stored string is now the role with the most episodes, and a tie takes the string that sorts first, so the same
+  credits give the same text whatever order they arrive in.
+- **FR-6, found.** The refresh was not `sync_jellyfin` (its pass said 0 unsynced). It was the one closing refresh that
+  `phase-145-event-driven-full-pipeline.md` FR-145-7 gives every single-title run, which the library sweep starts for the same
+  six Jellyfin ids each pass. A run of a title that was already stored and wrote nothing (no NFO, no episode NFO, no
+  artwork) now sends no closing refresh; a title new to the store still gets it. An episode NFO written under an unchanged
+  series NFO now stamps `nfoWrittenAt` too (FR-6's rule, which the `includeEpisodes` path had not followed).

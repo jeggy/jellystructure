@@ -237,7 +237,7 @@ class RealtimeIngestService(
         )
         runCatching {
             runPipeline(
-                target = RunTarget.SingleItem(enriched),
+                target = RunTarget.SingleItem(enriched, known = existing != null),
                 pipeline = effectivePipeline(configStore.current),
                 jobId = "realtime-ingest-${enriched.id}",
                 scanTracker = ScanTracker(db, persistToDb = false),
