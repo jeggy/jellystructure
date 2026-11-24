@@ -198,10 +198,22 @@
     /* DEB-4658 FR-5/FR-14 — server-ordered Home feed. No Chromium 63-incompatible layout features. */
     #shell-body { height: calc(100% - 92px); box-sizing: border-box; overflow-y: auto; padding: 18px 72px 70px; }
     .home-feed { padding-bottom: 80px; }
-    .home-heroes { display: flex; overflow-x: auto; }
-    .home-hero { position: relative; box-sizing: border-box; flex: 0 0 100%; overflow: hidden; border-radius: 14px; background: #161922; }
+    /* DEB-5487 FR-38 — the hero is one target holding every slide stacked. A slide fades in over 600 ms and out over 400 ms
+       (opacity only); its backdrop drifts 1.0 -> 1.05 over 9 s by transform, snapping back only after the fade-out, and does
+       not run while the hero is off screen. No ring: the dots and the moving slide show where focus is. */
+    .home-hero { position: relative; box-sizing: border-box; overflow: hidden; border-radius: 14px; background: #161922; }
+    .hero-slide { position: absolute; top: 0; right: 0; bottom: 0; left: 0; opacity: 0; transition: opacity .4s linear; }
+    .hero-slide.on { opacity: 1; transition: opacity .6s linear; }
+    .hero-slide.instant { transition: none; }
+    .hero-art { position: absolute; top: 0; right: 0; bottom: 0; left: 0; transform: scale(1); transition: transform 0s linear .4s; }
+    .hero-slide.on .hero-art { transform: scale(1.05); transition: transform 9s linear; }
+    .home-hero.drift-off .hero-slide.on .hero-art { transform: scale(1); transition: none; }
     .home-hero img { width: 100%; height: 100%; object-fit: cover; }
-    .home-hero:after { content: ""; position: absolute; top: 0; right: 0; bottom: 0; left: 0; background: linear-gradient(90deg, rgba(10,12,19,.92), transparent 75%); pointer-events: none; }
+    .hero-slide:after { content: ""; position: absolute; top: 0; right: 0; bottom: 0; left: 0; background: linear-gradient(90deg, rgba(10,12,19,.92), transparent 75%); pointer-events: none; }
+    .hero-dots { position: absolute; z-index: 2; right: 96px; bottom: 88px; display: flex; align-items: center; }
+    .hero-dot { width: 16px; height: 16px; border-radius: 8px; background: var(--ink-soft); opacity: .35; transition: opacity .3s linear; }
+    .hero-dot + .hero-dot { margin-left: 16px; }
+    .hero-dot.on { width: 56px; background: var(--accent); opacity: 1; }
     .hero-copy { position: absolute; z-index: 1; left: 5%; bottom: 12%; max-width: 55%; text-shadow: 0 2px 8px #000; }
     .hero-kicker { color: var(--accent-2); text-transform: uppercase; font-size: 18px; letter-spacing: 2px; font-weight: 700; }
     .hero-title { font-size: 54px; font-weight: 700; line-height: 1.12; }
@@ -230,7 +242,7 @@
     .tile-square .tile-art { height: 205px; }
     .tile-art img { width: 100%; height: 100%; object-fit: cover; }
     .tile-title { font-size: 18px; font-weight: 600; padding: 10px 2px 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .home-hero.focused, .home-channel.focused, .home-tile.focused .tile-art { box-shadow: 0 0 0 4px var(--ring); }
+    .home-channel.focused, .home-tile.focused .tile-art { box-shadow: 0 0 0 4px var(--ring); }
     .hero-logo { display: block; max-width: 430px; max-height: 140px; object-fit: contain; object-position: left bottom; }
     .hero-badge { display: inline-block; margin-top: 14px; padding: 6px 12px; border-radius: 7px; background: rgba(0,0,0,.62); font-size: 17px; }
     .tile-progress { height: 4px; background: rgba(255,255,255,.28); margin-top: 6px; }

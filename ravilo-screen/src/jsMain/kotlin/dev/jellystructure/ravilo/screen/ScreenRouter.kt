@@ -30,6 +30,8 @@ internal data class ScreenRouteEntry(
     var skeleton: Boolean = false,
     /** DEB-4893 (FR-20) — the feed's load failed: the page shows the failure and Retry instead of loading again by itself. */
     var failed: Boolean = false,
+    /** DEB-5487 (FR-38) — the hero slide showing, so Back from a title opened on slide 2 draws slide 2. */
+    var heroSlide: Int = 0,
 )
 
 /**
@@ -87,6 +89,7 @@ internal class ScreenShell(
     private val home = ScreenHome(serverUrl)
     private val focus = ScreenFocus({ root }, { entries.last() }) {
         home.updateImages(it.id)
+        syncHero()
         val entry = entries.last()
         if (entry.browse?.nearEnd(it.id) == true) loadBrowse(entry)
     }
@@ -95,7 +98,7 @@ internal class ScreenShell(
     private var loadGeneration = 0
     private var away = false
 
-    fun hide() { visible = false; ++loadGeneration; root.classList.remove("on"); pageWarm.cancel() }
+    fun hide() { visible = false; ++loadGeneration; root.classList.remove("on"); pageWarm.cancel(); syncHero() }
 
     fun resetHome() {
         entries.clear(); entries.add(ScreenRouteEntry("home", "shell-page-target"))
@@ -126,6 +129,7 @@ internal class ScreenShell(
         if (!player) entries.add(ScreenRouteEntry("player", ""))
         player = true
         root.classList.remove("on")
+        syncHero()
         syncPrewarm()   // a phone's push over the page cancels; Play released it first
     }
 
@@ -172,8 +176,8 @@ internal class ScreenShell(
             }
             isBackKey(event) -> back()
             event.key == "Enter" -> activate()
-            event.key == "ArrowLeft" -> focus.move(-1, 0)
-            event.key == "ArrowRight" -> focus.move(1, 0)
+            event.key == "ArrowLeft" -> if (!stepHero(-1)) focus.move(-1, 0)
+            event.key == "ArrowRight" -> if (!stepHero(1)) focus.move(1, 0)
             event.key == "ArrowUp" -> {
                 val current = entries.last()
                 if (current.browse != null && current.focusId.startsWith("browse-tile-")) {
@@ -194,7 +198,15 @@ internal class ScreenShell(
     fun awayFromApp(away: Boolean) {
         this.away = away
         syncPrewarm()
+        syncHero()
     }
+
+    /** DEB-5487 (FR-38) — the hero counts only while Home is the page showing, the player is not up and the app is in front. */
+    private fun syncHero() {
+        home.syncHero(visible && !player && !away && entries.lastOrNull()?.feed != null)
+    }
+
+    private fun stepHero(direction: Int) = entries.last().focusId == ScreenHome.HERO_ID && home.stepHero(direction)
 
     private fun render() {
         val current = entries.last()
@@ -215,7 +227,7 @@ internal class ScreenShell(
             body.textContent = ""
             val feed = current.feed
             if (feed != null) {
-                home.render(feed, body, ScreenLanguage.lang)
+                home.render(feed, body, ScreenLanguage.lang, current.heroSlide) { current.heroSlide = it }
                 if (current.skeleton) ScreenSkeleton.fadeIn(body.firstElementChild as? HTMLElement)
                 current.skeleton = false
             } else if (current.failed) {
@@ -229,6 +241,7 @@ internal class ScreenShell(
         focus.refocus()
         if ((current.name == "home" || current.name == "channel") && current.feed == null && !current.failed) loadFeed(current)
         current.detail?.load()
+        syncHero()
         syncPrewarm()
         if (current.browse != null && current.browse.page == 0 && !current.browse.loading && !current.browse.failed) loadBrowse(current)
     }
@@ -317,7 +330,7 @@ internal class ScreenShell(
             return
         }
         if (mediaId != null) {
-            val title = element.querySelector(".tile-title, .hero-title")?.textContent ?: element.textContent ?: ""
+            val title = element.getAttribute("data-media-title") ?: element.querySelector(".tile-title, .hero-title")?.textContent ?: element.textContent ?: ""
             val kind = MediaKind.entries.firstOrNull { it.name.lowercase() == element.getAttribute("data-media-kind") } ?: MediaKind.MOVIE
             val page = ScreenDetail(api, serverUrl, mediaId, kind, title, onChange = ::detailChanged, onPlay = ::playFromPage)
             entries.add(ScreenRouteEntry("detail", "shell-page-target", title = title, mediaId = mediaId, mediaKind = kind, detail = page))

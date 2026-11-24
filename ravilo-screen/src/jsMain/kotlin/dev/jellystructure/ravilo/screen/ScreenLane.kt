@@ -60,8 +60,6 @@ internal object ScreenLane {
         while (node != shell) {
             x += node.offsetLeft
             y += node.offsetTop
-            val strip = node.parentElement as? HTMLElement
-            if (motion && strip != null && strip.classList.contains("home-heroes")) x -= strip.scrollLeft
             val parent = node.offsetParent as? HTMLElement ?: return null
             if (motion && parent != shell) {
                 if (parent.classList.contains("rail-track")) x += committed(parent, TX)
@@ -84,8 +82,6 @@ internal object ScreenLane {
                 row != "browse-row-0" && row != "search-row-0"
             val top = if (onLine) layoutBox(element, shell, motion = false)?.top else null
             move(page, TY, "Y", if (top == null) 0.0 else minOf(0.0, LINE_PX - top))
-            val strip = element.parentElement as? HTMLElement
-            if (strip != null && strip.classList.contains("home-heroes")) strip.scrollLeft = (element.offsetLeft - strip.offsetLeft).toDouble()
         }
         trackOf(element)?.let { slide(element, it) }
     }

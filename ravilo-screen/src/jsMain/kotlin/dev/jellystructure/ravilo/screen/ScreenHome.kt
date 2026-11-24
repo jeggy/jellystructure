@@ -12,31 +12,15 @@ import org.w3c.dom.HTMLElement
 /** DEB-4658 FR-5/FR-14: the server owns every Home section and its order. */
 internal class ScreenHome(private val serverUrl: String) {
     private var body: HTMLElement? = null
+    private val hero = ScreenHero(::absoluteUrl)
 
-    fun render(feed: HomeFeed, mount: HTMLElement, language: String) {
+    fun render(feed: HomeFeed, mount: HTMLElement, language: String, slide: Int = 0, onSlide: (Int) -> Unit = {}) {
         body = mount
         mount.textContent = ""
         val home = node("div", "home-feed lane-page")
-        val heroes = node("div", "home-heroes")
-        feed.heroes.forEachIndexed { index, hero ->
-            val target = target("home-hero-$index", "heroes", "hero")
-            target.setAttribute("data-media-id", hero.item.id)
-            target.setAttribute("data-media-kind", hero.item.kind.name.lowercase())
-            target.style.height = "${feed.heroHeightPct.coerceIn(40, 100)}vh"
-            image(hero.backdropUrl)?.let { target.appendChild(ScreenSkeleton.fadeOnLoad(it)) }
-            val copy = node("div", "hero-copy")
-            hero.taglineKicker?.takeIf { it.isNotBlank() }?.let { copy.appendChild(label("div", "hero-kicker", it)) }
-            val logo = hero.logoUrl?.let(::image)
-            if (logo != null) {
-                logo.className = "hero-logo"
-                copy.appendChild(logo)
-            } else copy.appendChild(label("div", "hero-title", hero.item.title))
-            hero.badge?.takeIf { it.isNotBlank() }?.let { copy.appendChild(label("div", "hero-badge", it)) }
-            hero.synopsis?.takeIf { it.isNotBlank() }?.let { copy.appendChild(label("div", "hero-synopsis", it)) }
-            target.appendChild(copy)
-            heroes.appendChild(target)
+        if (feed.heroes.isNotEmpty()) {
+            home.appendChild(hero.build(feed.heroes, slide, feed.heroHeightPct, feed.autoAdvanceSeconds, onSlide))
         }
-        if (feed.heroes.isNotEmpty()) home.appendChild(heroes)
         if (feed.channels.isNotEmpty()) {
             val section = node("section", "home-section")
             section.appendChild(label("h2", "home-heading", t("section.channels", language)))
@@ -71,6 +55,17 @@ internal class ScreenHome(private val serverUrl: String) {
             home.appendChild(section)
         }
         mount.appendChild(home)
+        if (feed.heroes.isNotEmpty()) hero.begin()
+    }
+
+    /** FR-38: the hero counts while [active] and on screen. */
+    fun syncHero(active: Boolean) = hero.sync(active)
+
+    /** FR-38: Left and Right on the hero change its slide, they do not move focus. */
+    fun stepHero(direction: Int): Boolean {
+        if (hero.slideCount == 0) return false
+        hero.step(direction)
+        return true
     }
 
     /**
@@ -162,7 +157,8 @@ internal class ScreenHome(private val serverUrl: String) {
             it.setAttribute("tabindex", "-1")
         }
 
-    private companion object {
-        const val IMAGE_CAP = 60
+    companion object {
+        const val HERO_ID = ScreenHero.ID
+        private const val IMAGE_CAP = 60
     }
 }

@@ -21,12 +21,13 @@ const homeFeed = {
   live_tv_home: { on_now_row_position: 0 },
 };
 
-async function boot(page: Page, feed: object = homeFeed) {
+async function boot(page: Page, feed: object = homeFeed, fakeClock = false) {
   await page.route("**/api/tv/home", route => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(feed) }));
   await page.addInitScript(() => {
     localStorage.setItem("ravilo.screen.serverUrl", "http://app:9505");
     localStorage.setItem("ravilo.screen.profiles", JSON.stringify([{ userId: "viewer", displayName: "Test Viewer", token: "test-token" }]));
   });
+  if (fakeClock) await page.clock.install();
   await page.goto(SCREEN_URL);
   await expect(page.locator("#shell-body .home-feed")).toBeVisible();
 }
@@ -112,7 +113,7 @@ test("Tizen Up/Down visits a one-tile Continue Watching row before the long row 
     tile_shape: "POSTER", hero_height_pct: 48, focus_detail: "none",
   };
   await boot(page, feed);
-  await expect(page.locator("#home-hero-0")).toHaveClass(/focused/);
+  await expect(page.locator("#home-hero")).toHaveClass(/focused/);
 
   await page.keyboard.press("ArrowDown");
   await expect(page.locator("#home-row-0-tile-0")).toHaveClass(/focused/);
@@ -125,7 +126,7 @@ test("Tizen Up/Down visits a one-tile Continue Watching row before the long row 
   await page.keyboard.press("ArrowUp");
   await expect(page.locator("#home-row-0-tile-0")).toHaveClass(/focused/);
   await page.keyboard.press("ArrowUp");
-  await expect(page.locator("#home-hero-0")).toHaveClass(/focused/);
+  await expect(page.locator("#home-hero")).toHaveClass(/focused/);
 });
 
 test("Tizen Down from the hero lands on the leftmost tile of a first row wider than the screen (DEB-5487, FR-40)", async ({ page }) => {
@@ -139,7 +140,7 @@ test("Tizen Down from the hero lands on the leftmost tile of a first row wider t
     tile_shape: "POSTER", hero_height_pct: 48, focus_detail: "none",
   };
   await boot(page, feed);
-  await expect(page.locator("#home-hero-0")).toHaveClass(/focused/);
+  await expect(page.locator("#home-hero")).toHaveClass(/focused/);
   await page.keyboard.press("ArrowDown");
   await expect(page.locator("#home-row-0-tile-0")).toHaveClass(/focused/);
 });
@@ -192,7 +193,7 @@ const wideFeed = (rows: number, tiles: number, shape = "POSTER") => ({
 
 test("Tizen the focused row rests 248 px from the top, the last row too, and the hero brings the feed back (DEB-5487, FR-39)", async ({ page }) => {
   await boot(page, wideFeed(5, 8));
-  const heroTop = await page.locator("#home-hero-0").evaluate(element => element.getBoundingClientRect().top);
+  const heroTop = await page.locator("#home-hero").evaluate(element => element.getBoundingClientRect().top);
   for (let row = 0; row < 5; row++) {
     await page.keyboard.press("ArrowDown");
     await expect(page.locator("#shell-body .home-tile.focused")).toHaveAttribute("data-row", `row-${row}`);
@@ -205,8 +206,8 @@ test("Tizen the focused row rests 248 px from the top, the last row too, and the
   for (let row = 3; row > 0; row--) await page.keyboard.press("ArrowUp");
   await expect(page.locator("#home-row-0-tile-0, #shell-body .home-tile.focused[data-row=\"row-0\"]").first()).toHaveClass(/focused/);
   await page.keyboard.press("ArrowUp");
-  await expect(page.locator("#home-hero-0")).toHaveClass(/focused/);
-  await expect.poll(() => page.locator("#home-hero-0").evaluate(element => element.getBoundingClientRect().top), { timeout: 4000 }).toBeCloseTo(heroTop, 0);
+  await expect(page.locator("#home-hero")).toHaveClass(/focused/);
+  await expect.poll(() => page.locator("#home-hero").evaluate(element => element.getBoundingClientRect().top), { timeout: 4000 }).toBeCloseTo(heroTop, 0);
 });
 
 test("Tizen the feed moves by a 220 ms transform, never by scrolling, and a key mid-move goes on from where it is (DEB-5487, FR-39)", async ({ page }) => {
@@ -279,4 +280,169 @@ test("Tizen a rail moves only when the new tile would be cut: to the gutter at t
   }
   expect(moved).toBe(true);
   expect(await layoutLeft(page, `#home-row-0-tile-${tile}`)).toBeCloseTo(72, 0);
+});
+
+// DEB-5487 FR-38 — the hero is Android TV's carousel. The page runs on Playwright's fake clock, so "2 s" is what the test says.
+const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==", "base64");
+const heroFeed = (count: number, autoAdvance: number, rows = 1, extra: object = {}) => ({
+  heroes: Array.from({ length: count }, (_, i) => ({
+    item: card(`hero-${i}`, `Hero ${i}`), tagline_kicker: "Featured",
+    backdrop_url: `/api/tv/image/hero-${i}-backdrop`, logo_url: null, badge: null, synopsis: `Synopsis ${i}`,
+  })),
+  channels: [],
+  rows: Array.from({ length: rows }, (_, row) => ({
+    id: `row-${row}`, title: `Shelf ${row}`, kind: "CUSTOM",
+    items: Array.from({ length: 8 }, (_, tile) => card(`r${row}-t${tile}`, `Story ${row}-${tile}`)),
+  })),
+  tile_shape: "POSTER", hero_height_pct: 48, focus_detail: "none", auto_advance_seconds: autoAdvance, ...extra,
+});
+async function bootHero(page: Page, feed: object) {
+  await page.route("**/api/tv/image/**", route => route.fulfill({ status: 200, contentType: "image/png", body: PNG }));
+  await boot(page, feed, true);
+  await expect(page.locator("#home-hero")).toHaveClass(/focused/);
+}
+const showing = (page: Page) => page.locator("#home-hero .hero-slide.on .hero-title");
+
+test("Tizen the hero advances every auto_advance_seconds and wraps from the last slide to the first (DEB-5487, FR-38)", async ({ page }) => {
+  await bootHero(page, heroFeed(3, 2));
+  await expect(showing(page)).toHaveText("Hero 0");
+  for (const next of ["Hero 1", "Hero 2", "Hero 0"]) {
+    await page.clock.fastForward(2_100);
+    await expect(showing(page)).toHaveText(next);
+  }
+});
+
+test("Tizen Left and Right change the slide, wrap, keep focus on the hero and restart the interval (DEB-5487, FR-38)", async ({ page }) => {
+  await bootHero(page, heroFeed(3, 4));
+  await page.clock.fastForward(3_000);
+  await expect(showing(page)).toHaveText("Hero 0");
+  await page.keyboard.press("ArrowRight");
+  await expect(showing(page)).toHaveText("Hero 1");
+  // Three seconds after the key, where four seconds after boot would already have advanced it.
+  await page.clock.fastForward(3_000);
+  await expect(showing(page)).toHaveText("Hero 1");
+  await page.clock.fastForward(1_100);
+  await expect(showing(page)).toHaveText("Hero 2");
+  await page.keyboard.press("ArrowRight");
+  await expect(showing(page)).toHaveText("Hero 0");
+  await page.keyboard.press("ArrowLeft");
+  await expect(showing(page)).toHaveText("Hero 2");
+  await expect(page.locator("#home-hero")).toHaveClass(/focused/);
+});
+
+test("Tizen auto_advance_seconds 0 never advances the hero (DEB-5487, FR-38)", async ({ page }) => {
+  await bootHero(page, heroFeed(3, 0));
+  await page.clock.fastForward(60_000);
+  await expect(showing(page)).toHaveText("Hero 0");
+  await expect(page.locator(".hero-dot")).toHaveCount(3);
+});
+
+test("Tizen the hero does not count while it is out of view, and a full interval starts when it is back (DEB-5487, FR-38)", async ({ page }) => {
+  await bootHero(page, heroFeed(3, 2, 4));
+  for (let i = 0; i < 3; i++) await page.keyboard.press("ArrowDown");
+  await expect(page.locator("#shell-body .home-tile.focused")).toHaveAttribute("data-row", "row-2");
+  await expect.poll(() => page.locator("#home-hero").evaluate(hero => hero.getBoundingClientRect().bottom), { timeout: 4000 }).toBeLessThan(92);
+  const before = await showing(page).textContent();
+  await page.clock.fastForward(10_000);
+  await page.clock.fastForward(10_000);
+  await expect(showing(page)).toHaveText(before!);
+  // No drift while it is off screen.
+  expect(await page.locator("#home-hero .hero-slide.on .hero-art").evaluate(art => getComputedStyle(art).transitionDuration)).toBe("0s");
+
+  for (let i = 0; i < 3; i++) await page.keyboard.press("ArrowUp");
+  await expect(page.locator("#home-hero")).toHaveClass(/focused/);
+  await expect.poll(() => page.locator("#home-hero").evaluate(hero => hero.getBoundingClientRect().bottom), { timeout: 4000 }).toBeGreaterThan(300);
+  await page.clock.fastForward(1_500);
+  await expect(showing(page)).toHaveText(before!);
+  await page.clock.fastForward(700);
+  await expect(showing(page)).not.toHaveText(before!);
+  expect(await page.locator("#home-hero .hero-slide.on .hero-art").evaluate(art => getComputedStyle(art).transitionDuration)).toBe("9s");
+});
+
+test("Tizen the hero does not count while the app is hidden (DEB-5487, FR-38)", async ({ page }) => {
+  await bootHero(page, heroFeed(3, 2));
+  await page.evaluate(() => {
+    Object.defineProperty(document, "hidden", { configurable: true, get: () => true });
+    document.dispatchEvent(new Event("visibilitychange"));
+  });
+  await page.clock.fastForward(10_000);
+  await expect(showing(page)).toHaveText("Hero 0");
+});
+
+test("Tizen Back from a title opened on slide 2 shows slide 2 with a full interval (DEB-5487, FR-38)", async ({ page }) => {
+  await bootHero(page, heroFeed(3, 3));
+  await page.keyboard.press("ArrowRight");
+  await expect(showing(page)).toHaveText("Hero 1");
+  await expect(page.locator("#home-hero")).toHaveAttribute("data-media-id", "hero-1");
+  await page.keyboard.press("Enter");
+  await expect(page.locator("#shell-body .shell-placeholder")).toBeVisible();
+  // Nothing counts under the title's page.
+  await page.clock.fastForward(10_000);
+  await page.keyboard.press("Escape");
+  await expect(page.locator("#home-hero")).toHaveClass(/focused/);
+  await expect(showing(page)).toHaveText("Hero 1");
+  await page.clock.fastForward(2_000);
+  await expect(showing(page)).toHaveText("Hero 1");
+  await page.clock.fastForward(1_200);
+  await expect(showing(page)).toHaveText("Hero 2");
+});
+
+test("Tizen the hero is one target with stacked slides, no ring, and dots 96 px from the right and 88 px from the bottom (DEB-5487, FR-38)", async ({ page }) => {
+  await bootHero(page, heroFeed(3, 0));
+  await expect(page.locator(".home-heroes")).toHaveCount(0);
+  await expect(page.locator("#shell-body .home-hero")).toHaveCount(1);
+  await expect(page.locator("#home-hero .hero-slide")).toHaveCount(3);
+  expect(await page.locator("#home-hero").evaluate(hero => getComputedStyle(hero).boxShadow)).toBe("none");
+
+  const dots = await page.locator("#home-hero").evaluate(hero => {
+    const box = hero.getBoundingClientRect();
+    const list = Array.from(hero.querySelectorAll(".hero-dot")).map(dot => {
+      const rect = dot.getBoundingClientRect();
+      const style = getComputedStyle(dot);
+      return { left: rect.left, right: rect.right, bottom: rect.bottom, width: rect.width, height: rect.height,
+        on: dot.classList.contains("on"), opacity: style.opacity, transition: style.transitionProperty };
+    });
+    return { list, right: box.right, bottom: box.bottom };
+  });
+  expect(dots.list.map(dot => dot.on)).toEqual([true, false, false]);
+  expect(dots.list.map(dot => [dot.width, dot.height])).toEqual([[56, 16], [16, 16], [16, 16]]);
+  expect(dots.right - dots.list[2].right).toBeCloseTo(96, 0);
+  expect(dots.bottom - dots.list[2].bottom).toBeCloseTo(88, 0);
+  expect(dots.list[1].left - dots.list[0].right).toBeCloseTo(16, 0);
+  expect(dots.list[2].left - dots.list[1].right).toBeCloseTo(16, 0);
+  expect(dots.list[1].opacity).toBe("0.35");
+  expect(dots.list.every(dot => dot.transition === "opacity")).toBe(true);
+  await page.keyboard.press("ArrowRight");
+  await expect(page.locator(".hero-dot").nth(1)).toHaveClass(/on/);
+  await expect(page.locator(".hero-dot").nth(0)).not.toHaveClass(/on/);
+
+  // The crossfade is opacity only, 600 ms in and 400 ms out; the drift is a 9 s transform on the slide that shows.
+  const fade = await page.locator("#home-hero").evaluate(hero => {
+    const on = getComputedStyle(hero.querySelector(".hero-slide.on")!);
+    const off = getComputedStyle(hero.querySelector(".hero-slide:not(.on)")!);
+    const art = getComputedStyle(hero.querySelector(".hero-slide.on .hero-art")!);
+    return [on.transitionProperty, on.transitionDuration, off.transitionProperty, off.transitionDuration, art.transitionProperty, art.transitionDuration];
+  });
+  expect(fade).toEqual(["opacity", "0.6s", "opacity", "0.4s", "transform", "9s"]);
+});
+
+test("Tizen one slide draws no dots (DEB-5487, FR-38)", async ({ page }) => {
+  await bootHero(page, heroFeed(1, 2));
+  await expect(page.locator(".hero-dot")).toHaveCount(0);
+  await page.clock.fastForward(5_000);
+  await expect(showing(page)).toHaveText("Hero 0");
+  await page.keyboard.press("ArrowRight");
+  await expect(showing(page)).toHaveText("Hero 0");
+});
+
+test("Tizen the hero loads the slide showing and the next two backdrops, and lets the rest go (DEB-5487, FR-38)", async ({ page }) => {
+  await bootHero(page, heroFeed(5, 0));
+  const loaded = () => page.locator("#home-hero .hero-art img[src]").evaluateAll(
+    images => images.map(image => image.getAttribute("src")!.replace(/^.*hero-(\d)-backdrop$/, "$1")).sort());
+  expect(await loaded()).toEqual(["0", "1", "2"]);
+  await page.keyboard.press("ArrowRight");
+  await page.keyboard.press("ArrowRight");
+  await expect(showing(page)).toHaveText("Hero 2");
+  await page.clock.fastForward(600);
+  await expect.poll(loaded).toEqual(["2", "3", "4"]);
 });

@@ -108,7 +108,7 @@ test.describe("DEB-4893 — Home and a channel's feed (FR-20)", () => {
     held.release();
     await expect(page.locator("#shell-body .home-feed")).toBeVisible();
     await expect(page.locator(".skeleton")).toHaveCount(0);              // removed in the same frame the content drew
-    await expect(page.locator("#home-hero-0")).toHaveClass(/focused/);   // focus is on the real target
+    await expect(page.locator("#home-hero")).toHaveClass(/focused/);   // focus is on the real target
     expect((await animationOf(page.locator("#shell-body .home-feed"))).name).toBe("arrive-fade");
     expect((await animationOf(page.locator("#shell-body .home-feed"))).duration).toBe("0.22s");
   });
@@ -119,7 +119,7 @@ test.describe("DEB-4893 — Home and a channel's feed (FR-20)", () => {
       "/api/tv/movie/new-a": (route) => json(route, 404),
     });
     await start(page);
-    await expect(page.locator("#home-hero-0")).toHaveClass(/focused/);
+    await expect(page.locator("#home-hero")).toHaveClass(/focused/);
     await page.keyboard.press("ArrowDown"); await page.keyboard.press("ArrowDown");
     await expect(page.locator("#home-row-0-tile-0")).toHaveClass(/focused/);
     await page.keyboard.press("Enter");
@@ -137,10 +137,10 @@ test.describe("DEB-4893 — Home and a channel's feed (FR-20)", () => {
       "/api/tv/image/hero-a-backdrop": async (route) => { await image.open; await route.fulfill({ status: 200, contentType: "image/png", body: png }); },
     });
     await start(page);
-    const img = page.locator("#home-hero-0 img").first();
+    const img = page.locator("#home-hero img").first();
     await expect(img).toHaveClass(/img-fade/);
     expect(await img.evaluate((el) => getComputedStyle(el).opacity)).toBe("0");      // the surface block shows, never a bare black area
-    expect(await page.locator("#home-hero-0").evaluate((el) => getComputedStyle(el).backgroundColor)).toBe("rgb(22, 25, 34)");
+    expect(await page.locator("#home-hero").evaluate((el) => getComputedStyle(el).backgroundColor)).toBe("rgb(22, 25, 34)");
     image.release();
     await expect(img).toHaveClass(/loaded/);
     await expect.poll(() => img.evaluate((el) => getComputedStyle(el).opacity)).toBe("1");
@@ -186,7 +186,7 @@ test.describe("DEB-4893 — Home and a channel's feed (FR-20)", () => {
       "/api/tv/channel/forest": async (route) => { await held.open; await json(route, 200, { ...feed, heroes: [], channels: [] }); },
     });
     await start(page);
-    await expect(page.locator("#home-hero-0")).toHaveClass(/focused/);
+    await expect(page.locator("#home-hero")).toHaveClass(/focused/);
     await page.keyboard.press("ArrowDown");
     await expect(page.locator("#home-channel-0")).toHaveClass(/focused/);
     await page.keyboard.press("Enter");
