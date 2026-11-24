@@ -6,6 +6,7 @@ import dev.jellystructure.shared.tv.MediaCard
 import dev.jellystructure.shared.tv.RowKind
 import dev.jellystructure.shared.tv.TileShape
 import kotlinx.browser.document
+import kotlinx.browser.window
 import org.w3c.dom.HTMLElement
 
 /** DEB-4658 FR-5/FR-14: the server owns every Home section and its order. */
@@ -68,27 +69,38 @@ internal class ScreenHome(private val serverUrl: String) {
         mount.appendChild(home)
     }
 
-    /** Keep artwork at most one screen from focus; the cap also protects a feed with dense rows. */
+    /**
+     * DEB-5487 FR-42: every tile on screen has its image, whatever the cap. The 60 slots go to the on-screen tiles first;
+     * slots left over go to off-screen tiles within one screen of focus, nearest first. An image goes only once its tile
+     * has left the screen.
+     */
     fun updateImages(focusId: String) {
         val mount = body ?: return
         val focus = document.getElementById(focusId) as? HTMLElement ?: return
         val focusRect = focus.getBoundingClientRect()
         val screenHeight = mount.clientHeight.toDouble().coerceAtLeast(1.0)
+        val viewWidth = window.innerWidth.toDouble()
+        val viewHeight = window.innerHeight.toDouble()
         val holders = mount.getElementsByClassName("tile-art")
         val focusX = (focusRect.left + focusRect.right) / 2
         val focusY = (focusRect.top + focusRect.bottom) / 2
-        val candidates = mutableListOf<Pair<HTMLElement, Double>>()
+        val onScreen = mutableListOf<Pair<HTMLElement, Double>>()
+        val nearby = mutableListOf<Pair<HTMLElement, Double>>()
         for (index in 0 until holders.length) {
             val holder = holders.item(index) as? HTMLElement ?: continue
+            if (holder.getAttribute("data-art-url") == null) continue
             val rect = holder.getBoundingClientRect()
+            val dx = (rect.left + rect.right) / 2 - focusX
+            val dy = (rect.top + rect.bottom) / 2 - focusY
+            val distance = dx * dx + dy * dy
+            val visible = rect.width > 0 && rect.height > 0 &&
+                rect.right > 0 && rect.left < viewWidth && rect.bottom > 0 && rect.top < viewHeight
             val near = rect.top <= focusRect.bottom + screenHeight && rect.bottom >= focusRect.top - screenHeight
-            if (near && holder.getAttribute("data-art-url") != null) {
-                val dx = (rect.left + rect.right) / 2 - focusX
-                val dy = (rect.top + rect.bottom) / 2 - focusY
-                candidates.add(holder to dx * dx + dy * dy)
-            }
+            if (visible) onScreen.add(holder to distance) else if (near) nearby.add(holder to distance)
         }
-        val selected = candidates.sortedBy { it.second }.take(60).map { it.first }.toSet()
+        val selected = mutableSetOf<HTMLElement>()
+        for ((holder, _) in onScreen.sortedBy { it.second }.take(IMAGE_CAP)) selected.add(holder)
+        for ((holder, _) in nearby.sortedBy { it.second }.take(IMAGE_CAP - selected.size)) selected.add(holder)
         for (index in 0 until holders.length) {
             val holder = holders.item(index) as? HTMLElement ?: continue
             if (holder in selected) {
@@ -143,4 +155,8 @@ internal class ScreenHome(private val serverUrl: String) {
             it.setAttribute("data-row", row)
             it.setAttribute("tabindex", "-1")
         }
+
+    private companion object {
+        const val IMAGE_CAP = 60
+    }
 }

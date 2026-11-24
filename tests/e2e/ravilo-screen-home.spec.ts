@@ -127,3 +127,41 @@ test("Tizen Up/Down visits a one-tile Continue Watching row before the long row 
   await page.keyboard.press("ArrowUp");
   await expect(page.locator("#home-hero-0")).toHaveClass(/focused/);
 });
+
+test("Tizen Down from the hero lands on the leftmost tile of a first row wider than the screen (DEB-5487, FR-40)", async ({ page }) => {
+  const feed = {
+    heroes: homeFeed.heroes, channels: [],
+    rows: [
+      { id: "wide", title: "Wide Shelf", kind: "CUSTOM",
+        items: Array.from({ length: 30 }, (_, tile) => card(`wide-${tile}`, `Story ${tile}`)) },
+      { id: "after", title: "After Shelf", kind: "CUSTOM", items: [card("after-a", "Tail Light")] },
+    ],
+    tile_shape: "POSTER", hero_height_pct: 48, focus_detail: "none",
+  };
+  await boot(page, feed);
+  await expect(page.locator("#home-hero-0")).toHaveClass(/focused/);
+  await page.keyboard.press("ArrowDown");
+  await expect(page.locator("#home-row-0-tile-0")).toHaveClass(/focused/);
+});
+
+test("Tizen every on-screen tile keeps its poster while focus moves along a row (DEB-5487, FR-42)", async ({ page }) => {
+  const rows = Array.from({ length: 4 }, (_, row) => ({
+    id: `row-${row}`, title: `Shelf ${row}`, kind: "CUSTOM",
+    items: Array.from({ length: 30 }, (_, tile) => card(`r${row}-t${tile}`, `Story ${row}-${tile}`)),
+  }));
+  await boot(page, { heroes: homeFeed.heroes, channels: [], rows, tile_shape: "POSTER", hero_height_pct: 48 });
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("ArrowDown");
+  await expect(page.locator("#shell-body .home-tile.focused")).toHaveAttribute("data-row", "row-1");
+  for (let i = 0; i < 10; i++) await page.keyboard.press("ArrowRight");
+  await expect(page.locator("#home-row-1-tile-10")).toHaveClass(/focused/);
+  const bare = await page.evaluate(() => {
+    const w = window.innerWidth, h = window.innerHeight;
+    return Array.from(document.querySelectorAll("#shell-body .tile-art")).filter(art => {
+      const r = art.getBoundingClientRect();
+      return r.width > 0 && r.height > 0 && r.right > 0 && r.left < w && r.bottom > 0 && r.top < h && !art.querySelector("img[src]");
+    }).length;
+  });
+  expect(bare).toBe(0);
+  expect(await page.locator("#shell-body .tile-art img[src]").count()).toBeLessThanOrEqual(60);
+});

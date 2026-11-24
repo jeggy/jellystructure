@@ -44,6 +44,10 @@ internal class ScreenFocus(
         }
         val candidates = if (dx != 0) directional.filter { it.getAttribute("data-row") == currentRow } else nearestBand(directional, fy)
         val rows = route().rowFocus
+        if (dy > 0 && dx == 0 && (currentRow == "bar" || currentRow == "heroes")) firstRowTarget(all, candidates, fy, rows)?.let {
+            focus(it)
+            return
+        }
         candidates.minByOrNull { candidate ->
             val rect = candidate.getBoundingClientRect()
             val x = rect.left + rect.width / 2 - fx
@@ -53,6 +57,26 @@ internal class ScreenFocus(
             val distance = if (dx != 0) kotlin.math.abs(x) + kotlin.math.abs(y) * 2 else kotlin.math.abs(y) + kotlin.math.abs(x) * 2
             distance + rowBonus
         }?.let(::focus)
+    }
+
+    /**
+     * DEB-5487 FR-40: Down from the hero or the bar enters the row below on its remembered tile, else its first tile, the
+     * leftmost one (Android TV's `firstRowFR` with `focusRestorer`), never the tile nearest across.
+     */
+    private fun firstRowTarget(
+        all: List<HTMLElement>,
+        band: List<HTMLElement>,
+        fy: Double,
+        remembered: Map<String, String>,
+    ): HTMLElement? {
+        val nearest = band.minByOrNull { element ->
+            val rect = element.getBoundingClientRect()
+            kotlin.math.abs(rect.top + rect.height / 2 - fy)
+        } ?: return null
+        if (!nearest.id.startsWith("home-")) return null
+        val row = nearest.getAttribute("data-row") ?: return null
+        val members = all.filter { it.getAttribute("data-row") == row }
+        return members.firstOrNull { it.id == remembered[row] } ?: members.firstOrNull()
     }
 
     /**
