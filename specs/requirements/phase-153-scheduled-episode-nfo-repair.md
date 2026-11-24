@@ -8,9 +8,10 @@
 > (not just a manual per-item click), jellystructure now writes a correct `<season>`/`<episode>` NFO
 > for any episode it can't otherwise resolve to a Jellyfin id, and tells Jellyfin to re-read it.
 
-**Status:** Implemented. Takes effect on the next scheduled run for any affected series (e.g. Mesterholdet) —
-requires the operator's pipeline to have both `write_nfo` and `sync_jellyfin` steps configured (Settings),
-same prerequisite the pre-existing drift-sync mechanism already had.
+## Scope
+
+The repair runs on the scheduled pipeline, and only when both the `write_nfo` and `sync_jellyfin` steps are configured
+(Settings). The pre-existing drift-sync mechanism needs the same two steps.
 
 ## Investigation
 Traced the full write→notify pipeline for this specific file
@@ -177,6 +178,20 @@ library item's episode list at all.
    DTO shape changed). Not verified against a live scheduled run this session (would need to wait for/
    trigger the operator's actual scan cycle) — the closed loop (write → bump → sync_jellyfin → refresh →
    Jellyfin re-reads) is code-verified end-to-end but not yet observed live for Mesterholdet specifically.
+
+## Amendment 2026-11-24 — the repair writes only what changed (DEB-5458)
+
+FR-SCAN2-8 says the repair stops by itself once Jellyfin resolves the episode. An episode that Jellyfin never resolves
+broke that. Its files were rewritten on every pass, and FR-SCAN2-3's `nfoWrittenAt` bump sent a full Jellyfin refresh of
+the series every hour. On prod on 2026-11-24 that was 8 files and one refresh a pass, for one series. From DEB-5458
+(`nfos-carry-the-release-date.md`, FR-4 and FR-6):
+
+- A repair NFO is written only when no file exists at its path or the file differs from what would be written.
+- FR-SCAN2-3's bump happens only when a repair actually wrote a file. One write and one refresh is the attempt. If
+  Jellyfin still does not resolve the episode, it stays on Triage rather than being retried every hour, and a later
+  change to its NFO content makes a new attempt.
+
+FR-SCAN2-5 to FR-SCAN2-7 are unchanged.
 
 ## Source references
 - Tracking-field reset: `src/linuxX64Main/kotlin/dev/jellystructure/media/MediaStore.kt` (`addOrUpdate`,
