@@ -726,3 +726,126 @@ amendment, for one case. When the admin has named a season, a series line that n
 name. So does that season's header. The name is taken from `Season.custom_name` when the episode is queued, and is kept
 on the record, because Downloads works offline. A season with no admin name, and every record written before this
 amendment, still reads `detail.season` + the number. No new string.
+
+## Amendment 2026-11-24: one episode downloads from the series page's rail (DEB-3995)
+
+FR-1 and FR-8 promise a Download control "for a film and for an episode". The phone has no episode page, though, and the first round did
+not draw a control on an episode, so the only way to download one episode was *Download season*. Rannvá's round `186b256c`
+(`design/incoming/2026-11-10-phone-episode-download/`, the directions document is the build's reference) drew it on the shipped rail. The
+owner picked from its pictures on card `7bcb6576` (2026-11-10):
+- the control goes **under the card**, at the end of the Watched toggle's line;
+- *Download season* and *Shuffle* move to **their own row**;
+- a tap on a download that is under way opens **a sheet with Pause and Cancel**.
+
+This amendment changes FR-8 for an episode, FR-5 for a file that holds two episodes, and the phone's Episodes header. It clarifies FR-7's
+*Paused*. Every FR not named here stands as written. It applies only on a phone whose config says `downloads` and to a viewer FR-2 allows.
+Every other device, and that phone otherwise, keeps today's rail and header.
+
+**FR-8, amended: an episode's control sits under its card** (owner).
+- **The line under the card** becomes 320 × 44 dp, 6 dp below the card as today. The Watched toggle sits at its start and keeps its
+  look. The download control sits at its end, flush with the card's right edge.
+- **The card does not change.** Its picture, its text and its tap that plays all stay as they are. Nothing new is drawn on the
+  picture: the downloaded mark of the 2026-11-09 amendment is still the only thing there. The card's body gets a **min-height of
+  106 dp**, so a card with a one-line synopsis does not lift its line above its neighbours'.
+- **The control** is 58 × 44 dp, radius 12, with a 1 px border and a 17 dp glyph at stroke 2.1. It is **icon-only**, so it has one width
+  in every language, and the film page's width-per-language rule does not apply to it.
+
+| Phase | The control shows | Colours |
+|---|---|---|
+| None | the arrow-into-a-line glyph | `--ink` on `rgba(255,255,255,.07)`, border `rgba(255,255,255,.16)` |
+| Queued, waiting for Wi-Fi, a connection or the server | the clock glyph, one picture for every wait | `--ink-soft` on the resting fill |
+| Running | *42 %*, 13 px Sora 600, tracking −.01em, over a fill the control's own width | fill `rgba(123,110,240,.38)`, number `--ink` |
+| Paused | the same number, its fill drained | fill `rgba(255,255,255,.20)`, number `--ink` |
+| Downloaded | the arrow-into-a-line, filled: the downloaded mark at control size | `#0a0c13` on solid `#f3f4fb`, no border |
+| Failed | the warning triangle | `#f0c07a` on `rgba(245,181,66,.12)`, border `rgba(245,181,66,.55)` |
+
+- **A tap** on *None* opens FR-3's quality sheet for that one episode. On *Downloaded* it offers Play and Delete, as on the film page, and
+  Delete opens the delete confirm. On *Failed* it retries. On any other phase it opens the sheet below.
+- **What a delete names.** `download.delete_one_confirm`'s `{title}` is the series and the code, *Nordvest · S01E03*, never the episode's
+  own title, which alone does not say what is going. The running sheet's title is the same.
+- **Screen readers.** The control's description is `download.episode_a11y` ("Download {code}") while there is nothing on the phone. In
+  every other phase it is the code, then the word the film page's control shows for that phase: *Queued*, *n %*, *Downloaded* or *Retry*.
+
+**FR-8, added: a download that is not at rest says where it is, on its card.**
+- While an episode is queued, waiting for Wi-Fi, a connection or the server, paused or failed, the card's second line reads the
+  word for it in place of what the line holds today. That is the air date, or on a newest-first series' card the line under its main
+  label. The words are `download.queued`, `download.waiting_wifi`, `download.waiting_network`, `download.waiting_server`,
+  `download.paused` and `download.failed`. It adds no line, draws nothing on the picture and takes no height.
+- The line is 13 px, one line, ellipsised: `--ink-soft` for a wait or a pause, `#f0c07a` for a failure.
+- A card at rest keeps today's line. At rest means nothing asked for, running (its control shows the number) or downloaded.
+- **The server's reason is in the sheet, not on the card.** DEB-4256's reasons (`download.wait_full`, `download.wait_busy`,
+  `download.wait_unavailable`) take two or three lines at the card's 292 dp in Danish and Faroese, and the card has one. So a card waiting
+  for the server reads `download.waiting_server`. The reason, under the same rule DEB-4256 gives the title's page, is the first line of
+  the sheet a tap on its control opens, wrapped on whole words and never cut. DEB-4256's own two places, the Downloads page row and the
+  line under a film's action row, do not change.
+
+**FR-8, added: a download under way can be paused or cancelled where it was started** (owner).
+- A tap on a queued, waiting, running or paused episode control opens the sheet the film page's control already opens (DEB-4256). In
+  order, it holds:
+  - the server's reason, when the episode waits for the server;
+  - `download.get_original`, when DEB-4256 offers it;
+  - **Pause**, or **Resume** for a paused one;
+  - **Cancel download**, `download.cancel_dl`, destructive.
+- Cancel download removes the entry and frees what it had saved at once, as Cancel on the Downloads page does. There is no confirm, as
+  there is none today.
+- **The film page's sheet takes the same string** in place of `action.cancel`. In a confirm, *Cancel* means "do not do it". Here it means
+  "stop and throw away what is saved", and one word cannot mean both. The Downloads page's round Cancel button keeps its label.
+
+**FR-5 and FR-8, amended: a file that holds two episodes is one download.** The rail draws consecutive episodes that share a file as one
+card (`MultiEpisodeCard`). That card gets **one** control, and so does its line, which keeps the group's Watched toggle at its start.
+- It downloads the file once, recorded under the group's first episode. Every episode of the group reads that one phase, carries the mark
+  and plays from it offline.
+- *Download season* queues such a file once as well, not once per episode, and the season sheet's totals count it once.
+- `MultiEpisodeCard` takes `downloaded`, as `EpisodeCard` does.
+
+**FR-7, clarified: a paused download says *Paused*.** Acceptance 15 already requires it, and no string said it. A paused entry's status
+line reads the new `download.paused` wherever a status line is drawn: the card above, the line under a film's action row, and the
+Downloads page row. The film page's control itself is unchanged.
+
+**The phone's Episodes header, amended** (owner).
+- Today the header puts *Episodes*, the watched count, *Download season* and *Shuffle* on one row, about 438 dp of content. At 412 dp
+  that cuts off *Episodes* in English and Faroese, and at 360 dp in all three languages.
+- On the phone the header becomes two rows:
+  - the title row, *Episodes · 2 / 8 watched*, as today;
+  - below it, a **44 dp chip row** at the page's gutter: *Download season*, then *Shuffle*, 8 dp apart, each chip 36 dp tall as today.
+- The row holds the chips the page has. A phone without `downloads`, or a viewer not allowed, gets *Shuffle* alone. A newest-first
+  series, which has no Shuffle (DEB-2938), gets *Download season* alone. With neither chip there is no row.
+- The TV and the desktops keep their header. Shuffle is a pill there.
+- A season already fully on the phone keeps its *Download season* chip. FR-5's `download.season_have` already says so in its sheet. The
+  round's `download.season_all` is not adopted.
+
+**Strings.** Three added, in every Ravilo language. None names Jellyfin or a status code.
+
+| Key | en | da | fo |
+|---|---|---|---|
+| `download.paused` | Paused | På pause | Á steðgi |
+| `download.cancel_dl` | Cancel download | Afbryd hentningen | Strika niðurtakið |
+| `download.episode_a11y` | Download {code} | Hent {code} | Tak {code} niður |
+
+`download.waiting_network` comes from the first 2026-11-10 amendment, not from this round.
+
+**Wire.** None. The episode's control uses FR-4's routes with the episode's id.
+
+**Acceptance, added.**
+- **30.** On the phone at 412 dp in English, every episode card on a season's rail has the control at the end of its line and Watched at
+  the start, all eight lines on one baseline. A tap on a card's picture or text plays. A tap on the control opens the quality sheet with
+  that episode's sizes. After confirming, the control fills with its percentage, and the Downloads page lists that one episode.
+- **31.** With episodes queued, waiting for Wi-Fi, waiting for a connection, waiting for the server, paused and failed, each card's second
+  line reads its word, and the cards at rest keep their air date. In Danish and Faroese at 360 dp every control has the same width, and
+  no card grows.
+- **32.** A tap on a running control opens a sheet with Pause and Cancel download. After Pause, the card reads *Paused* and the control
+  keeps its number. After Cancel download, the control reads Download again, and the storage bar has the space back. A copy waiting for
+  the server shows the server's reason first in that sheet.
+- **33.** A tap on a downloaded episode's control offers Play and Delete. Delete asks *Delete Nordvest · S01E03? This frees 650 MB.*,
+  naming the series, the code and the size.
+- **34.** A card holding two episodes in one file has one control. Downloading it, or *Download season*, saves the file once: the Downloads
+  page shows the file's size once, and both episodes carry the mark.
+- **35.** On the phone's series page in English and Faroese, at 412 dp and at 360 dp, *Episodes* and its count show whole. *Download
+  season* and *Shuffle* sit on the row below.
+- **36.** A viewer whose download switch is off, a phone whose config has no `downloads`, and the TV, desktop and web clients see no
+  control, today's line under each card and today's header.
+- **37.** TalkBack on an untouched episode's control reads *Download S01E05*.
+
+**Proven in CI:** 30, 31 and 34 to 36 in `SeriesEpisodesTest` (`:ravilo-ui:desktopTest`), with a fake downloads controller in each phase;
+33's confirm text; the queue-once rule of 34 in `DownloadsControllerTest`. **QA on the Pixel:** 30, 31 and 32 with real downloads, 33, 35
+at both widths, and 37.
