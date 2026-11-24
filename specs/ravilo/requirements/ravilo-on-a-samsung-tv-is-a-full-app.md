@@ -1356,3 +1356,150 @@ and FR-36. A warm start's `first_frame_ms` had a median of 2053 ms over 6 starts
 - a forward seek that re-prepares posts no cancel and no second prewarm.
 
 No wire change.
+
+## Amendment 2026-11-24 (DEB-5487) — Home moves the way Android TV's does
+
+> Owner on DEB-5487, 2026-11-24: *"Hero caoursel doesnt auto advance. Navigating down moves the focus correctly, but doesnt
+> keep a reasonable padding to the bottom so its all sticked to the bottom of the screen and navigating down focuses on the
+> moddle item instead of the one all the way to the left, like on android tv. Lets get more inspiration from the android tv
+> for our tizen tv. Currently there are no animations when navigating around, lets add some animations. When navigating to
+> the right i can see some of the poster images disappearing, like 7 items away and one up and 6 items away etc."*
+
+**What the code does today** (at `cb69e6557`). FR-4 and FR-5 never described the carousel, the resting position or motion,
+so the first three findings are gaps. The fourth is a fault in FR-14's image cap.
+
+- **The hero never advances.** `ScreenHome.render` draws every slide as its own target in a sideways-scrolling
+  `.home-heroes` strip. Left and Right move focus from slide to slide, and nothing times them. The feed already carries
+  `auto_advance_seconds` (`HomeFeed.autoAdvanceSeconds`: default 7, 0 means off). Android TV reads it. The Samsung decodes
+  it and ignores it.
+- **The focused row sits on the bottom edge.** `ScreenFocus.focus` calls `element.scrollIntoView(false)`, which lines the
+  target's bottom up with the bottom of `#shell-body`. Every Down that scrolls leaves the focused row flush with the bottom
+  of the screen.
+- **Down from the hero lands mid-row.** `ScreenFocus.move(0, ±1)` takes the row's remembered tile, or else the tile whose
+  centre is nearest across. Under the full-width hero, that is the tile under the middle of the screen.
+- **Nothing moves smoothly.** The page and the rails jump to their new scroll positions, and the focus ring has no
+  transition.
+- **Posters vanish to the right.** `ScreenHome.updateImages` (DEB-4729) ranks every tile within one screen above or below
+  focus by its straight-line distance from it, and keeps the nearest 60. It never asks whether a tile is on screen.
+  - With three or four long rows in that band, the 60th-nearest tile is about six or seven tiles away.
+  - A visible tile further out in the rows next to focus loses its image, while tiles scrolled out of sight on the left
+    keep theirs.
+  - Each move to the right reshuffles the set. That is the *"7 items away and one up"* pattern.
+
+Each rule below is Android TV's (`ravilo-ui`: `HeroCarousel.kt`, `ContentRow.kt`, `Tile.kt`, `BringIntoView.kt`,
+`Motion.kt`), redrawn in DOM under FR-13 and FR-14. **No wire change** and no design round: Android TV draws all of it
+today. Sizes are Android TV's dp at the canvas scale of 2 that the player chrome already uses (a 1920 px canvas is a
+960 × 540 dp TV window).
+
+**FR-38 · The hero is Android TV's carousel** (R58, R165, R236, R365 FR-R365-10, R374).
+- **One target, one slide at a time.** The slides are stacked in one box, and the sideways strip goes.
+  - Left and Right change the slide and wrap at both ends. They do not move focus.
+  - OK opens the slide that is showing.
+  - Up goes to the bar. Down goes to the first row (FR-40).
+- **It advances on its own.** The slide changes every `auto_advance_seconds` (0 means never) and wraps from the last slide
+  to the first.
+  - It counts whether or not the hero has focus.
+  - It counts only while the hero is on screen. Once Home has moved far enough down that the hero is out of view, the
+    count stops, and coming back starts a full interval (DEB-4283).
+  - Left or Right restarts the interval.
+  - It stops while a page is open over Home and while the app is hidden (FR-22).
+  - Back from a title opened from the hero shows that same slide and starts a full interval (FR-R365-10).
+- **A change is a crossfade.** The new slide fades in over 600 ms and the old one fades out over 400 ms. Opacity only.
+- **The backdrop drifts.** The slide that is showing scales from 1.0 to 1.05 over 9 s as a CSS transform, and starts again
+  from 1.0 on every new slide. It does not run while the hero is off screen. This is the one part QA may drop if it
+  stutters on Tizen 5.0 (see *Proof*).
+- **Page dots,** shown when there are two slides or more, sit at the bottom right of the hero, 96 px from its right edge and
+  88 px from its bottom.
+  - The current slide is a 56 × 16 px accent pill. The others are 16 px dots in the secondary ink at 35 % opacity, 16 px
+    apart.
+  - The change between dots uses opacity and transform only, never a width transition.
+- **No focus ring on the hero** (R374). The dots and the moving slide show where focus is, as on Android TV.
+- **Only three backdrops are loaded:** the slide showing and the next two (R88). They are loaded before their slide fades
+  in, so a slide never fades in empty.
+
+**FR-39 · The focused row rests at a fixed line, not on the bottom edge.**
+- **The line is 248 px from the top of the screen** (`EdgeBand.HOME`'s 124 dp inset).
+  - When focus moves into a row on Home or on a channel's feed, the feed moves so that the row's tiles start at the line.
+  - The row's heading shows above it, under the bar, and the next row shows below it.
+- **With the hero focused, the feed is at its top.**
+- **The last row rests at the same line.** The feed ends with enough padding for it to get there.
+- **The grids and the search results** (FR-6, FR-8) follow the same line for the focused grid row. The first grid row is the
+  one exception: the page stays at its top while it is focused. A title's page keeps its scrolling as it is today.
+- **One resting position per key press** (R367 FR-R367-1). A move lands once and is never corrected a second time.
+- **The move is a transform** (FR-14).
+  - The feed or grid moves by a `translateY` transition of 220 ms on Android TV's `EASE`, `cubic-bezier(.22,.61,.36,1)`.
+  - `#shell-body` no longer scrolls natively on these pages.
+  - A key pressed while a move is under way sends it on from where it is. A held key never queues moves.
+
+**FR-40 · Down into a row lands where Android TV lands.**
+- **From the hero or the bar,** Down focuses the first row's remembered tile, or else its **first tile**: the leftmost one,
+  index 0. This is Android TV's `firstRowFR` with `focusRestorer`.
+- **Between rows,** Up and Down keep today's rule: the remembered tile, or else the tile nearest across (DEB-4888's band).
+  Android TV's 2D focus search does the same between content rows.
+
+**FR-41 · Rails slide the way Android TV's rows do, and the focused tile grows.**
+- **A rail moves only when the newly focused tile would be cut off** (`ContentRow`'s bring-into-view spec).
+  - A tile cut at the start moves to the left gutter, the body's 72 px inset.
+  - A tile cut at the end moves just far enough to be fully visible, including its grown size and its ring.
+  - A tile that is already fully visible does not move the rail.
+  - The move is a `translateX` transition of 220 ms on `EASE`. Rails no longer scroll natively.
+- **The focused tile grows.** A tile on Home, a channel's feed, a grid, the search results or the title page's episode rail
+  scales to 1.10 with its ring (`TILE_FOCUS_SCALE`), over 200 ms on `EASE`, using transform only. The tile focus leaves
+  shrinks back the same way. Channel buttons grow the same way.
+- **No grown tile is clipped.** Rails and grids leave room for a grown tile and its ring, as Android TV pads its rows
+  40 px above and below (20 dp).
+- **A tile's image fades in over 220 ms when it arrives** (`IMAGE_CROSSFADE_MS`), through `ScreenSkeleton.fadeOnLoad`.
+
+**FR-42 · Every tile on screen shows its image.** This replaces the selection rule in FR-14's *"no more than about 60 tile
+images"*. The cap itself stays.
+- **A tile on screen always has its image.**
+  - The 60 slots go first to every tile that is on screen.
+  - Any slots left go to off-screen tiles, nearest to focus first, within one screen above or below as today.
+  - An on-screen tile is never dropped to make room for an off-screen one.
+  - At today's sizes the screen holds about 40 tiles, so the cap is never reached on screen alone. If it ever is, the
+    on-screen tiles win.
+- **"On screen" is judged where the feed and the rails will rest** after the move (FR-39, FR-41), never in the middle of a
+  transition. A move never drops the image at its own destination.
+- **An image is removed only once its tile has left the screen.**
+
+**Proof (CI).** The tests drive Playwright keyboard events in `ravilo-screen-home.spec.ts` and `ravilo-screen-browse.spec.ts`,
+with Playwright's clock for the timers.
+- **FR-38:**
+  - With `auto_advance_seconds: 2` mocked, the slide changes after 2 s and wraps from the last slide to the first.
+  - Right restarts the interval.
+  - Once Home has moved down until the hero is out of view, the slide does not change.
+  - With 0, the slide never changes.
+  - Back from a title opened on slide 2 shows slide 2.
+  - The hero has no ring.
+- **FR-39:** after each Down into a row, once the move has finished, that row's first tile's top is 248 ± 2 px from the top
+  of the viewport. The same holds for the last row and for the second row of a grid.
+- **FR-40:** Down from the hero focuses `home-row-0-tile-0`, from a feed whose first row is wider than the screen.
+- **FR-41:**
+  - The focused tile's computed transform is a scale of 1.1 once the transition has ended, and the tile it left has none.
+  - A tile that is already fully visible does not move its rail.
+- **FR-42:** with a feed of 4 rows of 30 tiles, after ten presses of Right in the second row, every `.tile-art` that
+  intersects the viewport has an `img[src]`, and the page holds no more than 60.
+- **The guards:** `scripts/check-tizen-engine.sh` still passes, and the bundle still parses as ES2017. `transform`,
+  `transition` and `@keyframes` are all in Chromium 63.
+
+**Proof (emulator).** QA runs on the `tizen-emulator` row, Tizen 5.0 first, and checks five things:
+- the auto-advance and the crossfade;
+- the resting line on Home and in a grid;
+- Down from the hero landing on the leftmost tile;
+- no poster dropping out while moving right through a long row;
+- motion that keeps up with a held key on 5.0.
+
+If the backdrop drift (FR-38) is the only thing that stutters on 5.0, it is dropped and the rest ships. QA says so on the
+row. The owner's set confirms FR-14's budget later (FR-16).
+
+**Not in this amendment:** Android TV's focus-detail panel (still *Later*), the row-open mode (R240), *Surprise me*, and the
+title page's vertical scrolling.
+
+**Build order**, one piece each for one engineer, each `blocked` by the one before it:
+1. **FR-40 and FR-42.** Down from the hero lands on the leftmost tile, and the image cap counts on-screen tiles first. These
+   are small fixes in `ScreenFocus` and `ScreenHome.updateImages`.
+2. **FR-39 and FR-41.** The feed, grids and rails move by transform to their resting positions, and the focused tile grows.
+   FR-42's *"judged where it will rest"* lands here, because this is where transitions begin.
+3. **FR-38.** The hero carousel.
+
+QA on the emulator follows piece 3.
