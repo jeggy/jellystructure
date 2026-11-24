@@ -253,6 +253,8 @@ internal data class RecordSample(
     val variantBps: Long?, val stalls: List<QoeStall>, val perItem: Boolean,
     /** DEB-3104 (FR-7) — when (epoch seconds) this server last restarted, restarted a stream or answered a 503 for this device; null = never. */
     val serverFaultAt: Long? = null,
+    /** DEB-3187 (FR-7) — when (epoch seconds) this play's previous report was written; null = none. A stall is the server's when that report came before the fault, however late this one arrives. */
+    val previousReportAt: Long? = null,
 )
 
 /** Per (device, item, play) between two posts: the stream held since when, and the stalls already seen. */
@@ -290,7 +292,9 @@ internal fun foldRecord(record: StreamRecord, holdIn: HoldState?, sample: Record
         val counting = countingStalls(sample.stalls)
         val newCounting = counting.filter { it in newStalls }
         // DEB-3104 (FR-7) — a stall during a restart, a stream restart or a server wait is not the path's fault: it writes no `stalled_bps`.
-        val serverCaused = sample.serverFaultAt?.let { now - it in 0..SERVER_FAULT_WINDOW_SEC } ?: false
+        val serverCaused = sample.serverFaultAt?.let { fault ->
+            now - fault in 0..SERVER_FAULT_WINDOW_SEC || (sample.previousReportAt?.let { it < fault } ?: false)
+        } ?: false
         if (newCounting.isNotEmpty() && !serverCaused) {
             val on = newCounting.last().variantBps?.takeIf { it > 0 } ?: sample.variantBps
             if (on != null && on > 0) rec = rec.copy(stalledBps = on, stalledAt = now)

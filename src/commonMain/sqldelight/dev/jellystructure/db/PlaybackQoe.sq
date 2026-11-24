@@ -88,6 +88,9 @@ SELECT * FROM playback_qoe ORDER BY updated_at DESC LIMIT :result_limit;
 encoderSummaryOf:
 SELECT encoder_summary FROM playback_qoe WHERE device_id = :device_id AND jellyfin_id = :jellyfin_id AND play_session_id = :play_session_id;
 
+updatedAtOf:
+SELECT updated_at FROM playback_qoe WHERE device_id = :device_id AND jellyfin_id = :jellyfin_id AND play_session_id = :play_session_id;
+
 setEncoderSummary:
 UPDATE playback_qoe SET encoder_summary = :encoder_summary WHERE device_id = :device_id AND jellyfin_id = :jellyfin_id AND play_session_id = :play_session_id;
 

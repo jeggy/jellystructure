@@ -170,6 +170,10 @@ class PlaybackQoeStore(private val db: JellystructureDb) {
         }
     }
 
+    /** DEB-3187 (FR-7) — when (epoch seconds) this play's row was last written; null = no earlier report. Read before [record] rewrites it. */
+    fun updatedAtOf(deviceId: String, itemId: String, playSessionId: String): Long? =
+        queries.updatedAtOf(deviceId, itemId, playSessionId).executeAsOneOrNull()
+
     fun recentForDevice(deviceId: String, limit: Int = 10): List<QoeSummary> =
         queries.recentForDevice(deviceId, limit.toLong()).executeAsList().map { it.toSummary() }
 

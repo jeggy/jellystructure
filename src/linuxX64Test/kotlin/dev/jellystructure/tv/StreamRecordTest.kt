@@ -258,6 +258,32 @@ class EmbeddedSubtitleOrderTest {
         assertEquals(24_000_000, foldRecord(StreamRecord(), hold, sample(1_000 - SERVER_FAULT_WINDOW_SEC - 1), now = 1_000).first.stalledBps)
     }
 
+    // DEB-3187 (FR-7) — the report arrives 140 s after the fault (outside the 120 s window); only the previous report's time decides.
+    private fun lateSample(fault: Long?, previousReportAt: Long?) =
+        RecordSample(24_000_000, listOf(QoeStall(60_000, 60_000, 0, 3_000, "mid", variantBps = 24_000_000)), true, fault, previousReportAt)
+
+    @Test fun `a stall reported 140 s after a fault whose previous report came before it writes nothing`() {
+        val (rec, h) = foldRecord(StreamRecord(), HoldState(24_000_000, 500, 0), lateSample(fault = 860, previousReportAt = 800), now = 1_000)
+        assertNull(rec.stalledBps); assertNull(rec.stalledAt)
+        assertEquals(1, h!!.stallsSeen)
+    }
+
+    @Test fun `a stall reported 140 s after a fault whose previous report came after it writes stalled_bps`() {
+        val (rec, _) = foldRecord(StreamRecord(), HoldState(24_000_000, 500, 0), lateSample(fault = 860, previousReportAt = 900), now = 1_000)
+        assertEquals(24_000_000, rec.stalledBps)
+    }
+
+    @Test fun `a first report with no previous row outside the 120 s writes stalled_bps`() {
+        val (rec, _) = foldRecord(StreamRecord(), HoldState(24_000_000, 500, 0), lateSample(fault = 860, previousReportAt = null), now = 1_000)
+        assertEquals(24_000_000, rec.stalledBps)
+    }
+
+    @Test fun `a fault inside the 120 s excuses the stall whatever the previous report`() {
+        val hold = HoldState(24_000_000, 500, 0)
+        assertNull(foldRecord(StreamRecord(), hold, lateSample(fault = 950, previousReportAt = null), now = 1_000).first.stalledBps)
+        assertNull(foldRecord(StreamRecord(), hold, lateSample(fault = 950, previousReportAt = 990), now = 1_000).first.stalledBps)
+    }
+
     @Test fun `server faults are kept per device and a start counts for all`() {
         val faults = ServerFaults(bootSec = 500)
         assertEquals(500, faults.lastFor("tv"))

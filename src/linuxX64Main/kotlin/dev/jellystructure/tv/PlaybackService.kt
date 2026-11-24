@@ -796,7 +796,7 @@ class PlaybackService(
     }
 
     /** 309 (FR-309-1) — [report] folded into its device's record (only an R381 per-item report is read). */
-    private suspend fun foldIntoRecord(device: DeviceData, report: PlaybackQoeReport) {
+    private suspend fun foldIntoRecord(device: DeviceData, report: PlaybackQoeReport, previousReportAt: Long?) {
         val store = streamRecords ?: return
         if (!report.perItem) return
         val variant = report.variantBandwidthBps?.takeIf { it > 0 } ?: if (report.directPlay) fileStreamBpsOf(report.itemId) else null
@@ -807,7 +807,7 @@ class PlaybackService(
         val now = nowMs() / 1000
         recordMutex.withLock {
             val before = store.get(device.deviceId) ?: StreamRecord()
-            val (folded, hold) = foldRecord(before, holds.value[holdKey], RecordSample(variant, report.stalls.filter { it.isDeliveryStall }, true, serverFaults.lastFor(device.deviceId)), now)
+            val (folded, hold) = foldRecord(before, holds.value[holdKey], RecordSample(variant, report.stalls.filter { it.isDeliveryStall }, true, serverFaults.lastFor(device.deviceId), previousReportAt), now)
             var after = folded
             // A clean direct play of a family at a bitrate above the one its decode failed at lifts that ceiling.
             if (lifting && hold != null && after.decodeFailed.isNotEmpty() &&
@@ -2151,7 +2151,10 @@ class PlaybackService(
      * authenticated device id regardless).
      */
     fun recordQoe(device: DeviceData, report: PlaybackQoeReport) {
-        playbackQoeStore.record(device.deviceId, qoeKeyOf(device, report.itemId) ?: playSessionIdFor(device, report.itemId), report, encoder = servedByOf(device.deviceId, report.itemId))
+        val playKey = qoeKeyOf(device, report.itemId) ?: playSessionIdFor(device, report.itemId)
+        // DEB-3187 (FR-7) — read before record() rewrites the row, or it always reads as now.
+        val previousReportAt = playbackQoeStore.updatedAtOf(device.deviceId, report.itemId, playKey)
+        playbackQoeStore.record(device.deviceId, playKey, report, encoder = servedByOf(device.deviceId, report.itemId))
         // DEB-3642 (FR-5) — a leg that moved on at FR-R218-7's bound (start_failure_status = -1) sends its file to the head of the check queue.
         if (report.startFailureStatus == -1 && fileChecks != null) {
             val rescue: suspend () -> Unit = { localFileOf(report.itemId)?.let { rescueVerify(it.first) } }
@@ -2160,8 +2163,8 @@ class PlaybackService(
         }
         // 309 (FR-309-1) — the device's record learns from every post (a stall, a hold); never awaited by the route.
         val scope = backgroundScope
-        if (scope != null) trackFold(device.deviceId, scope.launch { runCatching { foldIntoRecord(device, report) }.onFailure { Logger.warn("record: fold failed: ${it.message}", "tv") } })
-        else kotlinx.coroutines.runBlocking { runCatching { foldIntoRecord(device, report) } }
+        if (scope != null) trackFold(device.deviceId, scope.launch { runCatching { foldIntoRecord(device, report, previousReportAt) }.onFailure { Logger.warn("record: fold failed: ${it.message}", "tv") } })
+        else kotlinx.coroutines.runBlocking { runCatching { foldIntoRecord(device, report, previousReportAt) } }
         // 308 (FR-308-5) — the variant it is on now, for the admin's *Playing now*.
         val key = PlaybackKey(device.deviceId, report.itemId)
         val bps = report.variantBandwidthBps
