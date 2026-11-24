@@ -1,6 +1,6 @@
 # Phase 153 — jellystructure actively repairs an unmatched episode's Jellyfin numbering (FR-SCAN2)
 
-> Correction to Phase 152's framing: "Mesterholdet's S10E07 has no IndexNumber in Jellyfin" is not an
+> Correction to Phase 152's framing: "`<series>` S10E07 has no IndexNumber in Jellyfin" is not an
 > external Jellyfin problem to shrug off — jellystructure's constitution is explicit that it "fully
 > replaces Jellyfin's built-in metadata scraper" and "the system calls Jellyfin's REST API to trigger
 > a refresh — the user never has to do this manually." If an episode is stuck unmatched, that's a gap
@@ -15,8 +15,8 @@ The repair runs on the scheduled pipeline, and only when both the `write_nfo` an
 
 ## Investigation
 Traced the full write→notify pipeline for this specific file
-(`Mesterholdet.S10E07.DANiSH.1080p.WEB.h264-STROMPEBUKSER.mkv`) and confirmed on disk
-(`/mnt/series/jellyfin/Chore Captain (DK)/Season 10/`): every sibling episode (E01–E06) has a
+(`<Series>.S10E07.<lang>.1080p.WEB.h264-<group>.mkv`) and confirmed on disk
+(`/mnt/media/tv/<series>/Season 10/`): every sibling episode (E01–E06) has a
 jellystructure-written `.nfo` (content matches `NfoWriter.buildEpisodeDetailsBlock` exactly, e.g. E06's
 `<season>10</season><episode>6</episode>`); **E07 has no `.nfo` at all.** The series' own `tvshow.nfo`
 exists and is recent, but the DB's own `nfoWrittenAt`/`nfoHash`/`jfSyncedAt` for this item are all `null`.
@@ -114,8 +114,8 @@ Empirical follow-up (the operator asked for the exact cause, and for it to self-
 ### The trigger condition never fires
 FR-SCAN2-2 keys the repair off `episodeNumber != null && jellyfinId == null`. **Every affected episode
 actually has a `jellyfinId`.** Verified against the live DB for all seven known-broken episodes
-(Mesterholdet S10E07 `1ba13ecc…`, Tabu S04E06, Y Talent S19E21/E22, Mission Z S2026E01/E02, Jo færre jo
-bedre S09E02, Góða ferð Føroyar S01E01 — all non-null). The defect is **not** "jellystructure couldn't
+(`<series>` S10E07 and episodes of five other series, two of them a pair of consecutive episodes — all
+non-null). The defect is **not** "jellystructure couldn't
 resolve a Jellyfin id"; it is "**Jellyfin's own item for this episode has no `IndexNumber`**", which
 jellystructure was never looking at. As written, Phase 153 would have repaired nothing.
 
@@ -125,7 +125,7 @@ jellystructure was never looking at. As written, Phase 153 would have repaired n
   time**, and **never retries a resolve that failed** — nothing in Jellyfin or jellystructure ever
   revisited it, which is exactly why it is "still happening" weeks later.
 - It is **not** the file: `ffprobe` reads S10E07 cleanly (valid Matroska, 59:17, H264/AAC/subrip, decodes
-  without error). It is **not** the filename pattern: `Mesterholdet.S10E01…` and `…S10E08…` are
+  without error). It is **not** the filename pattern: `<Series>.S10E01…` and `…S10E08…` are
   byte-identical in shape and both resolved fine. It is **not** TMDB: E08 has `ProviderIds: {}` (no TMDB
   match at all) yet still got `IndexNumber: 8`. The resolve failure is intermittent and Jellyfin-internal;
   the actionable fact is that it is **permanent once it happens**.
@@ -137,7 +137,7 @@ jellystructure was never looking at. As written, Phase 153 would have repaired n
 ### The repair mechanism is proven
 Ran end-to-end live on S10E07: wrote an `episodedetails.nfo` carrying `<season>10</season>` +
 `<episode>7</episode>`, then `POST /Items/{id}/Refresh?metadataRefreshMode=FullRefresh`. Result —
-`IndexNumber: 7`, and Jellyfin additionally self-matched `ProviderIds: {Tmdb: 7353526}`. `GET
+`IndexNumber: 7`, and Jellyfin additionally self-matched `ProviderIds: {Tmdb: <id>}`. `GET
 /Shows/NextUp?seriesId=…` went from `Items: []` to returning S10E07. So NFO+refresh is sufficient and is
 the right mechanism; only the targeting was wrong.
 
@@ -160,7 +160,7 @@ series-level refresh is not assumed to cascade to a child episode's numbering.
 
 **FR-SCAN2-8 — Self-limiting, self-clearing.** The flag is re-derived from Jellyfin every `scan_files`
 run, so a successful repair clears it on the next cycle and the work stops. An episode jellystructure
-itself can't number (`episodeNumber == null` — e.g. the date-based `Jimmy.Fallon.2026.03.05.…` files) is
+itself can't number (`episodeNumber == null` — e.g. a talk show's date-named `<Show>.2026.03.05.…` files) is
 never flagged, so it can't loop. Live TV `.ts` recordings are never touched: they aren't part of a scanned
 library item's episode list at all.
 
@@ -177,7 +177,7 @@ library item's episode list at all.
    didn't break any existing artwork-lock/timestamp/duplicate-id test), `compileKotlinWasmJs` (admin, no
    DTO shape changed). Not verified against a live scheduled run this session (would need to wait for/
    trigger the operator's actual scan cycle) — the closed loop (write → bump → sync_jellyfin → refresh →
-   Jellyfin re-reads) is code-verified end-to-end but not yet observed live for Mesterholdet specifically.
+   Jellyfin re-reads) is code-verified end-to-end but not yet observed live for the `<series>` episode specifically.
 
 ## Amendment 2026-11-24 — the repair writes only what changed (DEB-5458)
 
