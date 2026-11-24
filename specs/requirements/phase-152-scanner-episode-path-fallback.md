@@ -1,6 +1,6 @@
 # Phase 152 — Scanner falls back to Path when Jellyfin has no episode IndexNumber (FR-SCAN1)
 
-> Reported as "Mesterholdet should be in Continue Watching but isn't." Investigated live: the specific
+> Reported as "Chore Captain should be in Continue Watching but isn't." Investigated live: the specific
 > episode is a genuine Jellyfin-side metadata gap (that file has no `IndexNumber` in Jellyfin at all),
 > which is outside jellystructure's control to force — Jellyfin's own NextUp/IsResumable algorithm
 > can't place an unnumbered episode no matter what jellystructure does. What IS in scope, and what
@@ -10,9 +10,11 @@
 > right season/episode itself from the filename. That silent `jellyfinId = null` then breaks every
 > jellystructure-side feature keyed on it (playstate overlay, detail page, "next episode" resolution).
 
-**Status:** Implemented. Requires a re-scan of any affected series (e.g. Mesterholdet) to take effect — the
-fallback runs at scan time, so already-stored episode rows keep `jellyfinId: null` until their series is
-next scanned/re-pulled.
+## Scope
+
+The fallback runs at scan time, so an affected series (e.g. Chore Captain) takes it only when it is
+next scanned: already-stored episode rows keep `jellyfinId: null` until their series is next
+scanned/re-pulled.
 
 > **Correction (2026-07-30, Phase 153):** this spec's framing above and its "Out of scope" section below
 > were wrong to treat Jellyfin's missing `IndexNumber` as purely an external/operator problem.
@@ -26,24 +28,24 @@ next scanned/re-pulled.
 
 ## Bug report / investigation
 "Clicking on the DanskTV channel, there is only one item in Continue Watching, but there should be a
-bunch — Mesterholdet should be in there but isn't." (2026-07-30.)
+bunch — Chore Captain should be in there but isn't." (2026-07-30.)
 
 Channel Continue Watching is not a separate/stale code path — `HomeFeedService.getChannelFeed()`
 (`src/linuxX64Main/kotlin/dev/jellystructure/tv/HomeFeedService.kt:174-201`) calls the same
-`buildContinueRow()` Home uses, just handed a channel-filtered candidate list. "Mesterholdet" **is** correctly
+`buildContinueRow()` Home uses, just handed a channel-filtered candidate list. "Chore Captain" **is** correctly
 a member of the DanskTV channel (`network = "TV 2"` matches the channel's configured network condition,
 verified against `config/jellystructure.db`) — channel membership isn't the bug.
 
 Querying Jellyfin directly for the series: `UserData.UnplayedItemCount: 1`, and that one remaining episode
-(**S10E07 "Duften af pinlighed"**, Jellyfin id `1ba13ecc0dde509a58d9de80cf768bd6`) has **no `IndexNumber` field at
+(**S10E07**, Jellyfin id `<id>`) has **no `IndexNumber` field at
 all** in Jellyfin (only `ParentIndexNumber: 10`) and **empty `ProviderIds: {}`** — Jellyfin's own metadata
 match never numbered this file
-(`Mesterholdet.S10E07.DANiSH.1080p.WEB.h264-STROMPEBUKSER.mkv`). `GET /Shows/NextUp?seriesId=…` for this series
+(`<Series>.S10E07.<lang>.1080p.WEB.h264-<group>.mkv`). `GET /Shows/NextUp?seriesId=…` for this series
 returns **`Items: []`** — confirmed empty even scoped directly to it. Jellyfin's own Next-Up/Resume
 algorithms require a valid episode ordinal to place a series at all; without one, the *entire* series drops
 out of both, independent of anything jellystructure does.
 
-**This means jellystructure cannot make "Mesterholdet" itself appear in Continue Watching** — that requires
+**This means jellystructure cannot make "Chore Captain" itself appear in Continue Watching** — that requires
 Jellyfin to have a valid `IndexNumber` for the file, which is a Jellyfin library-metadata fix outside this
 codebase (e.g. renaming the file to match Jellyfin's own naming rules, or manually identifying/renumbering
 the episode in Jellyfin, followed by a Jellyfin library refresh).
@@ -54,7 +56,7 @@ the episode in Jellyfin, followed by a Jellyfin library refresh).
 `IndexNumber` — when that's missing, the lookup misses and `jellyfinId` stays `null`
 (`Scanner.kt:382,399`), even though jellystructure's own `parseSeasonEpisodes(file)` (`Scanner.kt:358`)
 correctly derives `S10E07` from the filename for this exact file (confirmed against the local scan: the
-episode's own `season 10` list already has the right title "Duften af pinlighed" from filename-derived TMDB
+episode's own `season 10` list already has the right episode title from filename-derived TMDB
 lookup, just `jellyfinId: null`). A `null` id then falls out of every id-keyed jellystructure feature:
 `DetailService`'s playstate overlay filters out any id that doesn't come from Jellyfin (any id starting with
 `/`, the synthetic fallback), so the episode row can't show its own watch state; `groupEntryPoint`-style
@@ -77,7 +79,7 @@ computes for the series' own directory (`Scanner.kt:134-148`, `LibraryMapping`) 
 (`file.replaceFirst(lib.localPath, lib.jellyfinPath)`) — and look that up in a new `jfByPath` map built from
 `jfEpsMeta`'s `path` field. `scanSeries` needs `lib: LibraryMapping` threaded in from `scanItem` for this
 (currently only the already-translated `localPath` string is passed). This resolves `jellyfinId` for any
-file Jellyfin's own scanner placed correctly on disk but failed to number/identify — Mesterholdet's S10E07
+file Jellyfin's own scanner placed correctly on disk but failed to number/identify — Chore Captain's S10E07
 included, once jellystructure re-scans that series — restoring the local playstate overlay, detail page, and
 next-episode targeting for it, even though (per the investigation above) it still can't make Jellyfin's own
 NextUp/IsResumable include the series until the Jellyfin-side metadata gap is separately fixed.
@@ -101,7 +103,7 @@ chance report. Message should point at the real fix: check/fix the episode's num
 ## Out of scope
 - Writing season/episode metadata back to Jellyfin to force it to number the file (would need an NFO push +
   Jellyfin refresh cycle, and Jellyfin's *reason* for not matching this file — likely the release-group
-  suffix in `Mesterholdet.S10E07.DANiSH.1080p.WEB.h264-STROMPEBUKSER.mkv` confusing its own parser — wasn't
+  suffix in `<Series>.S10E07.<lang>.1080p.WEB.h264-<group>.mkv` confusing its own parser — wasn't
   root-caused; a targeted rename/manual-identify in Jellyfin is the direct fix and is on the operator).
 - The played/`PlaybackPositionTicks` desync bug also reported this session — unrelated root cause, see
   **R185**.
@@ -113,7 +115,7 @@ chance report. Message should point at the real fix: check/fix the episode's num
    least one, matching the existing dashboard convention.
 2. Verified via `compileKotlinLinuxX64`, `linuxX64Test` (full suite passes), `compileKotlinWasmJs` (admin —
    no DTO shape changed, `TriageTypeCount` already had the right fields). Not on-device/live-scan verified
-   this session (would need a re-scan of Mesterholdet against the live Jellyfin, which is a scan-triggering
+   this session (would need a re-scan of Chore Captain against the live Jellyfin, which is a scan-triggering
    action — left for the user to run alongside the Jellyfin-side metadata fix noted above).
 
 ## Source references

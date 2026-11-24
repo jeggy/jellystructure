@@ -6,10 +6,11 @@
 > Jellyfin's own `Played` and `PlaybackPositionTicks` fields going out of sync on the SAME item, with
 > nothing in jellystructure ever reconciling them before Continue Watching renders.
 
-**Status:** Implemented. Verified via `compileKotlinLinuxX64`/`linuxX64Test`. Not yet live-verified against
-a fresh Jellyfin mark-played call (the fix is one-way — it stops *new* corruption and hides the 62
-already-corrupted rows found live, but doesn't retroactively repair their `PlaybackPositionTicks`, which
-FR-RV-CW1-2's filter makes moot for display purposes).
+## Scope
+
+The fix is one-way — it stops *new* corruption and hides the 62 already-corrupted rows found live, but
+doesn't retroactively repair their `PlaybackPositionTicks`, which FR-RV-CW1-2's filter makes moot for
+display purposes.
 
 ## Bug report
 "I can often see already finished watched series in my continue watching section in Ravilo."
@@ -93,7 +94,7 @@ load, no backfill required.
 - Bulk-repairing the 62 already-corrupted Jellyfin `UserData` rows found live — FR-RV-CW1-2 already
   suppresses their display, and any operator can already fix a given title today via the existing
   unmark/re-mark watched toggle now that `setPlayed` correctly zeroes position.
-- The channel-scoped "Mesterholdet missing from DanskTV" report — investigated separately and found to be an
+- The channel-scoped "Chore Captain missing from DanskTV" report — investigated separately and found to be an
   unrelated Jellyfin metadata gap (a single episode file with no `IndexNumber` in Jellyfin), not a
   played/position desync. See **Phase 152**.
 

@@ -4,11 +4,10 @@
 > new episode of Fjollerne."* And: *"whenever a new episode is available, we should try to make it
 > available in jellystructure as soon as possible as well."*
 
-## Status
-✓ Built 2026-09-06 (FR-195-1 … FR-195-6). Not dev-reviewed, not live-verified — the running backend
-still has the old behaviour, so the 117-entry production backlog is untouched and Fjollerne S11E08 is still
-missing until this is deployed. Root-caused against production logs and the production database.
-Companion phase: **196** (the freshness clock that keeps the periodic scan away from the same items).
+## Scope
+FR-195-1 … FR-195-6. Root-caused against production logs and the production database (a 117-entry
+retry backlog at the time). Companion phase: **196** (the freshness clock that keeps the periodic scan
+away from the same items).
 Neither alone is sufficient — see *Why both phases are needed*.
 
 **Implementation notes:**
@@ -44,7 +43,7 @@ Neither alone is sufficient — see *Why both phases are needed*.
 
 ## What happened
 
-`Fjollerne.S11E08.DANiSH.1080p.WEB.h264-STROMPEBUKSER [UNRAR].mkv` landed on disk at **06:14 local**,
+`<Series>.S11E08.<lang>.1080p.WEB.h264-<group> [UNRAR].mkv` landed on disk at **06:14 local**,
 2026-09-06. Jellyfin ingested it correctly — `GET /Shows/{id}/Episodes?season=11` returns 8 items with
 `IndexNumber = 8`. On disk: **102** video files under `/mnt/series/jellyfin/Fjollerne`. In jellystructure:
 **101** episodes, S11 stopping at E07.

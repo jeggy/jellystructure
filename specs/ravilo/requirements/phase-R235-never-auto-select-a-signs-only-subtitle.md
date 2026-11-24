@@ -4,9 +4,8 @@
 > opening the subtitles picker I can see danish is selected and then I just have to go in and select
 > danish and pick the other danish subtitles to be able to see any subtitles at all."*
 
-## Status
-✓ Built 2026-09-06. Not dev-reviewed, not device-tested (per the standing no-TV-testing rule). **Root
-cause confirmed against the exact reported episode** in the production database, and quantified
+## Scope
+**Root cause confirmed against the exact reported episode** in the production database, and quantified
 library-wide.
 
 **Implementation notes:** all six FRs landed in `PlayerScreen.kt`. `tierSub`'s exact-signature fallback
@@ -25,7 +24,7 @@ only-a-forced-track-exists guards. `:ravilo-ui:compileDebugKotlinAndroid` clean,
 ## Evidence
 
 `kulsort-2019`, S07E03 (*Hygge*),
-`Kulsort.S07E03.DANiSH.1080p.WEB.h264-STROMPEBUKSER.mkv` — its tracks as scanned:
+`<Series>.S07E03.<lang>.1080p.WEB.h264-<group>.mkv` — its tracks as scanned:
 
 | kind | lang | codec | title | default | forced |
 |---|---|---|---|---|---|

@@ -1,15 +1,17 @@
 # Phase R186 — Continue Watching only ever sees a global top-20 (bug fix, FR-RV-CW2)
 
 > Reported as "the DanskTV channel's Continue Watching has one item when it should have a bunch —
-> Snedigere end du aner should be there." Root-caused live: jellystructure asks Jellyfin for the **global**
+> `<series>` should be there." Root-caused live: jellystructure asks Jellyfin for the **global**
 > 20 most recent resume/next-up entries and then filters *that* list down to the channel's members, so
 > anything ranked 21st or worse globally can never appear — in a channel row **or** on Home. Compounded
 > by R185's played/position desync, whose stale entries occupy slots inside that same 20-item window.
 
-**Status:** Implemented; queries verified live (see addendum). Needs a backend restart to take effect.
+## Scope
+
+The new queries were verified live against Jellyfin (see addendum).
 
 ## Bug report
-2026-07-31 — "Snedigere end du aner" has S01E01 watched, so S01E02 is its next episode, but the series
+2026-07-31 — `<series>` has S01E01 watched, so S01E02 is its next episode, but the series
 appears in neither the DanskTV channel's Continue Watching nor Home's.
 
 ## Investigation (live, jellyfin.example.net · user `jogvan`)
@@ -21,7 +23,7 @@ appears in neither the DanskTV channel's Continue Watching nor Home's.
   and `getResumeItems` (`:273-289`) both default to **`limit: Int = 20`**, and `HomeFeedService.buildContinueRow`
   (`src/linuxX64Main/kotlin/dev/jellystructure/tv/HomeFeedService.kt:432-476`) calls them with that default.
 - Live numbers for this user: **NextUp `TotalRecordCount: 54`** (we fetch 20) and **115 resumable items**
-  (we fetch 20). **"Snedigere end du aner" sits at position 41 of 54** — well outside the window, so it never
+  (we fetch 20). **`<series>` sits at position 41 of 54** — well outside the window, so it never
   reaches `buildContinueRow` at all.
 - Because `getChannelFeed` (`HomeFeedService.kt:174-201`) reuses the same `buildContinueRow` and merely
   hands it a channel-filtered candidate list, a channel row is a **subset of that global 20**. For a
@@ -69,7 +71,7 @@ against it instead.
 - Per-channel Jellyfin queries (Jellyfin's `NextUp`/`IsResumable` endpoints take no item-id allow-list, so
   a channel-scoped fetch isn't expressible; widening the shared window is the available fix).
 - Paging the Continue row beyond `ROW_ITEM_LIMIT` — the row still shows at most 30 cards by design.
-- The unnumbered-episode class of missing titles (Mesterholdet S10E07 etc.) — different root cause, see
+- The unnumbered-episode class of missing titles (Chore Captain S10E07 etc.) — different root cause, see
   **Phase 152/153**.
 
 ## Dev-review addendum (2026-07-31 — implementation + live verification)
@@ -78,7 +80,7 @@ against it instead.
    `getResumeItems` query returns **46 items, `TotalRecordCount: 46`, none `played == true`** — down from
    115 with 62 desynced, confirming `IsPlayed=false` removes the R185 rows server-side rather than leaving
    them to consume the window. The new `getNextUp` query returns the **full 54 of 54**, and both
-   "Snedigere end du aner" (previously position 41) and Mesterholdet are present.
+   `<series>` (previously position 41) and Chore Captain are present.
 2. **`IsPlayed=false` also shrinks the pool**, which is the point: the pool is now entirely real
    candidates, so the raised limit isn't just fetching more noise.
 3. R185's `played` check in `buildContinueRow` is deliberately left in place as the display-time backstop

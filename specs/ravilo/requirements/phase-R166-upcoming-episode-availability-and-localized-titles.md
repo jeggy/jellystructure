@@ -5,10 +5,12 @@
 > (series exists) and none of the matched item's actual data. Result: **(a)** an upcoming episode is
 > flagged **"Already available"** whenever we hold *the series*, even if we don't hold *that specific
 > episode*; and **(b)** titles show the English Sonarr/Radarr string ("Chore Captain (DK)") instead of the
-> localized title our library resolved and stored ("Mesterholdet").
+> localized title our library resolved and stored (its Danish title).
 
-**Status:** Planned — extends **R160** (built). Backend-only change to `UpcomingService`; the client
-renders whatever the feed says, so **no app rebuild is required** to fix either symptom.
+## Scope
+
+Extends **R160**. Backend-only change to `UpcomingService`; the client renders whatever the feed says,
+so **no app rebuild is required** to fix either symptom.
 
 ## Problem
 
@@ -22,7 +24,7 @@ atomic — holding the movie *is* holding it).
 The calendar shows Sonarr's/Radarr's own English title. Our library already stores the **localized**
 title per the constitution's language-resolution algorithm (per-file audio-track order → first TMDB hit;
 series use the majority of episodes' resolved languages), so a Danish-audio "Chore Captain (DK)" is stored
-as `MediaItem.title = "Mesterholdet"`. The Upcoming feed throws that away and shows the *arr's English
+as `MediaItem.title = "<Danish title>"`. The Upcoming feed throws that away and shows the *arr's English
 title even for series we hold and have a localized title for.
 
 ## Root cause (verified in code)
@@ -71,7 +73,7 @@ IS "held"** (episodes are built only from files found on disk — `Scanner.kt` f
 
 ### FR-R166-2 — Localized library titles (and synopsis) for matched items
 5. When a feed item matches a catalogue `MediaItem` (`matched != null`), the `UpcomingItem.title` must be
-   the library's **localized** `matched.title` (e.g. "Mesterholdet"), not the *arr English string. Falls
+   the library's **localized** `matched.title` (e.g. a Danish series' Danish title), not the *arr English string. Falls
    back to the *arr title (`series.title` / `mv.title`) only when there is **no** catalogue match (an
    item we don't hold yet — we have no localized title for it).
 6. Apply the same "prefer the matched library value" rule to the **synopsis** (`matched.overview`) and,

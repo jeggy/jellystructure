@@ -5,10 +5,10 @@
 > up with a proper solution to this and spec it out properly… remember this is not a one time example,
 > this is something that happens alot."*
 
-**Status:** ✓ Built 2026-09-02 (not yet dev-reviewed, not yet live-verified against production traffic —
-unit-tested and compiled clean). FR-181-2 was already built/test-verified 2026-08-31. FR-181-1, FR-181-1a,
-FR-181-4 and FR-181-5 are now built too; FR-181-3 is **not implemented as its own mechanism** — see its
-own section below for why.
+## Scope
+
+FR-181-3 is **not implemented as its own mechanism** — see its own section below for why; every other FR
+(FR-181-1, FR-181-1a, FR-181-2, FR-181-4, FR-181-5) is.
 
 **Build summary:** `sweepJellyfinLibrary()`/`computeLibraryDiff()` (new `media/LibrarySweep.kt`) run from
 inside every `RunTarget.Library` pipeline run (`PipelineEngine.kt`, right where `computeFreshnessFilter`
@@ -147,7 +147,7 @@ This was found while pressure-testing an earlier draft of FR-181-1, which propos
 
 The tell is the precision: `.0000000Z` (whole-second) is a preserved junk mtime; sub-second precision is
 a real copy time. Both shapes are present throughout the library, so a timestamp sweep would appear to
-work for some releases (Fjollerne's STROMPEBUKSER release sorted correctly, second in the list) while
+work for some releases (Fjollerne's `<group>` release sorted correctly, second in the list) while
 silently failing for others — the worst available failure mode.
 
 **Consequence for the design:** the only sound basis for convergence is a comparison that does not

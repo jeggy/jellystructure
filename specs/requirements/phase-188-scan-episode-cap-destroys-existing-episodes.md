@@ -5,10 +5,9 @@
 > production database: **135 of 184** TV shows are stuck at `episode_count = 8`, the exact value of
 > prod's `scan_episode_cap`.
 
-## Status
-Implemented (2026-09-05). Compiles clean (`compileKotlinLinuxX64`). Not yet dev-reviewed. **Repair
-rescan has now been run by the operator with the cap cleared**, restoring the full episode lists — and
-that rescan surfaced a second-order consequence which was separately repaired; see
+## Scope
+**The repair rescan was run by the operator with the cap cleared** (2026-09-05), restoring the full
+episode lists — and that rescan surfaced a second-order consequence which was separately repaired; see
 "Newly Added fallout and recovery" below.
 
 **Config mitigation attempted and reverted:** `~/jellystructure/config/config.toml`'s
@@ -69,7 +68,7 @@ approximately-correct order, not the original one.
   exact evenly-spaced index set `selectSamples()` (`Scanner.kt:1315-1319`) produces for `maxSamples = 8`
   over a sorted ~99-file season tree. `select count(*) from media where kind='TV_SHOW' and
   episode_count=8` returned 135 (of 184 TV shows total); 46 more sit below 8 with genuinely short real
-  runs (verified by title — e.g. `Y Talent` 2 seasons, `#CyberSleuths` 3-part miniseries); only 3 exceed
+  runs (verified by title — e.g. a 2-season series and a 3-part miniseries); only 3 exceed
   8, all multi-episode-file shows where one probed file yields several `Episode` entries.
 - **Mechanism**: `scanSeries` (`Scanner.kt:472-660`), which `scanItem` runs on **every** scan of an
   existing series (full library scans and scheduled scans alike — not just first discovery), applies

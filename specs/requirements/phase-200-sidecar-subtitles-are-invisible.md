@@ -6,11 +6,10 @@
 >
 > Embedded: yes. Sidecar: never. Both: only the embedded half.
 
-## Status
-✓ Built 2026-09-10. Design/audit-authored, not dev-reviewed, not deployed — sidecars will appear on
-each title's next scan (FR-200-8), no forced repair rescan run. Ravilo counterpart: **R239** (the
-render half, ⚠ Partial — new flag assets not sourced). This phase owns *what languages exist in the
-payload*; R239 owns *how the strip draws them*. See STATUS.md for the build summary.
+## Scope
+Design/audit-authored. Sidecars appear on each title's next scan (FR-200-8); no forced repair rescan.
+Ravilo counterpart: **R239** (the render half). This phase owns *what languages exist in the
+payload*; R239 owns *how the strip draws them*.
 
 ## The finding
 
@@ -115,7 +114,7 @@ _eng  _swe                                                     underscore separa
 ```
 
 Also present and correctly excluded by the basename rule: sibling episodes' subtitles in a shared
-folder (`Góða ferð Føroyar S01E01.mkv` sitting beside `…S01E05.fo.srt`). A looser match would
+folder (`<Series> S01E01.mkv` sitting beside `…S01E05.fo.srt`). A looser match would
 attribute five episodes' subtitles to every episode.
 
 `.hi` matters beyond parsing: `Track` has `default` and `forced` but **no SDH flag**, and R195 listed
