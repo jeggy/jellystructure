@@ -152,6 +152,9 @@ data class EncoderConfig(
 @Serializable
 data class RaviloHouseholdConfig(
     @SerialName("household_control") val householdControl: Boolean = false,
+    /** DEB-5506 (DEB-5503, FR-46) — the Samsung (`platform = tizen`) may direct-play a file that fits. On by default; `false`
+     *  negotiates its start, prepare, prewarm and restream as `hls_only` again. The rollback lever, read at each request. */
+    @SerialName("samsung_direct_play") val samsungDirectPlay: Boolean = true,
 )
 
 /** Phase 281 (FR-281-4/8) — iTunes' store, Audnexus' region, and *Write tags into audiobook files* (M6·1: off). */

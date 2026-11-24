@@ -1299,6 +1299,7 @@ class PlaybackService(
         startOver: Boolean = false,
         shuffle: Boolean = false,
     ): StreamTicket {
+        val capabilities = capabilitiesForPlatform(capabilities, device.platform, configStore.current.ravilo.samsungDirectPlay)   // DEB-5506 (FR-46)
         requireVisible(device, jellyfinId)
         rememberCapabilities(device, capabilities)   // 309 (FR-309-6) — a phone can prewarm for this device later
         // Phase 218 (FR-218-8) — a receiver past `max_sessions` gets phase 182's 503 + Retry-After
@@ -1530,6 +1531,7 @@ class PlaybackService(
      * encoder exists (owner, 2026-10-08).
      */
     suspend fun preparePlayback(device: DeviceData, jellyfinId: String, capabilities: ClientCapabilities): dev.jellystructure.shared.tv.PreparedStream {
+        val capabilities = capabilitiesForPlatform(capabilities, device.platform, configStore.current.ravilo.samsungDirectPlay)   // DEB-5506 (FR-46)
         requireVisible(device, jellyfinId)
         val jellyfinBase = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
         val token = jellyfinClient.tvTokenForClient(jellyfinBase, device)
@@ -1646,6 +1648,7 @@ class PlaybackService(
         audioLanguage: String? = null, audioVariant: String? = null, castDeviceId: String? = null,
     ): dev.jellystructure.shared.tv.PrewarmResult {
         fun none(why: String) = dev.jellystructure.shared.tv.PrewarmResult("none", why)
+        val capabilities = capabilitiesForPlatform(capabilities, device.platform, configStore.current.ravilo.samsungDirectPlay)   // DEB-5506 (FR-46)
         requireVisible(device, jellyfinId)
         if (!configStore.current.encoder.enabled) return none("encoder off")
         // The device that will play: this one, or the receiver the phone casts to.
@@ -2509,6 +2512,9 @@ class PlaybackService(
         /** DEB-2205 (FR-4) — a hand-over ahead of time: the playhead position the player will switch at (null: restream at [positionMs] now). */
         handoverAtMs: Long? = null,
     ): StreamTicket {
+        // DEB-5506 (FR-46) — a null capabilities (the original session's, not on hand) stays null: the burn-in path below forces
+        // a transcode whatever the client says, so there is nothing for the switch to turn off there.
+        val capabilities = capabilities?.let { capabilitiesForPlatform(it, device.platform, configStore.current.ravilo.samsungDirectPlay) }
         if (subtitleStreamIndex < 0) return restreamWithoutBurnIn(device, jellyfinId, positionMs, capabilities ?: ClientCapabilities(), audioStreamIndex, mediaSourceId, notOurEncoder, belowBandwidthBps, handoverAtMs)
         requireVisible(device, jellyfinId)
         val jellyfinBase = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
