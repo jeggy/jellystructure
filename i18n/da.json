@@ -497,6 +497,8 @@
   "cast.reconnecting": "Forbinder igen til {device}…",
   "cast.playing_on": "Spiller på {device}",
   "cast.paused_on": "Pauset på {device}",
+  "cast.playing_here": "Afspiller her",
+  "cast.paused_here": "På pause her",
   "session.everywhere": "Spiller overalt",
   "session.person_listening": "{person} lytter",
   "session.person_watching": "{person} ser",

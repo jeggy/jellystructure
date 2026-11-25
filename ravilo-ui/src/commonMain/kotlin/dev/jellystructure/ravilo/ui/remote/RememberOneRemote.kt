@@ -12,6 +12,7 @@ import dev.jellystructure.ravilo.ui.components.CastController
 import dev.jellystructure.ravilo.ui.components.rememberSessionClock
 import dev.jellystructure.ravilo.ui.components.rememberSessionsState
 import dev.jellystructure.ravilo.ui.i18n.str
+import dev.jellystructure.ravilo.ui.music.MusicPlayback
 import dev.jellystructure.ravilo.ui.seams.CastLinkState
 import dev.jellystructure.ravilo.ui.seams.CastRemoteStatus
 import dev.jellystructure.ravilo.ui.sessions.CommandFeedback
@@ -51,6 +52,7 @@ fun rememberOneRemote(
     val detail by SessionRemote.detail.collectAsState()
     val pending by SessionRemote.pending.collectAsState()
     val now = rememberSessionClock()
+    val held by MusicPlayback.state.collectAsState()
 
     val linkName = deviceName.takeIf { link != CastLinkState.NONE }
     val detailView = detail?.session?.takeIf { it.id == sessionId }
@@ -72,6 +74,11 @@ fun rememberOneRemote(
     val gone = sessionId == null && view == null && (cast == null || (wasLinked && link == CastLinkState.NONE))
     LaunchedEffect(gone) { if (gone) onGone() }
 
+    // DEB-2225 (FR-3, FR-4) — a song or a book this app holds the queue of (its own playback, or the same queue cast from it) is
+    // one driver, whichever door opened it: the player's state has the track, the queue and the book that a session row lacks.
+    val ownMusic = (held.current != null || held.book != null) &&
+        ((view?.here == true && (view.kind == "music" || view.kind == "audiobook")) || (holdsLink && (view?.kind == "music" || view?.kind == "audiobook" || castStatus?.music == true)))
+    if (ownMusic) return rememberLocalMusicRemote(cast, extras)
     if (holdsLink && cast != null) {
         val unreachable = link != CastLinkState.CONNECTED
         // The session's detail rides along with the link (DEB-2611): a song's rooms and shuffle come from it.
@@ -108,6 +115,8 @@ fun rememberOneRemote(
         confirmStop = !v.mine, ownerName = v.owner.name, here = v.here, view = v, ops = ops, feedback = feedback,
         canSubtitleSize = serverCanSubtitleSize(ops), canNextUp = false,   // DEB-2961 (FR-2, FR-14)
         shuffle = d?.shuffle ?: false, repeat = d?.repeat ?: "off",
+        // DEB-2225 (FR-3) — a song or a book reached only through the server: the queue's titles and a tap that jumps, and no more.
+        music = if (v.kind == "music" || v.kind == "audiobook") d?.let { upNextOf(it) }.let { MusicFace(now = it?.first, upNext = it?.second.orEmpty()) } else null,
     )
     return OneRemote(model, SessionActions(v.id), extras, sessionVolume = if (d != null && v.controllable && !ended && !viewOnly) { { extras.volume?.invoke(d) } } else null)
 }
@@ -161,6 +170,7 @@ private class LinkActions(private val cast: CastController) : RemoteActions {
     override fun previous() = cast.musicCommand("prev")
     override fun setShuffle(on: Boolean) = cast.musicCommand("shuffle", on = on)
     override fun setRepeat(mode: String) = cast.musicCommand("repeat", mode = mode)
+    override fun jumpTo(index: Int) = cast.musicCommand("play_at", index = index)
 }
 
 /** FR-5.2 — a press goes through the server; the revision rides along (R369 FR-R369-1) and a 409 redraws. */
@@ -181,4 +191,5 @@ private class SessionActions(private val id: String) : RemoteActions {
     override fun previous() = send(SessionCommandRequest(op = "previous"))
     override fun setShuffle(on: Boolean) = send(SessionCommandRequest(op = "set_shuffle", on = on))
     override fun setRepeat(mode: String) = send(SessionCommandRequest(op = "set_repeat", mode = mode))
+    override fun jumpTo(index: Int) = send(SessionCommandRequest(op = "jump", index = index))
 }

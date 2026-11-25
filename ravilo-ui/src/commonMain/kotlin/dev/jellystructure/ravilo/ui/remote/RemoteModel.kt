@@ -52,6 +52,8 @@ data class RemoteModel(
     /** A song's queue state, as the server's [SessionDetail] says it (DEB-2611): drawn on shuffle and repeat. */
     val shuffle: Boolean = false,
     val repeat: String = "off",
+    /** DEB-2225 (FR-3, FR-4) — a song's or a book's own parts (the track, where it came from, the queue, the book); null for a film. */
+    val music: MusicFace? = null,
 )
 
 /** DEB-2961 (one-remote FR-2, FR-14) — the server driver's S · M · L row exists when the place's ops list the caption size. */
@@ -105,6 +107,8 @@ interface RemoteActions {
     fun previous() {}
     fun setShuffle(on: Boolean) {}
     fun setRepeat(mode: String) {}
+    /** *Up next*: the row a tap jumps to, by its place in the queue (DEB-2225, FR-3). */
+    fun jumpTo(index: Int) {}
     /** *Try again* — ask the place where it is. */
     fun retry()
 }
@@ -124,6 +128,20 @@ class RemoteExtras(
     val volume: (@androidx.compose.runtime.Composable (SessionDetail) -> Unit)? = null,
     /** The platform's own cast sheet — what the place pill opens when the server lists no row for this playback. */
     val openCastSheet: () -> Unit = {},
+    /** DEB-2225 (FR-3) — what a song's or a book's remote opens from: ♥, ⋯, the album, the artist, the book. Absent ⇒ those are not drawn. */
+    val music: MusicExtras? = null,
+)
+
+/** DEB-2225 (FR-3) — the music remote's doors into the rest of the app, which [dev.jellystructure.ravilo.ui.RaviloApp] owns. */
+class MusicExtras(
+    val api: dev.jellystructure.shared.tv.TvApiClient,
+    val books: dev.jellystructure.ravilo.ui.music.AudiobookStore? = null,
+    val onOpenAlbum: (String) -> Unit = {},
+    val onOpenArtist: (String) -> Unit = {},
+    val onTrackMore: (dev.jellystructure.shared.tv.MusicTrackItem) -> Unit = {},
+    val onFavorite: (dev.jellystructure.shared.tv.MusicTrackItem, Boolean) -> Unit = { _, _ -> },
+    val onOpenBook: (String) -> Unit = {},
+    val onOpenBookAuthor: (String) -> Unit = {},
 )
 
 /** The remote on screen: the model, what a press does, and the parts the app supplies. */

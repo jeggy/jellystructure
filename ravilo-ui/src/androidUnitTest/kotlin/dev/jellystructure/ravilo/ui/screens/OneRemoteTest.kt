@@ -44,6 +44,7 @@ internal class RecordingActions : RemoteActions {
     override fun previous() { calls += "previous" }
     override fun setShuffle(on: Boolean) { calls += "shuffle:$on" }
     override fun setRepeat(mode: String) { calls += "repeat:$mode" }
+    override fun jumpTo(index: Int) { calls += "jump:$index" }
 }
 
 internal object NoActions : RemoteActions {

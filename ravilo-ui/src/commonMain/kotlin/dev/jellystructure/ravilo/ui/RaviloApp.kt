@@ -2222,6 +2222,17 @@ fun RaviloApp(
             },
             playHereLabel = str(when { dev.jellystructure.ravilo.ui.isMacPlatform -> "cast.play_here_mac"; dev.jellystructure.ravilo.ui.isDesktopPlatform -> "cast.play_here_desk"; else -> "cast.play_here" }),
             openCastSheet = { castController.openSheet() },
+            // DEB-2225 (FR-3) — a song's ♥, ⋯, album and artist, and a book's page and author, open from the remote as they did from Playing.
+            music = dev.jellystructure.ravilo.ui.remote.MusicExtras(
+                api = apiClient,
+                books = bookStore,
+                onOpenAlbum = { id -> push(Dest.AlbumDetail(id, destDisplayName(stack.lastOrNull()))) },
+                onOpenArtist = { id -> push(Dest.ArtistDetail(id, destDisplayName(stack.lastOrNull()))) },
+                onTrackMore = { trackSheet = dev.jellystructure.ravilo.ui.music.TrackSheetRequest(it) },
+                onFavorite = { t, fav -> setMusicFavorite(t, fav) },
+                onOpenBook = { id -> push(Dest.AudiobookDetail(id, destDisplayName(stack.lastOrNull()))) },
+                onOpenBookAuthor = { id -> push(Dest.AudiobookAuthor(id, destDisplayName(stack.lastOrNull()))) },
+            ),
         )
         // R369 — a *Playing everywhere* row or the bar opens the session's remote; ⏯ and next go through the server
         // unless the session plays here.
@@ -3380,16 +3391,11 @@ fun RaviloApp(
                 // FR-R322-3 — nothing playing: the last queue this phone kept (where it was), else the viewer's last-played
                 // song, loaded paused and not started.
                 LaunchedEffect(Unit) { restoreLastListening() }
-                dev.jellystructure.ravilo.ui.music.MusicPlayingScreen(
-                    api = apiClient,
+                // DEB-2185 (FR-4) — the Playing tab is the one remote, inside the tab with the bottom nav under it.
+                dev.jellystructure.ravilo.ui.screens.MusicPlayingTab(
+                    cast = castActive,
+                    extras = sessionRemoteExtras(),
                     onClose = { if (stack.size > 1) pop() else resetTo(homeDest(dest.displayName)) },
-                    onOpenAlbum = { id -> push(Dest.AlbumDetail(id, dest.displayName)) },
-                    onOpenArtist = { id -> push(Dest.ArtistDetail(id, dest.displayName)) },
-                    onTrackMore = { trackSheet = dev.jellystructure.ravilo.ui.music.TrackSheetRequest(it) },
-                    onFavorite = { t, fav -> setMusicFavorite(t, fav) },
-                    books = bookStore,
-                    onOpenBook = { id -> push(Dest.AudiobookDetail(id, dest.displayName)) },
-                    onOpenBookAuthor = { id -> push(Dest.AudiobookAuthor(id, dest.displayName)) },
                 )
             }
             is Dest.MusicQueue -> dev.jellystructure.ravilo.ui.music.MusicQueueScreen(

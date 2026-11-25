@@ -497,6 +497,8 @@
   "cast.reconnecting": "Sambindur aftur við {device}…",
   "cast.playing_on": "Spælir á {device}",
   "cast.paused_on": "Steðgað á {device}",
+  "cast.playing_here": "Spælir her",
+  "cast.paused_here": "Steðgað her",
   "session.everywhere": "Spælir allastaðni",
   "session.person_listening": "{person} lurtar",
   "session.person_watching": "{person} hyggur",
