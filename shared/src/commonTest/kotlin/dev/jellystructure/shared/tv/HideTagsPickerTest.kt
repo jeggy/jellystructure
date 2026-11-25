@@ -68,7 +68,7 @@ class NewlyHideTagsTest {
     private fun newly(id: String, order: Int, on: Boolean = true, mediaKind: String? = null) =
         RowConfig(id = id, kind = RowKind.NEWLY_ADDED, order = order, enabled = on, mediaKind = mediaKind)
 
-    @Test fun `the first Newly Added row in order carries the list, switched on or not`() {
+    @Test fun `the first Newly Added row in order carries the list whether switched on or not`() {
         val rows = listOf(RowConfig(id = "c", kind = RowKind.CONTINUE, order = 0), newly("b", 2), newly("a", 1, on = false))
         assertEquals("a", NewlyHideTags.hostRowId(rows))
     }
