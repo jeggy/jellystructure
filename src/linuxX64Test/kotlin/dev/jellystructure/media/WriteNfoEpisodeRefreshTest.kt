@@ -55,7 +55,7 @@ class WriteNfoEpisodeRefreshTest {
 
     @Test
     fun `a rewritten series NFO also rewrites its episode NFOs with the air date`() = runBlocking {
-        val result = PipelineStepOps.writeNfo(series(nfoHash = "stale"), store, "", emptyList(), allowForeign = true)
+        val result = PipelineStepOps.writeNfo(series(nfoHash = "stale"), store, emptyList(), allowForeign = true)
         assertEquals(PipelineStepOps.NfoResult.WRITTEN, result)
         assertTrue(assertNotNull(NfoWriter.readRawEpisode(episode)).contains("<aired>2022-06-03</aired>"))
     }
@@ -63,7 +63,7 @@ class WriteNfoEpisodeRefreshTest {
     @Test
     fun `an unchanged series NFO writes no episode NFO`() = runBlocking {
         val current = series(nfoHash = null)
-        val result = PipelineStepOps.writeNfo(current.copy(nfoHash = NfoWriter.contentHash(current, "", emptyList())), store, "", emptyList(), allowForeign = true)
+        val result = PipelineStepOps.writeNfo(current.copy(nfoHash = NfoWriter.contentHash(current, emptyList())), store, emptyList(), allowForeign = true)
         assertEquals(PipelineStepOps.NfoResult.UNCHANGED, result)
         assertNull(NfoWriter.readRawEpisode(episode))
     }
@@ -101,7 +101,7 @@ class WriteNfoSettlesTest {
         releaseDate = "2022-06-03", episodes = listOf(ep), cast = cast, nfoHash = nfoHash,
     )
 
-    private fun hashOf(item: MediaItem) = NfoWriter.contentHash(item, "", emptyList())
+    private fun hashOf(item: MediaItem) = NfoWriter.contentHash(item, emptyList())
 
     private fun setMtime(path: String) = memScoped {
         val b = alloc<platform.posix.utimbuf>()
@@ -127,7 +127,7 @@ class WriteNfoSettlesTest {
     fun `a series whose hash moved but whose episode NFOs are current writes no episode file`() = runBlocking {
         val ep = episode("jf-ep")
         val path = currentEpisodeNfo(ep)
-        val result = PipelineStepOps.writeNfo(series(ep, nfoHash = "stale"), store, "", emptyList(), allowForeign = true)
+        val result = PipelineStepOps.writeNfo(series(ep, nfoHash = "stale"), store, emptyList(), allowForeign = true)
         assertEquals(PipelineStepOps.NfoResult.WRITTEN, result)
         assertEquals(oldMtime, mtime(path))
     }
@@ -137,7 +137,7 @@ class WriteNfoSettlesTest {
         val ep = episode("jf-ep")
         val path = currentEpisodeNfo(ep)
         val cast = listOf(Person(tmdbId = 7, name = "Some Actor", character = "Role"))
-        PipelineStepOps.writeNfo(series(ep, nfoHash = "stale", cast = cast), store, "", emptyList(), allowForeign = true)
+        PipelineStepOps.writeNfo(series(ep, nfoHash = "stale", cast = cast), store, emptyList(), allowForeign = true)
         assertTrue(mtime(path) > oldMtime)
         assertTrue(assertNotNull(NfoWriter.readRawEpisode(ep)).contains("<name>Some Actor</name>"))
     }
@@ -149,7 +149,7 @@ class WriteNfoSettlesTest {
         val s = series(ep, nfoHash = null)
         val current = s.copy(nfoHash = hashOf(s))
         store.updateOne(current)
-        val result = PipelineStepOps.writeNfo(current, store, "", emptyList(), allowForeign = true)
+        val result = PipelineStepOps.writeNfo(current, store, emptyList(), allowForeign = true)
         assertEquals(PipelineStepOps.NfoResult.UNCHANGED, result)
         assertEquals(oldMtime, mtime(path))
         assertNull(store.get("show")?.nfoWrittenAt)
@@ -161,7 +161,7 @@ class WriteNfoSettlesTest {
         val s = series(ep, nfoHash = null)
         val current = s.copy(nfoHash = hashOf(s))
         store.updateOne(current)
-        PipelineStepOps.writeNfo(current, store, "", emptyList(), allowForeign = true)
+        PipelineStepOps.writeNfo(current, store, emptyList(), allowForeign = true)
         assertNotNull(NfoWriter.readRawEpisode(ep))
         assertTrue(store.get("show")?.nfoWrittenAt != null)
     }
@@ -170,11 +170,11 @@ class WriteNfoSettlesTest {
     fun `a series NFO the file already holds is recorded but not rewritten`() = runBlocking {
         val ep = episode("jf-ep")
         val s = series(ep, nfoHash = null)
-        NfoWriter.write(s, "", emptyList()).getOrThrow()
+        NfoWriter.write(s, emptyList()).getOrThrow()
         val path = NfoWriter.nfoPath(s)
         setMtime(path)
         store.updateOne(s.copy(nfoHash = "stale"))
-        val result = PipelineStepOps.writeNfo(s.copy(nfoHash = "stale"), store, "", emptyList(), allowForeign = true)
+        val result = PipelineStepOps.writeNfo(s.copy(nfoHash = "stale"), store, emptyList(), allowForeign = true)
         assertEquals(PipelineStepOps.NfoResult.UNCHANGED, result)
         assertEquals(oldMtime, mtime(path))
         assertEquals(hashOf(s), store.get("show")?.nfoHash)
@@ -187,7 +187,7 @@ class WriteNfoSettlesTest {
         val s = series(ep, nfoHash = null)
         val current = s.copy(nfoHash = hashOf(s))
         store.updateOne(current)
-        val result = PipelineStepOps.writeNfo(current, store, "", emptyList(), allowForeign = true, includeEpisodes = true)
+        val result = PipelineStepOps.writeNfo(current, store, emptyList(), allowForeign = true, includeEpisodes = true)
         assertEquals(PipelineStepOps.NfoResult.WRITTEN, result)
         assertNotNull(NfoWriter.readRawEpisode(ep))
         assertTrue(store.get("show")?.nfoWrittenAt != null)
@@ -200,7 +200,7 @@ class WriteNfoSettlesTest {
         val s = series(ep, nfoHash = null)
         val current = s.copy(nfoHash = hashOf(s))
         store.updateOne(current)
-        val result = PipelineStepOps.writeNfo(current, store, "", emptyList(), allowForeign = true, includeEpisodes = true)
+        val result = PipelineStepOps.writeNfo(current, store, emptyList(), allowForeign = true, includeEpisodes = true)
         assertEquals(PipelineStepOps.NfoResult.UNCHANGED, result)
         assertEquals(oldMtime, mtime(path))
         assertNull(store.get("show")?.nfoWrittenAt)

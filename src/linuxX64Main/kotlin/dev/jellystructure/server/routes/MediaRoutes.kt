@@ -574,7 +574,7 @@ fun Route.mediaRoutes(
                         ?: return@post call.respond(HttpStatusCode.BadRequest)
                     val item = store.resolve(id)
                         ?: return@post call.respond(HttpStatusCode.NotFound)
-                    NfoWriter.writeTracked(item, configStore.current.apiKeys.jellyfinUrl, configStore.current.metadata.ageRatingCascade)
+                    NfoWriter.writeTracked(item, configStore.current.metadata.ageRatingCascade)
                         .onSuccess { result ->
                             mediaHistory.record(id, "nfo_write", result.path)
                             store.updateOne(item.copy(nfoWrittenAt = result.writtenAt, nfoHash = result.hash))
@@ -1704,7 +1704,7 @@ fun Route.mediaRoutes(
             val enriched = sonarrEnrich?.enrichOne(rescanned) ?: rescanned
             store.updateOne(enriched, respectMetadataLanguageLock = false)
 
-            NfoWriter.writeTracked(enriched, configStore.current.apiKeys.jellyfinUrl, configStore.current.metadata.ageRatingCascade)
+            NfoWriter.writeTracked(enriched, configStore.current.metadata.ageRatingCascade)
                 .onSuccess { result ->
                     mediaHistory.record(id, "nfo_write", result.path)
                     store.updateOne(enriched.copy(nfoWrittenAt = result.writtenAt, nfoHash = result.hash), respectMetadataLanguageLock = false)
@@ -2299,7 +2299,7 @@ internal suspend fun pushNfosAndRefresh(
     val freshCfg = configStore.current
     for (item in items) {
         var current = item
-        NfoWriter.writeTracked(item, freshCfg.apiKeys.jellyfinUrl, freshCfg.metadata.ageRatingCascade)
+        NfoWriter.writeTracked(item, freshCfg.metadata.ageRatingCascade)
             .onSuccess { result ->
                 nfoOk++
                 current = item.copy(nfoWrittenAt = result.writtenAt, nfoHash = result.hash)
@@ -2342,7 +2342,7 @@ internal suspend fun pushToJellyfin(
     arrRescan: ArrRescanService? = null,
 ): Boolean {
     var current = item
-    NfoWriter.writeTracked(item, configStore.current.apiKeys.jellyfinUrl, configStore.current.metadata.ageRatingCascade)
+    NfoWriter.writeTracked(item, configStore.current.metadata.ageRatingCascade)
         .onSuccess { result ->
             Logger.info("pushToJellyfin: wrote NFO ${result.path}")
             current = item.copy(nfoWrittenAt = result.writtenAt, nfoHash = result.hash)

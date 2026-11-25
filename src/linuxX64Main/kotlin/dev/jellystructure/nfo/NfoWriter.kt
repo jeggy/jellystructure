@@ -14,18 +14,18 @@ import kotlinx.io.writeString
 object NfoWriter {
     // Phase 106: [ageRatingCascade] resolves item.certifications → a single <mpaa> code; empty
     // cascade or no certifications on the item ⇒ no <mpaa> tag written (feature off / no data).
-    fun buildXml(item: MediaItem, serverUrl: String? = null, ageRatingCascade: List<String> = emptyList()): String = when (item.kind) {
-        MediaKind.MOVIE -> buildMovieXml(item, serverUrl, ageRatingCascade)
-        MediaKind.TV_SHOW -> buildTvShowXml(item, serverUrl, ageRatingCascade)
-        MediaKind.MUSIC_VIDEO -> buildMusicVideoXml(item, serverUrl, ageRatingCascade)
+    fun buildXml(item: MediaItem, ageRatingCascade: List<String> = emptyList()): String = when (item.kind) {
+        MediaKind.MOVIE -> buildMovieXml(item, ageRatingCascade)
+        MediaKind.TV_SHOW -> buildTvShowXml(item, ageRatingCascade)
+        MediaKind.MUSIC_VIDEO -> buildMusicVideoXml(item, ageRatingCascade)
     }
 
     // Phase 115: a stable content hash for the item-level NFO — used to tell "we haven't written this
     // change yet" (DB ≠ nfoHash) from "the file on disk isn't ours" (readRaw() ≠ nfoHash) without a
     // byte-for-byte compare at every call site. Not cryptographic — collision risk is irrelevant here,
     // this only ever answers "did the generated XML change since the last write".
-    fun contentHash(item: MediaItem, serverUrl: String? = null, ageRatingCascade: List<String> = emptyList()): String =
-        buildXml(item, serverUrl, ageRatingCascade).hashCode().toString()
+    fun contentHash(item: MediaItem, ageRatingCascade: List<String> = emptyList()): String =
+        buildXml(item, ageRatingCascade).hashCode().toString()
 
     /** The hash of what's CURRENTLY on disk, or null if there's no NFO yet. Comparing this against
      *  [MediaItem.nfoHash] tells whether the on-disk file is still the one jellystructure last wrote. */
@@ -35,19 +35,19 @@ object NfoWriter {
 
     /** Like [write] but also returns the content hash + write time, for callers that persist
      *  [MediaItem.nfoWrittenAt]/[MediaItem.nfoHash] (Phase 115 sync-state tracking). */
-    suspend fun writeTracked(item: MediaItem, serverUrl: String? = null, ageRatingCascade: List<String> = emptyList()): Result<WriteResult> {
-        val hash = contentHash(item, serverUrl, ageRatingCascade)
-        return write(item, serverUrl, ageRatingCascade).map { path -> WriteResult(path, hash, dev.jellystructure.nowEpochSec()) }
+    suspend fun writeTracked(item: MediaItem, ageRatingCascade: List<String> = emptyList()): Result<WriteResult> {
+        val hash = contentHash(item, ageRatingCascade)
+        return write(item, ageRatingCascade).map { path -> WriteResult(path, hash, dev.jellystructure.nowEpochSec()) }
     }
 
-    suspend fun write(item: MediaItem, serverUrl: String? = null, ageRatingCascade: List<String> = emptyList()): Result<String> {
+    suspend fun write(item: MediaItem, ageRatingCascade: List<String> = emptyList()): Result<String> {
         return runCatching {
             val nfoPath = nfoPath(item)
             val dir = nfoPath.substringBeforeLast('/')
             Logger.info("NfoWriter.write: id='${item.id}' kind=${item.kind} item.path='${item.path}' nfoPath='$nfoPath'")
             val dirExists = SystemFileSystem.exists(Path(dir))
             Logger.info("NfoWriter.write: dir exists=$dirExists")
-            val xml = buildXml(item, serverUrl, ageRatingCascade)
+            val xml = buildXml(item, ageRatingCascade)
             writeAtomically(nfoPath, xml)
             Logger.info("Wrote NFO: $nfoPath", "nfo")
             nfoPath
@@ -222,15 +222,13 @@ object NfoWriter {
             val charOrRole = (p.character ?: p.role)?.takeIf { it.isNotBlank() }
             if (charOrRole != null) appendLine("    <role>${charOrRole.esc()}</role>")
             appendLine("    <order>$order</order>")
-            if (!p.profilePath.isNullOrBlank()) {
-                appendLine("    <thumb>/api/people/${p.tmdbId}/image</thumb>")
-            }
+            appendActorThumb(p)
             appendLine("  </actor>")
         }
         appendLine("</episodedetails>")
     }
 
-    private fun buildMovieXml(item: MediaItem, serverUrl: String? = null, ageRatingCascade: List<String> = emptyList()): String = buildString {
+    private fun buildMovieXml(item: MediaItem, ageRatingCascade: List<String> = emptyList()): String = buildString {
         appendLine("""<?xml version="1.0" encoding="utf-8" standalone="yes"?>""")
         appendLine("<movie>")
         appendLine("  <title>${item.title.esc()}</title>")
@@ -286,13 +284,13 @@ object NfoWriter {
             if (!roleText.isNullOrBlank()) appendLine("    <role>${roleText.esc()}</role>")
             appendLine("    <order>${p.order}</order>")
             appendLine("    <type>${p.type.esc()}</type>")
-            if (serverUrl != null && p.tmdbId != 0) appendLine("    <thumb>${serverUrl}/api/people/${p.tmdbId}/image</thumb>")
+            appendActorThumb(p)
             appendLine("  </actor>")
         }
         appendLine("</movie>")
     }
 
-    private fun buildTvShowXml(item: MediaItem, serverUrl: String? = null, ageRatingCascade: List<String> = emptyList()): String = buildString {
+    private fun buildTvShowXml(item: MediaItem, ageRatingCascade: List<String> = emptyList()): String = buildString {
         appendLine("""<?xml version="1.0" encoding="utf-8" standalone="yes"?>""")
         appendLine("<tvshow>")
         appendLine("  <title>${item.title.esc()}</title>")
@@ -349,7 +347,7 @@ object NfoWriter {
             if (!roleText.isNullOrBlank()) appendLine("    <role>${roleText.esc()}</role>")
             appendLine("    <order>${p.order}</order>")
             appendLine("    <type>${p.type.esc()}</type>")
-            if (serverUrl != null && p.tmdbId != 0) appendLine("    <thumb>${serverUrl}/api/people/${p.tmdbId}/image</thumb>")
+            appendActorThumb(p)
             appendLine("  </actor>")
         }
         appendLine("</tvshow>")
@@ -363,7 +361,7 @@ object NfoWriter {
      *  `<actor>` — mirrors `buildMovieXml` exactly and is written only when Phase 171's TMDB match
      *  actually found something (still deliberately no `<album>`/`<track>` — not TMDB fields either).
      */
-    private fun buildMusicVideoXml(item: MediaItem, serverUrl: String? = null, ageRatingCascade: List<String> = emptyList()): String = buildString {
+    private fun buildMusicVideoXml(item: MediaItem, ageRatingCascade: List<String> = emptyList()): String = buildString {
         appendLine("""<?xml version="1.0" encoding="utf-8" standalone="yes"?>""")
         appendLine("<musicvideo>")
         appendLine("  <title>${item.title.esc()}</title>")
@@ -411,7 +409,7 @@ object NfoWriter {
             if (!roleText.isNullOrBlank()) appendLine("    <role>${roleText.esc()}</role>")
             appendLine("    <order>${p.order}</order>")
             appendLine("    <type>${p.type.esc()}</type>")
-            if (serverUrl != null && p.tmdbId != 0) appendLine("    <thumb>${serverUrl}/api/people/${p.tmdbId}/image</thumb>")
+            appendActorThumb(p)
             appendLine("  </actor>")
         }
         appendLine("</musicvideo>")
@@ -421,6 +419,14 @@ object NfoWriter {
     private fun isoDate(raw: String?): String? = raw?.trim()?.takeIf { ISO_DATE.matches(it) }
 
     private val ISO_DATE = Regex("""\d{4}-\d{2}-\d{2}""")
+
+    // DEB-5534 (FR-1/FR-2/FR-3): the photo is TMDB's own CDN, which Jellyfin can fetch; nothing here depends on a configured address.
+    private fun StringBuilder.appendActorThumb(p: Person) {
+        val path = p.profilePath?.takeIf { it.isNotBlank() } ?: return
+        appendLine("    <thumb>${ACTOR_THUMB_BASE}${path.esc()}</thumb>")
+    }
+
+    private const val ACTOR_THUMB_BASE = "https://image.tmdb.org/t/p/h632"
 
     private fun String.esc() =
         replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")

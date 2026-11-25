@@ -134,9 +134,9 @@ object PipelineStepOps {
      *  [includeEpisodes]: for a TV_SHOW, also (re)write each episode NFO — matches the write-through
      *  `pushToJellyfin` path, so an event-ingested series' new episodes get their NFOs. The scheduled
      *  bulk run leaves this false (series-only), preserving its existing behaviour. */
-    suspend fun writeNfo(item: MediaItem, store: MediaStore, serverUrl: String, ageRatingCascade: List<String>, allowForeign: Boolean, includeEpisodes: Boolean = false): NfoResult {
+    suspend fun writeNfo(item: MediaItem, store: MediaStore, ageRatingCascade: List<String>, allowForeign: Boolean, includeEpisodes: Boolean = false): NfoResult {
         val current = store.get(item.id) ?: item
-        val wouldBeHash = NfoWriter.contentHash(current, serverUrl, ageRatingCascade)
+        val wouldBeHash = NfoWriter.contentHash(current, ageRatingCascade)
         val result = when {
             wouldBeHash == current.nfoHash -> NfoResult.UNCHANGED
             else -> {
@@ -150,7 +150,7 @@ object PipelineStepOps {
                 }
                 else if (isForeign && !allowForeign) NfoResult.FOREIGN_SKIPPED
                 else {
-                    val r = NfoWriter.writeTracked(current, serverUrl, ageRatingCascade).getOrThrow()
+                    val r = NfoWriter.writeTracked(current, ageRatingCascade).getOrThrow()
                     store.updateOne(current.copy(nfoWrittenAt = r.writtenAt, nfoHash = r.hash))
                     NfoResult.WRITTEN
                 }
@@ -237,7 +237,7 @@ object PipelineStepOps {
                     // forward over them). Thread the rewritten item through instead of re-deriving from
                     // `current` twice. Never fired in production (auto_reassert=false) but latent either way.
                     var reasserted = current
-                    runCatching { NfoWriter.writeTracked(current, cfg.apiKeys.jellyfinUrl, cfg.metadata.ageRatingCascade).getOrThrow() }
+                    runCatching { NfoWriter.writeTracked(current, cfg.metadata.ageRatingCascade).getOrThrow() }
                         .onSuccess { r ->
                             reasserted = current.copy(nfoWrittenAt = r.writtenAt, nfoHash = r.hash)
                             store.updateOne(reasserted)

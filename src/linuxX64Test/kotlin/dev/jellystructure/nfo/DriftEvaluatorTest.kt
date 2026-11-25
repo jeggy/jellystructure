@@ -25,7 +25,7 @@ class DriftEvaluatorTest {
         // Make the on-disk-equivalent hash agree so evaluate() falls through NFO_STALE into the
         // jfSyncedAt/nfoWrittenAt comparison, exactly like a converged write followed by a pending sync.
         val cfg = AppConfig()
-        val hash = NfoWriter.contentHash(item, cfg.apiKeys.jellyfinUrl, cfg.metadata.ageRatingCascade)
+        val hash = NfoWriter.contentHash(item, cfg.metadata.ageRatingCascade)
         return item.copy(nfoHash = hash, nfoWrittenAt = nfoWrittenAt, jfSyncedAt = jfSyncedAt)
     }
 

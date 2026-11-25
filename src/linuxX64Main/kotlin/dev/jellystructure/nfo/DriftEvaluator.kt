@@ -29,7 +29,7 @@ object DriftEvaluator {
         // State 1 — NFO stale: the XML we'd generate right now doesn't match what we last wrote, so
         // there's nothing to compare against Jellyfin yet — this is the write-through model working as
         // designed (an edit not yet saved to disk), not drift.
-        val wouldBeHash = NfoWriter.contentHash(item, cfg.apiKeys.jellyfinUrl, cfg.metadata.ageRatingCascade)
+        val wouldBeHash = NfoWriter.contentHash(item, cfg.metadata.ageRatingCascade)
         if (wouldBeHash != item.nfoHash) {
             return DriftResult(DriftState.NFO_STALE.name.lowercase(), "Your edits aren't in the NFO yet.")
         }

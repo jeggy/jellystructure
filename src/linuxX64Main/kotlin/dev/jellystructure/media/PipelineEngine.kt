@@ -601,7 +601,6 @@ suspend fun runPipeline(
                 broadcaster.broadcast(JobEvent.StepFinished(jobId, step.step, summary))
             }
             "write_nfo" -> {
-                val serverUrl = cfg.apiKeys.jellyfinUrl
                 val written = AtomicInt(0)
                 val unchanged = AtomicInt(0)
                 val foreignSkipped = AtomicInt(0)
@@ -615,7 +614,7 @@ suspend fun runPipeline(
                     scanTracker, broadcaster, labelOf = { it.title }, onItemFailure = failedRun(step.step),
                 ) { item, _ ->
                     when (PipelineStepOps.writeNfo(
-                        item, store, serverUrl, cfg.metadata.ageRatingCascade,
+                        item, store, cfg.metadata.ageRatingCascade,
                         allowForeign = step.overwrite || cfg.behavior.overwriteNfo,
                         includeEpisodes = includeEpisodes,
                     )) {

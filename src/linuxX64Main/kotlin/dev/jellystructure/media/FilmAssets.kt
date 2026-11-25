@@ -91,7 +91,7 @@ class FilmAssets(
 
     private suspend fun writeNfo(item: MediaItem) {
         val cfg = config()
-        val written = runCatching { NfoWriter.writeTracked(item, cfg.apiKeys.jellyfinUrl, cfg.metadata.ageRatingCascade).getOrThrow() }
+        val written = runCatching { NfoWriter.writeTracked(item, cfg.metadata.ageRatingCascade).getOrThrow() }
             .onFailure { Logger.warn("film assets: the NFO for '${item.title}' couldn't be written back: ${it.message} (314)", "media") }
             .getOrNull() ?: return
         val stored = store.get(item.id) ?: return
