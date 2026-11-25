@@ -351,6 +351,8 @@
     .face-name { font-size: 19px; font-weight: 600; padding: 12px 2px 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink-soft); }
     .detail-face.focused .face-name { color: var(--ink); }
     .face-role { font-size: 16px; padding: 2px 2px 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink-soft); opacity: .8; }
+    /* DEB-5649 (FR-51) — More like this: Home's poster tiles in a detail rail, the page's last row. */
+    .detail-related { position: relative; z-index: 1; margin-top: 30px; padding-bottom: 60px; }
     /* DEB-4659 FR-6 — six-column TV browse grid, using Home's tile treatment. */
     .browse-page { padding-bottom: 80px; }
     .browse-heading { margin-top: 30px; }

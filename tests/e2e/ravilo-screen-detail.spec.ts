@@ -42,6 +42,8 @@ type Seen = {
   push: (message: object) => void;
   // DEB-5396 (DEB-5394, FR-35) — each `/prewarm` and `/prewarm/cancel` body the page posted, and what the mock answers to a prewarm.
   prewarms: any[]; cancels: any[]; prewarmAnswer: object | number;
+  // DEB-5649 (FR-51) — every `/api/tv/movie/*` and `/api/tv/series/*` path the page asked for.
+  titles: string[];
 };
 type Opts = {
   home?: object; movie?: object | null; series?: object | null; playstate?: Record<string, object>;
@@ -51,6 +53,8 @@ type Opts = {
   fakeClock?: boolean;
   /** DEB-5578 — answer image requests with a real 1x1 PNG, so a backdrop or logo fires `load` (the default is an empty 204). */
   images?: boolean;
+  /** DEB-5649 — more title pages the mock serves, by path (`/api/tv/movie/m2`), for a *More like this* tile to open. */
+  pages?: Record<string, object>;
 };
 const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==", "base64");
 
@@ -61,7 +65,7 @@ async function boot(page: Page, opts: Opts = {}): Promise<Seen> {
     starts: [], favorites: [], played: [], reads: [], inFlight: 0, maxInFlight: 0,
     playstate: opts.playstate ?? {}, playstateStatus: 200, gate: null,
     push: (message) => sockets.forEach((ws) => ws.send(JSON.stringify(message))),
-    prewarms: [], cancels: [], prewarmAnswer: { status: "warm" },
+    prewarms: [], cancels: [], prewarmAnswer: { status: "warm" }, titles: [],
   };
   // The events socket is accepted and says nothing until a test pushes.
   await page.routeWebSocket(/\/api\/tv\/events/, (ws) => { sockets.push(ws); });
@@ -80,6 +84,8 @@ async function boot(page: Page, opts: Opts = {}): Promise<Seen> {
     const body = req.postData() ? JSON.parse(req.postData()!) : null;
     if (req.method() === "OPTIONS") return route.fulfill({ status: 204 });
     if (path === "/api/tv/home") return json(route, 200, opts.home ?? feed);
+    if (/^\/api\/tv\/(movie|series)\//.test(path)) seen.titles.push(path);
+    if (opts.pages?.[path]) return json(route, 200, opts.pages[path]);
     if (path === "/api/tv/movie/m1") return opts.movie === null ? json(route, 404) : json(route, 200, opts.movie ?? movieDetail);
     if (path === "/api/tv/series/sr1") return opts.series ? json(route, 200, opts.series) : json(route, 404);
     if (path === "/api/tv/playstate") {
@@ -769,5 +775,100 @@ test.describe("DEB-5631 FR-7 — a title's page shows its cast", () => {
     await expect(page.locator("#detail-cast-0")).toHaveClass(/focused/);
     await page.keyboard.press("ArrowUp");
     await expect(page.locator(".detail-ep.focused")).toHaveCount(1);
+  });
+});
+
+// DEB-5649 (DEB-5640 FR-51) — a title's page ends in Android TV's More like this row.
+test.describe("DEB-5649 FR-51 — a title's page ends in More like this", () => {
+  const related = [card("m2", "Moon Two"), card("m3", "Moon Three"), card("sr9", "Related Series", "SERIES")];
+  const people = [{ id: "101", name: "Ada Quill", role: "Lead", image_url: null }];
+  const otherMovie = { ...movieDetail, card: card("m2", "Moon Two"), related: [], cast: [] };
+  const otherSeries = seriesDetail({ card: card("sr9", "Related Series", "SERIES") });
+
+  test("a film with three related cards draws the row last, headed More Like This, after the cast row", async ({ page }) => {
+    await boot(page, { movie: { ...movieDetail, cast: people, related } });
+    await openPage(page);
+    await expect(page.locator(".detail-related .home-heading")).toHaveText("More Like This");
+    await expect(page.locator(".detail-related .home-tile")).toHaveCount(3);
+    await expect(page.locator(".detail-related .tile-title")).toHaveText(["Moon Two", "Moon Three", "Related Series"]);
+    await expect(page.locator(".detail-related .home-tile").first()).toHaveClass(/tile-poster/);
+    // It is the page's last row: the cast row comes before it and nothing follows.
+    const order = await page.evaluate(() => {
+      const kids = Array.from(document.querySelector(".detail")!.children).map((e) => e.className);
+      return [kids.findIndex((c) => c.includes("detail-cast")), kids.findIndex((c) => c.includes("detail-related")), kids.length];
+    });
+    expect(order[0]).toBeGreaterThan(0);
+    expect(order[1]).toBe(order[0] + 1);
+    expect(order[1]).toBe(order[2] - 1);
+  });
+
+  test("with no cast the row follows the overview", async ({ page }) => {
+    await boot(page, { movie: { ...movieDetail, cast: [], related } });
+    await openPage(page);
+    await expect(page.locator(".detail-cast")).toHaveCount(0);
+    await expect(page.locator(".detail-related .home-tile")).toHaveCount(3);
+  });
+
+  test("a series: the row follows the episodes; Down from them reaches it and Up comes back", async ({ page }) => {
+    await boot(page, { series: seriesDetail({ related }) });
+    await openPage(page);
+    const after = await page.evaluate(() => !!(document.querySelector(".detail-episodes")!.compareDocumentPosition(document.querySelector(".detail-related")!) & Node.DOCUMENT_POSITION_FOLLOWING));
+    expect(after).toBe(true);
+    for (let i = 0; i < 3; i++) await page.keyboard.press("ArrowDown");
+    await expect(page.locator("#detail-related-0")).toHaveClass(/focused/);
+    await page.keyboard.press("ArrowUp");
+    await expect(page.locator(".detail-ep.focused")).toHaveCount(1);
+  });
+
+  test("a film: Down from the actions reaches the first tile, Right moves along, Up returns to the actions", async ({ page }) => {
+    await boot(page, { movie: { ...movieDetail, cast: [], related } });
+    await openPage(page);
+    await page.keyboard.press("ArrowDown");
+    await expect(page.locator("#detail-related-0")).toHaveClass(/focused/);
+    await page.keyboard.press("ArrowRight");
+    await expect(page.locator("#detail-related-1")).toHaveClass(/focused/);
+    await page.keyboard.press("ArrowRight");
+    await page.keyboard.press("ArrowRight");
+    await expect(page.locator("#detail-related-2")).toHaveClass(/focused/);        // the end of the rail
+    await expect(page.locator(".shell-target.focused")).toHaveCount(1);
+    await page.keyboard.press("ArrowUp");
+    await expect(page.locator(".detail-btn.focused")).toHaveCount(1);
+  });
+
+  test("OK on a film's tile requests that title and draws its page; Back returns to the same tile", async ({ page }) => {
+    const seen = await boot(page, { movie: { ...movieDetail, cast: [], related }, pages: { "/api/tv/movie/m2": otherMovie, "/api/tv/series/sr9": otherSeries } });
+    await openPage(page);
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("ArrowRight");
+    await expect(page.locator("#detail-related-1")).toHaveClass(/focused/);
+    await page.keyboard.press("ArrowLeft");
+    await page.keyboard.press("Enter");
+    await expect(page.locator(".detail-title")).toHaveText("Moon Two");
+    expect(seen.titles).toContain("/api/tv/movie/m2");
+    await expect(page.locator("#detail-play")).toHaveClass(/focused/);
+    await page.keyboard.press("Escape");
+    await expect(page.locator(".detail-title")).toHaveText("Paper Moon");
+    await expect(page.locator("#detail-related-0")).toHaveClass(/focused/);
+  });
+
+  test("OK on a series card requests the series, not a film", async ({ page }) => {
+    const seen = await boot(page, { movie: { ...movieDetail, cast: [], related }, pages: { "/api/tv/movie/m2": otherMovie, "/api/tv/series/sr9": otherSeries } });
+    await openPage(page);
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("ArrowRight");
+    await page.keyboard.press("ArrowRight");
+    await page.keyboard.press("Enter");
+    await expect(page.locator(".detail-title")).toHaveText("Related Series");
+    expect(seen.titles).toContain("/api/tv/series/sr9");
+    await expect(page.locator(".detail-ep").first()).toBeVisible();
+    await page.keyboard.press("Escape");
+    await expect(page.locator("#detail-related-2")).toHaveClass(/focused/);
+  });
+
+  test("an empty related draws no row and no heading", async ({ page }) => {
+    await boot(page, { movie: { ...movieDetail, related: [] } });
+    await openPage(page);
+    await expect(page.locator(".detail-related")).toHaveCount(0);
+    await expect(page.locator("#shell-body")).not.toContainText("More Like This");
   });
 });

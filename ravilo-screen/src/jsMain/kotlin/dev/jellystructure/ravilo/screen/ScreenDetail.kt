@@ -3,11 +3,13 @@ package dev.jellystructure.ravilo.screen
 import dev.jellystructure.ravilo.i18n.t
 import dev.jellystructure.shared.tv.CardPlayState
 import dev.jellystructure.shared.tv.Episode
+import dev.jellystructure.shared.tv.MediaCard
 import dev.jellystructure.shared.tv.MediaKind
 import dev.jellystructure.shared.tv.MovieDetail
 import dev.jellystructure.shared.tv.Person
 import dev.jellystructure.shared.tv.RatingBadge
 import dev.jellystructure.shared.tv.SeriesDetail
+import dev.jellystructure.shared.tv.TileShape
 import dev.jellystructure.shared.tv.TvApiClient
 import dev.jellystructure.shared.tv.TvApiError
 import dev.jellystructure.shared.tv.countFlagStrip
@@ -76,6 +78,10 @@ internal class ScreenDetail(
     private val onPlay: (ScreenPlayRequest) -> Unit,
     /** DEB-5631 (FR-49) — OK on a face: the person and the title the face was on. */
     private val onPerson: (Person, String) -> Unit = { _, _ -> },
+    /** DEB-5649 (FR-51) — the poster tiles' maker: Home's own tile, so the row looks like every other poster tile. */
+    private val tiles: ScreenHome? = null,
+    /** DEB-5649 (FR-51) — OK on a *More like this* tile: that card's page, over this one. */
+    private val onTitle: (MediaCard) -> Unit = {},
 ) {
     private var movie: MovieDetail? = null
     private var series: SeriesDetail? = null
@@ -179,6 +185,7 @@ internal class ScreenDetail(
             "list" -> write { api.setFavorite(id, overlay[id]?.favorite != true)?.let { mapOf(id to it) } }
             "watched" -> write { api.setPlayed(id, overlay[id]?.played != true) }
             "season" -> element.getAttribute("data-season")?.toIntOrNull()?.let { season = it; onChange(this) }
+            "related" -> element.getAttribute("data-related")?.toIntOrNull()?.let { index -> related().getOrNull(index)?.let(onTitle) }
             "person" -> element.getAttribute("data-person")?.toIntOrNull()?.let { index ->
                 cast().getOrNull(index)?.let { onPerson(it, (movie?.card ?: series?.card)?.title ?: fallbackTitle) }
             }
@@ -263,6 +270,7 @@ internal class ScreenDetail(
         val oldTrack = previous?.querySelector(".detail-episodes .rail-track") as? HTMLElement
         val oldRail = oldTrack?.parentElement as? HTMLElement
         val oldCast = previous?.querySelector(".detail-cast .rail-track") as? HTMLElement
+        val oldRelated = previous?.querySelector(".detail-related .rail-track") as? HTMLElement
         val keepRail = previous != null && drawnSeason == season
         val keptBackdrop = if (previous != null) backdrop else null
         val keptLogo = if (previous != null) logo else null
@@ -325,6 +333,7 @@ internal class ScreenDetail(
         page.appendChild(head)
         if (s != null) page.appendChild(episodes(s))
         castRow()?.let { page.appendChild(it) }
+        relatedRow()?.let { page.appendChild(it) }
         if (previous != null) mount.replaceChild(page, previous) else mount.appendChild(page)
         backdrop = backdropBox
         logo = logoImage
@@ -337,6 +346,8 @@ internal class ScreenDetail(
             // The cast row has no season: it stays where it was across every redraw.
             val castTrack = page.querySelector(".detail-cast .rail-track") as? HTMLElement
             if (castTrack != null && oldCast != null) carryRail(oldCast, castTrack, (oldCast.parentElement as? HTMLElement)?.scrollLeft ?: 0.0)
+            val relatedTrack = page.querySelector(".detail-related .rail-track") as? HTMLElement
+            if (relatedTrack != null && oldRelated != null) carryRail(oldRelated, relatedTrack, 0.0)
         }
     }
 
@@ -485,6 +496,32 @@ internal class ScreenDetail(
             face.appendChild(label("div", "face-name", person.name))
             person.role?.takeIf { it.isNotBlank() }?.let { face.appendChild(label("div", "face-role", it)) }
             track.appendChild(face)
+        }
+        section.appendChild(rail)
+        return section
+    }
+
+    private fun related(): List<MediaCard> = movie?.related ?: series?.related.orEmpty()
+
+    /**
+     * DEB-5649 (DEB-5640, FR-51) — Android TV's *More like this* row: [ScreenHome.tile] at `TileShape.POSTER`, headed `section.related`, the
+     * page's last row. A rail under FR-4, FR-39 and FR-41 whose tiles count toward FR-42's image slots; null with nothing related, so
+     * there is no heading either. OK on a tile is [onTitle] (the router pushes that title's page; Back lands on the same tile).
+     */
+    private fun relatedRow(): HTMLElement? {
+        val cards = related()
+        val maker = tiles
+        if (cards.isEmpty() || maker == null) return null
+        val section = node("div", "detail-related")
+        section.appendChild(label("h2", "home-heading", t("section.related", ScreenLanguage.lang)))
+        val rail = node("div", "detail-rail")
+        val track = node("div", "rail-track")
+        rail.appendChild(track)
+        cards.forEachIndexed { index, card ->
+            val tile = maker.tile(card, "detail-related-$index", "related", TileShape.POSTER)
+            tile.setAttribute("data-action", "related")
+            tile.setAttribute("data-related", index.toString())
+            track.appendChild(tile)
         }
         section.appendChild(rail)
         return section

@@ -2,6 +2,7 @@ package dev.jellystructure.ravilo.screen
 
 import dev.jellystructure.shared.tv.ClientCapabilities
 import dev.jellystructure.shared.tv.HomeFeed
+import dev.jellystructure.shared.tv.MediaCard
 import dev.jellystructure.shared.tv.MediaKind
 import dev.jellystructure.shared.tv.Person
 import dev.jellystructure.shared.tv.RememberedChoice
@@ -392,6 +393,14 @@ internal class ScreenShell(
         render()
     }
 
+    /** A title's page over the route: from a tile on Home, a grid, a person's page, or DEB-5649's *More like this* row. */
+    private fun openTitle(mediaId: String, kind: MediaKind, title: String) {
+        val page = ScreenDetail(api, serverUrl, mediaId, kind, title, onChange = ::detailChanged, onPlay = ::playFromPage, onPerson = ::openPerson,
+            tiles = home, onTitle = { card -> if (visible && !player) openTitle(card.id, card.kind, card.title) })
+        entries.add(ScreenRouteEntry("detail", "shell-page-target", title = title, mediaId = mediaId, mediaKind = kind, detail = page))
+        render()
+    }
+
     private fun activate() {
         val current = entries.last()
         val element = document.getElementById(current.focusId) as? HTMLElement ?: return
@@ -409,9 +418,7 @@ internal class ScreenShell(
         if (mediaId != null) {
             val title = element.getAttribute("data-media-title") ?: element.querySelector(".tile-title, .hero-title")?.textContent ?: element.textContent ?: ""
             val kind = MediaKind.entries.firstOrNull { it.name.lowercase() == element.getAttribute("data-media-kind") } ?: MediaKind.MOVIE
-            val page = ScreenDetail(api, serverUrl, mediaId, kind, title, onChange = ::detailChanged, onPlay = ::playFromPage, onPerson = ::openPerson)
-            entries.add(ScreenRouteEntry("detail", "shell-page-target", title = title, mediaId = mediaId, mediaKind = kind, detail = page))
-            render()
+            openTitle(mediaId, kind, title)
             return
         }
         val focused = current.focusId
