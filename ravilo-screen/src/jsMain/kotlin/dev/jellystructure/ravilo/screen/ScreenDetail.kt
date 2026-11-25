@@ -5,6 +5,7 @@ import dev.jellystructure.shared.tv.CardPlayState
 import dev.jellystructure.shared.tv.Episode
 import dev.jellystructure.shared.tv.MediaKind
 import dev.jellystructure.shared.tv.MovieDetail
+import dev.jellystructure.shared.tv.Person
 import dev.jellystructure.shared.tv.RatingBadge
 import dev.jellystructure.shared.tv.SeriesDetail
 import dev.jellystructure.shared.tv.TvApiClient
@@ -73,6 +74,8 @@ internal class ScreenDetail(
     private val fallbackTitle: String,
     private val onChange: (ScreenDetail) -> Unit,
     private val onPlay: (ScreenPlayRequest) -> Unit,
+    /** DEB-5631 (FR-49) — OK on a face: the person and the title the face was on. */
+    private val onPerson: (Person, String) -> Unit = { _, _ -> },
 ) {
     private var movie: MovieDetail? = null
     private var series: SeriesDetail? = null
@@ -176,6 +179,9 @@ internal class ScreenDetail(
             "list" -> write { api.setFavorite(id, overlay[id]?.favorite != true)?.let { mapOf(id to it) } }
             "watched" -> write { api.setPlayed(id, overlay[id]?.played != true) }
             "season" -> element.getAttribute("data-season")?.toIntOrNull()?.let { season = it; onChange(this) }
+            "person" -> element.getAttribute("data-person")?.toIntOrNull()?.let { index ->
+                cast().getOrNull(index)?.let { onPerson(it, (movie?.card ?: series?.card)?.title ?: fallbackTitle) }
+            }
             "episode" -> element.getAttribute("data-episode-id")?.let { episodeId -> seasonEpisodes().firstOrNull { it.second.id == episodeId }?.let { playEpisode(it.first, it.second, startOver = false) } }
         }
     }
@@ -237,8 +243,9 @@ internal class ScreenDetail(
     fun render(mount: HTMLElement, fade: Boolean = false) {
         val previous = drawn?.takeIf { it.parentElement === mount }
         val scroll = mount.scrollTop
-        val oldTrack = previous?.querySelector(".rail-track") as? HTMLElement
+        val oldTrack = previous?.querySelector(".detail-episodes .rail-track") as? HTMLElement
         val oldRail = oldTrack?.parentElement as? HTMLElement
+        val oldCast = previous?.querySelector(".detail-cast .rail-track") as? HTMLElement
         val keepRail = previous != null && drawnSeason == season
         val keptBackdrop = if (previous != null) backdrop else null
         val keptLogo = if (previous != null) logo else null
@@ -300,6 +307,7 @@ internal class ScreenDetail(
         head.appendChild(actions(m, s))
         page.appendChild(head)
         if (s != null) page.appendChild(episodes(s))
+        castRow()?.let { page.appendChild(it) }
         if (previous != null) mount.replaceChild(page, previous) else mount.appendChild(page)
         backdrop = backdropBox
         logo = logoImage
@@ -307,13 +315,18 @@ internal class ScreenDetail(
         drawnSeason = season
         if (previous != null) {
             mount.scrollTop = scroll
-            val track = page.querySelector(".rail-track") as? HTMLElement
-            if (keepRail && track != null && oldTrack != null) {
-                oldTrack.getAttribute("data-tx")?.let { track.setAttribute("data-tx", it) }
-                track.style.transform = oldTrack.style.transform
-                (track.parentElement as? HTMLElement)?.scrollLeft = oldRail?.scrollLeft ?: 0.0
-            }
+            val track = page.querySelector(".detail-episodes .rail-track") as? HTMLElement
+            if (keepRail && track != null && oldTrack != null) carryRail(oldTrack, track, oldRail?.scrollLeft ?: 0.0)
+            // The cast row has no season: it stays where it was across every redraw.
+            val castTrack = page.querySelector(".detail-cast .rail-track") as? HTMLElement
+            if (castTrack != null && oldCast != null) carryRail(oldCast, castTrack, (oldCast.parentElement as? HTMLElement)?.scrollLeft ?: 0.0)
         }
+    }
+
+    private fun carryRail(old: HTMLElement, track: HTMLElement, scrollLeft: Double) {
+        old.getAttribute("data-tx")?.let { track.setAttribute("data-tx", it) }
+        track.style.transform = old.style.transform
+        (track.parentElement as? HTMLElement)?.scrollLeft = scrollLeft
     }
 
     /**
@@ -422,6 +435,52 @@ internal class ScreenDetail(
         }
         section.appendChild(rail)
         return section
+    }
+
+    private fun cast(): List<Person> = movie?.cast ?: series?.cast.orEmpty()
+
+    /**
+     * DEB-5631 (FR-7 amended) — Android TV's `CastCircle` in DOM: the round photo, the name, the role under it. A rail under FR-4, FR-39 and
+     * FR-41; null with no cast, so there is no heading either. The photo's holder is a `.tile-art`, so FR-42's cap counts it like any
+     * other tile's image; the initials sit under it and show for a person with no photo and for one whose image fails.
+     */
+    private fun castRow(): HTMLElement? {
+        val people = cast()
+        if (people.isEmpty()) return null
+        val section = node("div", "detail-cast")
+        section.appendChild(label("h2", "home-heading", t("detail.cast", ScreenLanguage.lang)))
+        val rail = node("div", "detail-rail")
+        val track = node("div", "rail-track")
+        rail.appendChild(track)
+        people.forEachIndexed { index, person ->
+            val face = node("div", "shell-target detail-face")
+            face.id = "detail-cast-$index"
+            face.setAttribute("data-row", "cast")
+            face.setAttribute("tabindex", "-1")
+            face.setAttribute("data-action", "person")
+            face.setAttribute("data-person", index.toString())
+            val photo = node("div", "face-photo")
+            photo.appendChild(label("span", "face-initials", initials(person.name)))
+            val art = node("div", "tile-art face-art")
+            person.imageUrl?.takeIf { it.isNotBlank() }?.let { art.setAttribute("data-art-url", if (it.startsWith("/")) serverUrl.trimEnd('/') + it else it) }
+            photo.appendChild(art)
+            face.appendChild(photo)
+            face.appendChild(label("div", "face-name", person.name))
+            person.role?.takeIf { it.isNotBlank() }?.let { face.appendChild(label("div", "face-role", it)) }
+            track.appendChild(face)
+        }
+        section.appendChild(rail)
+        return section
+    }
+
+    /** The first letters of the first and last word of [name], upper-cased; the plain circle's face when there is no photo. */
+    private fun initials(name: String): String {
+        val words = name.trim().split(' ').filter { it.isNotEmpty() }
+        return when (words.size) {
+            0 -> ""
+            1 -> words[0].take(1)
+            else -> words.first().take(1) + words.last().take(1)
+        }.uppercase()
     }
 
     private fun badge(b: RatingBadge): HTMLElement {

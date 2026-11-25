@@ -3,6 +3,7 @@ package dev.jellystructure.ravilo.screen
 import dev.jellystructure.shared.tv.ClientCapabilities
 import dev.jellystructure.shared.tv.HomeFeed
 import dev.jellystructure.shared.tv.MediaKind
+import dev.jellystructure.shared.tv.Person
 import dev.jellystructure.shared.tv.RememberedChoice
 import dev.jellystructure.shared.tv.TvApiClient
 import dev.jellystructure.shared.tv.TvSegmentMarkers
@@ -189,7 +190,7 @@ internal class ScreenShell(
             event.key == "ArrowUp" -> {
                 val current = entries.last()
                 if (current.browse != null && current.focusId.startsWith("browse-tile-")) {
-                    val tab = if (current.name == "mylist") "profile" else current.name
+                    val tab = when (current.name) { "mylist" -> "profile"; "person" -> "home"; else -> current.name }
                     focus.focus(document.getElementById("nav-$tab") as HTMLElement)
                 } else focus.move(0, -1)
             }
@@ -245,7 +246,7 @@ internal class ScreenShell(
                 current.skeleton = true
             }
         }
-        renderScreenNav(if (current.name == "channel" || current.name == "detail") "home" else current.name, ScreenLanguage.lang)
+        renderScreenNav(if (current.name == "channel" || current.name == "detail" || current.name == "person") "home" else current.name, ScreenLanguage.lang)
         focus.refocus()
         if ((current.name == "home" || current.name == "channel") && current.feed == null && !current.failed) loadFeed(current)
         current.detail?.load()
@@ -312,12 +313,15 @@ internal class ScreenShell(
         browse.loading = true
         val generation = loadGeneration
         GlobalScope.launch {
-            val result = runCatching { api.browse(kind = browse.kind, page = browse.page + 1, pageSize = 60) }
+            // DEB-5631 (FR-49) — a person page asks the seeded endpoint, as Android TV's `openPersonBrowse` does: one read, the whole set.
+            val seed = browse.seed
+            val seeded = if (seed != null) runCatching { api.browseSeeded(seed.query, null) }.getOrNull() else null
+            val paged = if (seed == null) runCatching { api.browse(kind = browse.kind, page = browse.page + 1, pageSize = 60) }.getOrNull() else null
             browse.loading = false
             if (generation != loadGeneration || !visible || entry !== entries.lastOrNull()) return@launch
-            val page = result.getOrNull()
-            if (page != null) {
-                browse.append(page)
+            if (seeded != null || paged != null) {
+                seeded?.let(browse::appendAll)
+                paged?.let(browse::append)
                 render()
             } else if (browse.page == 0) {
                 // DEB-4893 (FR-20) — a grid's first page that fails says so; the skeleton never pulses forever.
@@ -358,6 +362,13 @@ internal class ScreenShell(
         render()
     }
 
+    /** DEB-5631 (FR-49) — OK on a face: the person's page, over the title's page it was opened from. */
+    private fun openPerson(person: Person, source: String) {
+        if (!visible || player) return
+        entries.add(ScreenRouteEntry("person", "shell-page-target", title = person.name, browse = ScreenBrowse("person", home, ScreenPersonSeed(person, source))))
+        render()
+    }
+
     private fun activate() {
         val current = entries.last()
         val element = document.getElementById(current.focusId) as? HTMLElement ?: return
@@ -375,7 +386,7 @@ internal class ScreenShell(
         if (mediaId != null) {
             val title = element.getAttribute("data-media-title") ?: element.querySelector(".tile-title, .hero-title")?.textContent ?: element.textContent ?: ""
             val kind = MediaKind.entries.firstOrNull { it.name.lowercase() == element.getAttribute("data-media-kind") } ?: MediaKind.MOVIE
-            val page = ScreenDetail(api, serverUrl, mediaId, kind, title, onChange = ::detailChanged, onPlay = ::playFromPage)
+            val page = ScreenDetail(api, serverUrl, mediaId, kind, title, onChange = ::detailChanged, onPlay = ::playFromPage, onPerson = ::openPerson)
             entries.add(ScreenRouteEntry("detail", "shell-page-target", title = title, mediaId = mediaId, mediaKind = kind, detail = page))
             render()
             return

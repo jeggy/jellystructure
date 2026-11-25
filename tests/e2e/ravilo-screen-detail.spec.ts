@@ -126,7 +126,7 @@ const openPage = async (page: Page) => {
 const label = (page: Page, id: string) => page.locator(`#${id}`);
 
 test.describe("DEB-4660 — a title's page on the Samsung TV (FR-7)", () => {
-  test("a movie: the header, the server's rating badge, no people row, and Play when nothing has been watched", async ({ page }) => {
+  test("a movie: the header, the server's rating badge, the cast row, and Play when nothing has been watched", async ({ page }) => {
     await boot(page);
     await openPage(page);
     await expect(page.locator(".detail-title")).toHaveText("Paper Moon");
@@ -139,8 +139,8 @@ test.describe("DEB-4660 — a title's page on the Samsung TV (FR-7)", () => {
     await expect(page.locator("#detail-start-over")).toHaveCount(0);          // Start over only with a resume point
     await expect(label(page, "detail-list")).toHaveText("+ My List");
     await expect(label(page, "detail-watched")).toHaveText("Mark Watched");
-    await expect(page.locator("#shell-body")).not.toContainText("Someone");   // no people row in v1
-    await expect(page.locator("#shell-body")).not.toContainText(/cast|play on/i);
+    await expect(page.locator("#shell-body .detail-cast")).toContainText("Someone");   // DEB-5631 (FR-7 amended): the page's one cast entry
+    await expect(page.locator("#shell-body")).not.toContainText(/play on/i);            // and still no cast button (a TV never shows one)
   });
 
   test("Resume says the time left from the playstate, and Start over appears with it", async ({ page }) => {
@@ -696,5 +696,78 @@ test.describe("DEB-5394 FR-35 — a title's page starts the encode Play would us
     expect(seen.prewarms, "the 2 s starts again for the new one").toHaveLength(1);
     await page.clock.fastForward(2_100);
     await expect.poll(() => seen.prewarms.map((p) => p.item_id)).toEqual(["s1e1", "s1e2"]);
+  });
+});
+
+// DEB-5631 (DEB-5621 FR-7 amended) — a title's page draws `detail.cast` as a row of faces: Android TV's CastCircle in DOM.
+test.describe("DEB-5631 FR-7 — a title's page shows its cast", () => {
+  const TMDB = "https://img.test";
+  const people = [
+    { id: "101", name: "Ada Quill", role: "Lead", image_url: `${TMDB}/ada.jpg` },
+    { id: "102", name: "Bo Marsh", role: "Director", image_url: null },
+    { id: "103", name: "Cleo", role: null, image_url: `${TMDB}/cleo.jpg` },
+  ];
+  /** The faces' photos are absolute TMDB URLs, loaded by a plain <img> with no token: one answers, one is a 404. */
+  const photos = async (page: Page) => {
+    await page.route(`${TMDB}/ada.jpg`, (route) => route.fulfill({ status: 200, contentType: "image/png", body: PNG }));
+    await page.route(`${TMDB}/cleo.jpg`, (route) => route.fulfill({ status: 404 }));
+  };
+
+  test("three entries draw three faces with name and role; no photo and a 404'd photo show the initials", async ({ page }) => {
+    await photos(page);
+    await boot(page, { movie: { ...movieDetail, cast: people } });
+    await openPage(page);
+    await expect(page.locator(".detail-cast .home-heading")).toHaveText("Cast & Crew");
+    await expect(page.locator(".detail-face")).toHaveCount(3);
+    await expect(page.locator(".detail-face .face-name")).toHaveText(["Ada Quill", "Bo Marsh", "Cleo"]);
+    await expect(page.locator(".detail-face .face-role")).toHaveText(["Lead", "Director"]);        // a face without a role has no role line
+    await expect(page.locator("#detail-cast-2 .face-role")).toHaveCount(0);
+    // The photo that loads covers the initials; the person with no photo has no <img> at all; the 404 never fades in.
+    await expect(page.locator("#detail-cast-0 img")).toHaveClass(/loaded/);
+    await expect(page.locator("#detail-cast-0 img")).toHaveAttribute("src", `${TMDB}/ada.jpg`);
+    await expect(page.locator("#detail-cast-1 img")).toHaveCount(0);
+    await expect(page.locator("#detail-cast-1 .face-initials")).toHaveText("BM");
+    await expect(page.locator("#detail-cast-1 .face-initials")).toBeVisible();
+    await expect(page.locator("#detail-cast-2 img")).toHaveAttribute("src", `${TMDB}/cleo.jpg`);
+    await expect(page.locator("#detail-cast-2 img")).not.toHaveClass(/loaded/);
+    await expect(page.locator("#detail-cast-2 img")).toHaveCSS("opacity", "0");
+    await expect(page.locator("#detail-cast-2 .face-initials")).toHaveText("C");
+  });
+
+  test("an empty cast draws no row and no heading", async ({ page }) => {
+    await boot(page, { movie: { ...movieDetail, cast: [] } });
+    await openPage(page);
+    await expect(page.locator(".detail-cast")).toHaveCount(0);
+    await expect(page.locator("#shell-body")).not.toContainText("Cast & Crew");
+  });
+
+  test("a film: Down from the actions focuses the first face, Right moves along, Up returns to the actions", async ({ page }) => {
+    await photos(page);
+    await boot(page, { movie: { ...movieDetail, cast: people } });
+    await openPage(page);
+    await page.keyboard.press("ArrowDown");
+    await expect(page.locator("#detail-cast-0")).toHaveClass(/focused/);
+    await page.keyboard.press("ArrowRight");
+    await expect(page.locator("#detail-cast-1")).toHaveClass(/focused/);
+    await page.keyboard.press("ArrowRight");
+    await expect(page.locator("#detail-cast-2")).toHaveClass(/focused/);
+    await page.keyboard.press("ArrowRight");
+    await expect(page.locator("#detail-cast-2")).toHaveClass(/focused/);        // the end of the rail
+    await expect(page.locator(".shell-target.focused")).toHaveCount(1);
+    await page.keyboard.press("ArrowUp");
+    await expect(page.locator(".detail-btn.focused")).toHaveCount(1);
+  });
+
+  test("a series: the cast follows the episodes; Down from them reaches it and Up comes back to them", async ({ page }) => {
+    await photos(page);
+    await boot(page, { series: seriesDetail({ cast: people }) });
+    await openPage(page);
+    // The page's order is the actions, the season pills, the episodes, then the cast.
+    const after = await page.evaluate(() => !!(document.querySelector(".detail-episodes")!.compareDocumentPosition(document.querySelector(".detail-cast")!) & Node.DOCUMENT_POSITION_FOLLOWING));
+    expect(after).toBe(true);
+    for (let i = 0; i < 3; i++) await page.keyboard.press("ArrowDown");
+    await expect(page.locator("#detail-cast-0")).toHaveClass(/focused/);
+    await page.keyboard.press("ArrowUp");
+    await expect(page.locator(".detail-ep.focused")).toHaveCount(1);
   });
 });

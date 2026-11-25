@@ -307,10 +307,26 @@
     .detail-ep-check { position: absolute; top: 8px; right: 8px; width: 30px; height: 30px; line-height: 30px; border-radius: 50%; text-align: center; background: var(--accent); font-size: 19px; font-weight: 700; }
     .detail-ep-code { font-size: 16px; font-weight: 700; letter-spacing: 1px; color: var(--accent-2); padding: 10px 2px 0; }
     .detail-ep.focused .detail-ep-art { box-shadow: 0 0 0 4px var(--ring); }
+    /* DEB-5631 (FR-7 amended) — the cast row: Android TV's CastCircle in DOM. The photo's holder is a .tile-art (FR-42's image cap counts
+       it); the initials sit under it, so a person with no photo, or an image that fails, shows them on the plain circle. */
+    .detail-cast { position: relative; z-index: 1; margin-top: 30px; }
+    .detail-face { box-sizing: border-box; flex: 0 0 150px; min-width: 0; text-align: center; transition: transform .2s cubic-bezier(.22,.61,.36,1); }
+    .detail-face.focused { transform: scale(1.1); }
+    .face-photo { position: relative; width: 108px; height: 108px; margin: 0 auto; border-radius: 50%; background: #202431; overflow: hidden; }
+    .face-initials { position: absolute; top: 0; right: 0; bottom: 0; left: 0; line-height: 108px; font-size: 33px; font-weight: 700; color: var(--ink-soft); }
+    .face-photo .face-art { position: absolute; top: 0; right: 0; bottom: 0; left: 0; width: auto; height: auto; border-radius: 50%; background: none; }
+    .detail-face.focused .face-photo { box-shadow: 0 0 0 4px var(--ring); }
+    .face-name { font-size: 19px; font-weight: 600; padding: 12px 2px 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink-soft); }
+    .detail-face.focused .face-name { color: var(--ink); }
+    .face-role { font-size: 16px; padding: 2px 2px 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink-soft); opacity: .8; }
     /* DEB-4659 FR-6 — six-column TV browse grid, using Home's tile treatment. */
     .browse-page { padding-bottom: 80px; }
     .browse-heading { margin-top: 30px; }
     .browse-count, .browse-empty { color: var(--ink-soft); font-size: 19px; }
+    /* DEB-5631 (FR-49) — a person page: the breadcrumb above the name, the role line under it (R187 FR-RV-BROWSE1-3). */
+    .browse-crumb { margin: 30px 0 0; color: var(--ink-soft); font-size: 18px; }
+    .browse-crumb + .browse-heading { margin-top: 6px; }
+    .browse-role { margin: 6px 0 0; color: var(--ink-soft); font-size: 19px; }
     .browse-grid { display: flex; flex-wrap: wrap; margin: 18px -9px 0; }
     .browse-grid .home-tile { flex: 0 0 calc(16.666% - 18px); margin: 0 9px 30px; }
     /* DEB-4662 FR-8 — the search field is a real input; the results reuse the browse grid. */
