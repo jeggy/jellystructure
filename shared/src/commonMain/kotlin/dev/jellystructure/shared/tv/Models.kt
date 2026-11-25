@@ -565,6 +565,9 @@ data class MediaCard(
     /** DEB-2916 (FR-6) — the air date (`yyyy-MM-dd`) of the episode this Continue Watching card points at. Set only on a
      *  newest-first series' card, and only when the episode has an air date; an app that predates it keeps its code badge. */
     @SerialName("episode_air_date") val episodeAirDate: String? = null,
+    /** DEB-5432 (FR-5a) — the `HH:mm` that episode aired at, set exactly where [episodeAirDate] is and only when the episode has a time.
+     *  The page's own clock, no time zone. An app that predates it shows the date alone. */
+    @SerialName("episode_air_time") val episodeAirTime: String? = null,
 )
 
 /**
@@ -826,6 +829,9 @@ data class Episode(
     val playback: PlaybackState? = null,
     /** R148: episode first-air date (ISO yyyy-MM-dd) from the scanned MediaItem. Null = no date line. */
     @SerialName("air_date") val airDate: String? = null,
+    /** DEB-5432 (FR-5a): the `HH:mm` this episode aired at, from the time Auto-fetch wrote into its file name under `datetime` numbering,
+     *  read only when the name's date is [airDate]. The page's own clock, no time zone. Null = no time. */
+    @SerialName("air_time") val airTime: String? = null,
     /**
      * Phase 149: the shared physical file this episode lives in — episodes sharing this value are a
      * "multi-episode file" (e.g. `S01E01E02E03.mkv`); the client groups by it to render one combined

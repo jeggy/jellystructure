@@ -1075,7 +1075,7 @@ class HomeFeedService(
         plan.picks.map { p ->
             ContinueEntry(
                 p.mediaItem,
-                p.mediaItem.toMediaCard(progressPct = p.progressPct, nextUpLabel = p.nextUpLabel, seasonNumber = p.seasonNumber, episodeNumber = p.episodeNumber, episodeNumberEnd = p.episodeNumberEnd, episodeAirDate = p.episodeAirDate),
+                p.mediaItem.toMediaCard(progressPct = p.progressPct, nextUpLabel = p.nextUpLabel, seasonNumber = p.seasonNumber, episodeNumber = p.episodeNumber, episodeNumberEnd = p.episodeNumberEnd, episodeAirDate = p.episodeAirDate, episodeAirTime = p.episodeAirTime),
                 p.lastActivityAt,
                 p.episodeId,
             )
@@ -1103,6 +1103,7 @@ class HomeFeedService(
         episodeNumberEnd: Int? = null,
         badge: String? = null,
         episodeAirDate: String? = null,
+        episodeAirTime: String? = null,
     ): MediaCard {
         val jId = jellyfinId
         val sonarrEnabled = configStore.current.sonarr?.enabled == true
@@ -1128,6 +1129,7 @@ class HomeFeedService(
             episodeNumberEnd = episodeNumberEnd,
             badge = badge,
             episodeAirDate = episodeAirDate,   // DEB-2916 (FR-6)
+            episodeAirTime = episodeAirTime,   // DEB-5432 (FR-5a)
             upcomingEpisode = upcomingEpisodeCode(sonarrEnabled),
             upcomingAirUtc = upcomingAirUtc(sonarrEnabled),  // DEB-1482 (FR-2)
         )

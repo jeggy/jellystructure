@@ -178,6 +178,7 @@ class DetailService(
                     stillUrl = stillUrl,
                     playback = null,  // R83: hydrated by /api/tv/playstate (R84 overlays it)
                     airDate = ep.airDate,  // R148: scanned TMDB air date — no request-time call
+                    airTime = dev.jellystructure.autofetch.Numbering.airTimeInName(ep.filename, ep.airDate),  // DEB-5432 (FR-5a)
                     file = ep.path,  // Phase 149: R179's client-side grouping key
                     partIndex = ep.partIndex,
                     partCount = ep.partCount,

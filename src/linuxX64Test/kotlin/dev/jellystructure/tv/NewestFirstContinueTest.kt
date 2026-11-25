@@ -154,6 +154,18 @@ class NewestFirstContinueTest {
         assertNull(plan(lib = listOf(odd), finished = listOf(watched(301, early))).picks.single().episodeAirDate)
     }
 
+    @Test fun `DEB-5432 FR-5a — the card carries the time the newest episode's file name holds beside its air date`() {
+        val dated = series(episodes.dropLast(1) + ep(302).copy(filename = "Daily - S2644E823 - 2026-10-31 21.00 - Day 302.mkv"))
+        val pick = plan(lib = listOf(dated), finished = listOf(watched(301, early))).picks.single()
+        assertEquals("2026-10-31", pick.episodeAirDate); assertEquals("21:00", pick.episodeAirTime)
+        val other = series(episodes.dropLast(1) + ep(302).copy(filename = "Daily - S2644E823 - 2026-10-30 21.00 - Day 302.mkv"))
+        val p2 = plan(lib = listOf(other), finished = listOf(watched(301, early))).picks.single()
+        assertEquals("2026-10-31", p2.episodeAirDate); assertNull(p2.episodeAirTime, "the name's date is not the air date")
+        assertNull(plan(finished = listOf(watched(301, early))).picks.single().episodeAirTime, "a name with no time")
+        val noDate = series(episodes.dropLast(1) + ep(302, airDate = null).copy(filename = "Daily - S2644E823 - 2026-10-31 21.00 - Day 302.mkv"))
+        assertNull(plan(lib = listOf(noDate), finished = listOf(watched(301, early))).picks.single().episodeAirTime)
+    }
+
     @Test fun `FR-6 — the next in order is never computed so an unwatched day behind the newest gives no card`() {
         // Watched E291 would, in order, point at E292 (R375). A newest-first series points at E302 and nothing else.
         val pick = plan(finished = listOf(watched(291, late))).picks.single()

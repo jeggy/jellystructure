@@ -194,6 +194,18 @@ object Numbering {
 
     // ---- names (FR-6.6) -------------------------------------------------------------------------------------------
 
+    private val NAME_TIME = Regex(""" - (\d{4}-\d{2}-\d{2}) ([01]\d|2[0-3])\.([0-5]\d)(?: - |\.[A-Za-z0-9]+$)""")
+
+    /**
+     * DEB-5432 (FR-5a) — the `HH:mm` a `datetime` file name carries (`<Series> - S2647E683 - 2026-11-23 21.00 - <name>.mkv`), read only when the
+     * date in the name is [airDate] (its first ten characters). The page's own clock, no time zone. Null for any other name.
+     */
+    fun airTimeInName(filename: String, airDate: String?): String? {
+        val date = airDate?.take(10) ?: return null
+        val m = NAME_TIME.find(filename) ?: return null
+        return if (m.groupValues[1] == date) "${m.groupValues[2]}:${m.groupValues[3]}" else null
+    }
+
     /** A name that is safe as one path component: no separators or reserved characters, whitespace collapsed, no leading/trailing dot. */
     fun cleanName(raw: String, maxLen: Int = 150): String {
         val sb = StringBuilder(raw.length)

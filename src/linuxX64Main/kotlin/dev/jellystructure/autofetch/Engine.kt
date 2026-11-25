@@ -398,7 +398,7 @@ class AutofetchEngine(
         if (!f.pageOnly) return
         val facts = runCatching { tools.inspect(path) }.getOrNull() ?: return
         val dur = facts.durationSec ?: return
-        runCatching { tools.thumbnail(path, dur, path.substringBeforeLast('.') + "-thumb.jpg") }
+        runCatching { tools.thumbnail(path, dur, path.substringBeforeLast('.') + "-thumb.jpg", f.recipe?.numbering?.kind.orEmpty()) }
     }
 
     /** `rename(2)` over the file at [to] — the one place a fetcher replaces anything, and only an episode it placed that left the page (FR-6.6). */
@@ -514,7 +514,7 @@ class AutofetchEngine(
                 }
                 store.setPlaced(f.id, item.itemId, finalPath, world.nowSec())
                 if (f.pageOnly) {
-                    runCatching { tools.thumbnail(finalPath, facts.durationSec, finalPath.substringBeforeLast('.') + "-thumb.jpg") }
+                    runCatching { tools.thumbnail(finalPath, facts.durationSec, finalPath.substringBeforeLast('.') + "-thumb.jpg", recipe.numbering.kind) }
                     runCatching { placePoster(f, lane) }
                 }
                 world.announce(finalPath, if (replacing != null) "Modified" else "Created")

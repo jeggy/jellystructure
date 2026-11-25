@@ -55,7 +55,7 @@ interface MediaTools {
     /** FR-6.5 — the first top-level element after the segment header, `Tracks` or `Cluster`; null when unreadable. */
     suspend fun firstTopLevel(path: String): String?
     /** FR-9.4/15.7 — one frame picked by the fixed rule, written as a JPEG at [out]. */
-    suspend fun thumbnail(path: String, durationSec: Double, out: String): Boolean
+    suspend fun thumbnail(path: String, durationSec: Double, out: String, numbering: String = ""): Boolean
     /** FR-9.4 — one frame at [atSec], 1920 px wide or narrower and never upscaled, written as a JPEG at [out]; false when it could not be cut. */
     suspend fun frameAt(path: String, atSec: Int, out: String): Boolean
     /** FR-9.4 — up to [outFiles].size frames picked by the fixed rule, written to those files in order; the moments (seconds) of the ones that were. */

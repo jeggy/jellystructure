@@ -205,7 +205,9 @@ class FakeTools(private val clock: FakeClock, private val dir: String) : MediaTo
 
     override suspend fun inspect(path: String) = FileFacts(duration, listOf(audioLanguage), emptyList(), 1080, 1_900_000_000L)
     override suspend fun firstTopLevel(path: String) = first
-    override suspend fun thumbnail(path: String, durationSec: Double, out: String): Boolean = PosixFileFixShell.writeText(out, "jpg")
+    /** The numbering each thumbnail was asked for under (DEB-5432, FR-15.7). */
+    val thumbnailNumberings = ArrayList<String>()
+    override suspend fun thumbnail(path: String, durationSec: Double, out: String, numbering: String): Boolean { thumbnailNumberings += numbering; return PosixFileFixShell.writeText(out, "jpg") }
     /** The moments the fixed rule would pick, so a test can see them stored; [blackAt] is a moment every cut there refuses (FR-9.4). */
     var blackAt: Int? = null
     override suspend fun frameAt(path: String, atSec: Int, out: String): Boolean = atSec != blackAt && PosixFileFixShell.writeText(out, "jpg@$atSec")

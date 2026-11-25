@@ -35,6 +35,8 @@ internal data class ContinuePick(
     val lastActivityAt: Long,
     /** DEB-2916 (FR-6) — the episode's air date (`yyyy-MM-dd`); set only on a newest-first series' card. */
     val episodeAirDate: String? = null,
+    /** DEB-5432 (FR-5a) — the episode's `HH:mm`, set where [episodeAirDate] is and only when the episode has one. */
+    val episodeAirTime: String? = null,
 )
 
 /** FR-R375-1 — a series' last finished episode: the catalog row, its Jellyfin id, and its `LastPlayedDate` as
@@ -172,11 +174,12 @@ internal fun planContinue(
             val span = resolvedEpisodeSpan(series, id, null, null)
             // The viewer's last activity on the series, or the newest episode's arrival: a new episode brings the series forward.
             val activity = maxOf(resumeByKey[key]?.pick?.lastActivityAt ?: 0L, lastFinishedByKey[key] ?: 0L, lastTouchedByKey[key] ?: 0L, newest.createdAt ?: 0L)
+            val airDate = newest.airDate?.take(10)?.takeIf { ISO_DATE.matches(it) }
             ContinuePick(
                 series, id, inProgress?.userData?.playedPercentage?.toFloat()?.div(100f),
                 newest.title?.takeIf { it.isNotBlank() },   // the title alone, no code (FR-6)
                 span.season, span.episode, span.episodeEnd, activity,
-                newest.airDate?.take(10)?.takeIf { ISO_DATE.matches(it) },
+                airDate, dev.jellystructure.autofetch.Numbering.airTimeInName(newest.filename, airDate),
             )
         }
     }

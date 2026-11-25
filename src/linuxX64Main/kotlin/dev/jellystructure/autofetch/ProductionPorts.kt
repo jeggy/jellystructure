@@ -214,12 +214,21 @@ class ProductionMediaTools(private val shell: FileFixShell = PosixFileFixShell) 
     }
 
     /** FR-9.4's rule for the one frame a page-only episode gets: the middle 80 % of the runtime, away from the first and last minute, not black. */
-    override suspend fun thumbnail(path: String, durationSec: Double, out: String): Boolean {
-        val (lo, hi) = stillWindow(durationSec)
-        for (f in listOf(0.5, 0.35, 0.65, 0.25, 0.75)) {
-            if (cut(path, (durationSec * f).coerceIn(lo, hi).toInt(), out)) return true
+    override suspend fun thumbnail(path: String, durationSec: Double, out: String, numbering: String): Boolean {
+        for (at in thumbnailMoments(durationSec, numbering)) {
+            if (cut(path, at, out)) return true
         }
         return false
+    }
+
+    /**
+     * The moments (seconds) [thumbnail] tries, in order. FR-9.4's fixed rule; and under `datetime` numbering, for a file longer than 150 s, 90 s,
+     * 120 s and 150 s first (FR-15.7, amended 2026-11-24, DEB-5432): a bulletin's title is its lead story, which a frame from the middle does not show.
+     */
+    internal fun thumbnailMoments(durationSec: Double, numbering: String): List<Int> {
+        val (lo, hi) = stillWindow(durationSec)
+        val fixed = listOf(0.5, 0.35, 0.65, 0.25, 0.75).map { (durationSec * it).coerceIn(lo, hi).toInt() }
+        return if (numbering == "datetime" && durationSec > 150) listOf(90, 120, 150) + fixed else fixed
     }
 
     /** The middle 80 % of the runtime, and outside the first and last minute where a title card and the credits sit (FR-9.4). */
