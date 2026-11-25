@@ -172,6 +172,11 @@ private class Screen(private val serverUrl: String) {
     private var pickerFocus = 0
     private var pickerTop = 0
     private var loadGeneration = 0
+    /** DEB-5081 (DEB-5078, FR-33) — the start in flight, so a failure before its first picture can ask once more. */
+    private class StartAttempt(val env: PlayItemEnvelope, val generation: Int, val startOver: Boolean, val startAt: Long, val asked: Boolean)
+    private var attempt: StartAttempt? = null
+    /** FR-33 — the failed attempt is closed and the second ask is on its way: a late error of the attempt just closed is not a new failure. */
+    private var askingAgain = false
     // DEB-4661 (FR-9) — a start made with this TV's remote (the Play button, or the next-up card's `remotePlay` on this
     // very device), so a refusal never says *from your phone*. [tvNextItem] is the item the TV asked its own backend for.
     private var tvNextItem: String? = null
@@ -205,7 +210,10 @@ private class Screen(private val serverUrl: String) {
             override fun onStreamCompleted() { onFinished() }
             override fun onError(detail: String) {
                 console.error("Ravilo screen: backend error: $detail")
-                qoe.end(failure = HTTP_STATUS.find(detail)?.value?.toIntOrNull() ?: -1)   // FR-25 — a start that never reached a picture
+                if (askingAgain) return
+                val failure = HTTP_STATUS.find(detail)?.value?.toIntOrNull() ?: -1
+                if (askAgain(failure)) return   // FR-33
+                qoe.end(failure = failure)   // FR-25 — a start that never reached a picture
                 failPlay(null)
             }
         })
@@ -231,6 +239,7 @@ private class Screen(private val serverUrl: String) {
         nextWarm.cancel()   // FR-36 — Back, a stop, Home, hiding the app and a refused start all end here: a viewer who leaves leaves nothing running
         qoe.end()   // FR-25 — the item's final report, whichever way it ended (Back, stop, the stream's end, hiding the app)
         loaded = false; playing = false; buffering = false; itemId = null; title = null; kicker = null; artUrl = null; ticket = null
+        attempt = null; askingAgain = false
         startedFromTv = false
         seriesName = null; logoUrl = null; logoInk = null   // R303
         segments = null; nextId = null; nextTitle = null; nextKicker = null; following = emptyList()   // R264
@@ -438,7 +447,16 @@ private class Screen(private val serverUrl: String) {
             delay(5_000)
             if (generation == loadGeneration && !loaded) el("loading-label").textContent = ScreenLanguage.t("loading.still_trying")
         }
-        val negotiated = negotiate(env.jellyfinId, generation, startOver) ?: return
+        playAttempt(env, generation, startOver, asked = false, askedAt = null)
+    }
+
+    /**
+     * One ask for the stream and its opening — [beginPlay]'s second half, so FR-33's second ask runs the same code under the same
+     * loading view. [asked] is that second ask; [askedAt] the position the first one started at (the server's answer for the item
+     * could differ by then), null for a start that leaves it to the server.
+     */
+    private suspend fun playAttempt(env: PlayItemEnvelope, generation: Int, startOver: Boolean, asked: Boolean, askedAt: Long?) {
+        val negotiated = negotiate(env.jellyfinId, generation, startOver, askedAt) ?: return
         if (generation != loadGeneration) {
             // Back (or a newer play) came in while the start was being negotiated: the server opened a session for it.
             GlobalScope.launch { runCatching { api.stopPlayback(env.jellyfinId, 0) } }
@@ -446,6 +464,8 @@ private class Screen(private val serverUrl: String) {
         }
         // FR-23 — what this profile last chose, applied before the stream opens (a restream here costs no reopen).
         val startAt = env.startPositionMs.takeIf { it > 0 } ?: negotiated.startPositionMs
+        attempt = StartAttempt(env, generation, startOver, startAt, asked)
+        askingAgain = false
         val remembered = withRemembered(env.jellyfinId, negotiated, startAt)
         if (generation != loadGeneration) {
             GlobalScope.launch { runCatching { api.stopPlayback(env.jellyfinId, 0) } }
@@ -468,12 +488,33 @@ private class Screen(private val serverUrl: String) {
             // DEB-4874 — a start that never opened has played nothing: the server's session for it is closed at 0, never at the
             // length of whatever was open before (which marked the episode watched), and the viewer is told once.
             console.error("Ravilo screen: open failed: ${opened.exceptionOrNull()}")
+            if (askAgain(-1)) return   // FR-33
             qoe.end(failure = -1)
             GlobalScope.launch { runCatching { api.stopPlayback(env.jellyfinId, 0) } }
             failPlay(null)
             return
         }
         sendStatus()
+    }
+
+    /**
+     * DEB-5081 (DEB-5078, FR-33) — a start that failed on our encoder before its first picture is asked once more, out of sight. True when
+     * it was: the failed attempt is closed as for any failure (FR-25's report, the server's session stopped at 0 — DEB-4874) and the
+     * loading view stays, with no error, no shutter and no second *Still trying…*. False — and today's error — for a ticket that is not
+     * ours, a failure after the first frame, a second failure, and a start Back or a newer start has already replaced.
+     */
+    private fun askAgain(failure: Int): Boolean {
+        val a = attempt ?: return false
+        if (a.asked || a.generation != loadGeneration || ticket?.encoder != "ours" || !qoe.active || qoe.firstFrameShown) return false
+        askingAgain = true
+        loaded = false   // Back during the second ask is a Back on a start that has not begun (cancelStart)
+        qoe.end(failure = failure)
+        backend.close()
+        GlobalScope.launch {
+            runCatching { api.stopPlayback(a.env.jellyfinId, 0) }
+            if (a.generation == loadGeneration) playAttempt(a.env, a.generation, a.startOver, asked = true, askedAt = a.startAt.takeIf { it > 0 })
+        }
+        return true
     }
 
     /** FR-23 — the tier a start asks the server to honour: the series' choice when it has an audio language, else the global one. */
@@ -551,14 +592,14 @@ private class Screen(private val serverUrl: String) {
 
     /** Busy (Phase 182's 503 + Retry-After) waits and retries; unreachable shows the no-server screen —
      *  same shape as [dev.jellystructure.ravilo.cast.Receiver]'s own negotiate(). */
-    private suspend fun negotiate(itemId: String, generation: Int, startOver: Boolean = false): StreamTicket? {
+    private suspend fun negotiate(itemId: String, generation: Int, startOver: Boolean = false, askedAt: Long? = null): StreamTicket? {
         val caps = backend.capabilities()
         while (true) {
             // FR-23 — the remembered audio rides the start's own fields, so the stream is cut in that language with no second request.
             val audio = rememberedAudio()
             val requestedAt = nowMs()
             val r = runCatching {
-                api.startPlayback(itemId, caps, startPositionMs = if (startOver) 0L else null, audioLanguage = audio?.audioLanguage, audioVariant = audio?.audioVariant, startOver = startOver)
+                api.startPlayback(itemId, caps, startPositionMs = if (startOver) 0L else askedAt, audioLanguage = audio?.audioLanguage, audioVariant = audio?.audioVariant, startOver = startOver)
             }
             if (generation != loadGeneration) return r.getOrNull()
             val e = r.exceptionOrNull() ?: run { busySinceMs = null; startRequestMs = nowMs() - requestedAt; return r.getOrNull() }

@@ -491,6 +491,139 @@ test.describe("DEB-5394 FR-36 — the next episode's encode starts before the ca
   });
 });
 
+// DEB-5081 (DEB-5078, FR-33) — a start that fails on our encoder before its first picture is asked once more, out of sight. The backend is
+// stood in for by page.route, so this proves what the app SENDS and shows: how many starts, the stops and reports between them, and that
+// the error screen never draws on a start that was asked again and played.
+test.describe("DEB-5078 FR-33 — a start that fails on our encoder is asked once more", () => {
+  const API = "http://app:9505";
+
+  type Seen = { starts: any[]; stops: any[]; qoe: any[] };
+
+  /** [encoders]: the `encoder` each successive start's ticket carries (undefined = the field is absent, as an older server sends it). */
+  async function boot(page: Page, encoders: Array<string | undefined>): Promise<Seen> {
+    const seen: Seen = { starts: [], stops: [], qoe: [] };
+    const card = { id: "m1", kind: "MOVIE", title: "Paper Moon", year: 2024, genre: null, rating: null, poster_url: "/api/tv/image/m1-poster", backdrop_url: "/api/tv/image/m1-backdrop" };
+    const detail = { card, synopsis: "x", runtime: 90, cast: [], related: [], logo_url: null };
+    const feed = { heroes: [], channels: [], rows: [{ id: "new", title: "New Arrivals", kind: "NEWLY_ADDED", items: [card] }], tile_shape: "POSTER", hero_height_pct: 48, focus_detail: "none" };
+    await page.addInitScript(fakeAvPlayInitScript);
+    await page.addInitScript(() => {
+      localStorage.setItem("ravilo.screen.serverUrl", "http://app:9505");
+      localStorage.setItem("ravilo.screen.profiles", JSON.stringify([{ userId: "viewer", displayName: "Test Viewer", token: "test-token" }]));
+    });
+    const json = (route: any, status: number, body: object = {}) => route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
+    await page.route(`${API}/**`, async (route) => {
+      const req = route.request();
+      const path = new URL(req.url()).pathname;
+      if (req.method() === "OPTIONS") return route.fulfill({ status: 204 });
+      if (path === "/api/tv/home") return json(route, 200, feed);
+      if (path === "/api/tv/movie/m1") return json(route, 200, detail);
+      if (path === "/api/tv/playstate") return json(route, 200, {});
+      if (path === "/api/tv/playback/qoe") { seen.qoe.push(JSON.parse(req.postData()!)); return route.fulfill({ status: 204 }); }
+      if (path === "/api/tv/playback/start") {
+        const n = seen.starts.length;
+        seen.starts.push(JSON.parse(req.postData() ?? "{}"));
+        const encoder = encoders[Math.min(n, encoders.length - 1)];
+        return json(route, 200, { jellyfin_base_url: API, access_token: "", item_id: "m1", container: "ts", direct_play: false,
+          hls_url: `${API}/hls/m1/${n}/master.m3u8`, start_position_ms: 0, expires_at: 9_999_999_999, ...(encoder ? { encoder } : {}) });
+      }
+      if (path === "/api/tv/playback/stop") { seen.stops.push(JSON.parse(req.postData() ?? "{}")); return route.fulfill({ status: 204 }); }
+      if (path.startsWith("/api/tv/")) return route.fulfill({ status: 204 });
+      return json(route, 404);
+    });
+    await page.goto(SCREEN_URL);
+    await expect(page.locator("#home-row-0-tile-0")).toHaveClass(/focused/);
+    return seen;
+  }
+  const failNext = (page: Page, times: number) => page.evaluate((n) => { (window as any).__avplay.failPrepareTimes = n; }, times);
+  const pressPlay = async (page: Page) => {
+    await page.keyboard.press("Enter");
+    await expect(page.locator("#detail-play")).toHaveClass(/focused/);
+    await page.keyboard.press("Enter");
+  };
+  const opens = (page: Page) => page.evaluate(() => (window as any).__avplayCalls.filter((c: any[]) => c[0] === "open").map((c: any[]) => c[1]));
+  /** Every frame of the page's own state that says *That didn't start*: the failed view must never be on, at any moment of the run. */
+  const watchFailed = (page: Page) => page.evaluate(() => {
+    (window as any).__failedSeen = false;
+    new MutationObserver(() => { if (document.getElementById("failed")?.classList.contains("on")) (window as any).__failedSeen = true; })
+      .observe(document.getElementById("failed")!, { attributes: true, attributeFilter: ["class"] });
+  });
+  const failedSeen = (page: Page) => page.evaluate(() => (window as any).__failedSeen as boolean);
+
+  test("a failure before the first picture on our encoder makes exactly one more start, with no error screen, and the second ticket plays", async ({ page }) => {
+    test.setTimeout(60_000);
+    const seen = await boot(page, ["ours", "jellyfin"]);
+    await watchFailed(page);
+    await failNext(page, 1);
+    await pressPlay(page);
+    await expect.poll(() => seen.starts.length, { timeout: 15_000 }).toBe(2);
+    await expect.poll(() => opens(page).then((o: string[]) => o.length), { timeout: 15_000 }).toBe(2);
+    await waitForAvplayCall(page, "play");
+    await expect(page.locator("#loading"), "the loading view is what the viewer sees until it plays").not.toHaveClass(/\bon\b/, { timeout: 15_000 });
+    expect(await opens(page), "the second ticket is the one opened").toEqual([expect.stringContaining("/hls/m1/0/"), expect.stringContaining("/hls/m1/1/")]);
+    expect(await failedSeen(page), "the error screen never drew").toBe(false);
+    await page.waitForTimeout(1_000);
+    expect(seen.starts, "and there is no third start").toHaveLength(2);
+    expect(seen.starts[1], "the same item, the same capabilities").toMatchObject({ item_id: seen.starts[0].item_id, capabilities: seen.starts[0].capabilities });
+    // The failed attempt is closed as any failed start: its own report with start_failure_status, and the session stopped at 0.
+    expect(seen.stops[0], "the failed attempt's session is stopped at 0").toMatchObject({ item_id: "m1", position_ms: 0 });
+    expect(seen.qoe[0], "each attempt reports as its own start").toMatchObject({ item_id: "m1", per_item: true, start_failure_status: -1 });
+  });
+
+  test("a second failure shows the error, and asks no third time", async ({ page }) => {
+    test.setTimeout(60_000);
+    const seen = await boot(page, ["ours", "ours"]);
+    await failNext(page, 2);
+    await pressPlay(page);
+    await expect(page.locator("#failed")).toHaveClass(/\bon\b/, { timeout: 15_000 });
+    await page.waitForTimeout(1_000);
+    expect(seen.starts).toHaveLength(2);
+    await expect.poll(() => seen.qoe.filter((q) => q.start_failure_status === -1).length).toBe(2);
+  });
+
+  test("a ticket with no encoder goes straight to the error", async ({ page }) => {
+    test.setTimeout(60_000);
+    const seen = await boot(page, [undefined, "ours"]);
+    await failNext(page, 1);
+    await pressPlay(page);
+    await expect(page.locator("#failed")).toHaveClass(/\bon\b/, { timeout: 15_000 });
+    await page.waitForTimeout(1_000);
+    expect(seen.starts, "Jellyfin's or an older server's stream is not asked again").toHaveLength(1);
+  });
+
+  test("an error after the first frame makes no second start", async ({ page }) => {
+    test.setTimeout(60_000);
+    const seen = await boot(page, ["ours", "ours"]);
+    await pressPlay(page);
+    const opened = await waitForAvplayCall(page, "open");
+    await waitForAvplayCall(page, "play", opened.index);
+    await expect.poll(() => page.evaluate(() => (window as any).webapis.avplay.getCurrentTime()), { timeout: 10_000 }).toBeGreaterThan(1_000);   // the first frame is a few ticks in
+    await page.waitForTimeout(1_000);
+    await page.evaluate(() => (window as any).__avplay.error("PLAYER_ERROR_CONNECTION_FAILED"));
+    await expect(page.locator("#failed")).toHaveClass(/\bon\b/, { timeout: 15_000 });
+    await page.waitForTimeout(1_000);
+    expect(seen.starts).toHaveLength(1);
+  });
+
+  test("Back during the second ask leaves nothing playing and makes no further start", async ({ page }) => {
+    test.setTimeout(60_000);
+    const seen = await boot(page, ["ours", "ours"]);
+    // Hold the second start so Back lands while it is in flight.
+    let release!: () => void;
+    const held = new Promise<void>((r) => { release = r; });
+    await page.route(`${API}/api/tv/playback/start`, async (route) => { if (seen.starts.length >= 1) await held; await route.fallback(); });
+    await failNext(page, 1);
+    await pressPlay(page);
+    await expect.poll(() => seen.starts.length, { timeout: 15_000 }).toBe(1);
+    await expect(page.locator("#loading")).toHaveClass(/\bon\b/);
+    await page.keyboard.press("Escape");
+    await expect(page.locator("#idle")).toHaveClass(/\bon\b/, { timeout: 10_000 });
+    release();
+    await page.waitForTimeout(1_500);
+    expect(await opens(page), "the second ticket is never opened").toHaveLength(1);
+    await expect(page.locator("#failed")).not.toHaveClass(/\bon\b/);
+  });
+});
+
 async function bootAndSignIn(page: Page, request: APIRequestContext, phoneDevice = "e2e-player-phone-r264"): Promise<{ phoneToken: string; screenId: string }> {
   await ownSignInBucket(page);
   await page.goto(SCREEN_URL, { waitUntil: "domcontentloaded", timeout: 10_000 });

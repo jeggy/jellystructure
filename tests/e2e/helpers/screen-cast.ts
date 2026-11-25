@@ -46,8 +46,13 @@ export function fakeAvPlayInitScript() {
     complete() { listener.onstreamcompleted?.(); },
     zeroAfterSeek(ms: number) { zeroAfterSeekMs = ms; },
     event(type: string, data?: unknown) { listener.onevent?.(type, data); },
+    // DEB-5081 (FR-33) — AVPlay's `onerror` while a stream is open (after its first frame, or before it for a start that was already prepared).
+    error(e: string) { listener.onerror?.(e); },
     setProperty(name: string, value: string | undefined) { properties[name] = value; },
     failPrepareWith: undefined as string | undefined,
+    // DEB-5081 (FR-33) — the next n `prepareAsync` calls fail with this error and later ones succeed: a start that fails once and is asked again.
+    failPrepareTimes: 0,
+    failPrepareTimesWith: "Unknown error" as string,
   };
   (window as any).webapis = {
     avplay: {
@@ -73,7 +78,8 @@ export function fakeAvPlayInitScript() {
       },
       prepareAsync(onSuccess: () => void, onError: (e: unknown) => void) {
         (window as any).__avplayCalls.push(["prepareAsync"]);
-        const failure = (window as any).__avplay.failPrepareWith;
+        const fake = (window as any).__avplay;
+        const failure = fake.failPrepareTimes > 0 ? (fake.failPrepareTimes--, fake.failPrepareTimesWith) : fake.failPrepareWith;
         if (failure) { setTimeout(() => onError(failure), 10); return; }
         state = "READY";
         setTimeout(() => { try { onSuccess(); } catch { /* Kotlin's own callback, not ours to swallow */ } }, 10);
