@@ -72,7 +72,9 @@ class EncoderJobs(
 
     internal class Job(val streamId: String, val dir: String, val startSegment: Int, val variants: Int, val plan: EncoderPlan,
                        /** The stream's rung count and the rungs this job makes (null = all of them): see [Restart]. */
-                       val streamRungs: Int = plan.rungs.size, val kept: List<Int>? = null) {
+                       val streamRungs: Int = plan.rungs.size, val kept: List<Int>? = null,
+                       /** DEB-5646 (FR-313-20) — a side job answers a player's opening read of the head: it stops after [SIDE_SEGMENTS] segments and is kept like a retired job. */
+                       val side: Boolean = false) {
         fun slot(variant: Int): Int? = when {
             kept == null -> variant
             variant < streamRungs -> kept.indexOf(variant).takeIf { it >= 0 }
@@ -103,7 +105,11 @@ class EncoderJobs(
                          /** DEB-3100 (FR-2) — a first job has been started for this stream: only that one can mark it refused. */
                          var started: Boolean = false,
                          /** The plan and rung subset every later job of this stream (a seek, a retry) runs, as the first one was placed. */
-                         var restart: Restart? = null)
+                         var restart: Restart? = null,
+                         /** DEB-5646 (FR-313-20) — the segment the stream's first job started at; null before any job. */
+                         var headStart: Int? = null,
+                         /** …and whether a player has read a segment at or after it (a ticket's own start of the job does not count). */
+                         var headServed: Boolean = true)
 
     /** 313 (found live 2026-10-09) — ffmpeg refused [streamId]'s plan (its URLs then answer 410, never a retried 404). */
     suspend fun isRefused(streamId: String): Boolean = mutex.withLock { streams[streamId]?.refused == true }
@@ -145,7 +151,14 @@ class EncoderJobs(
     }
 
     /** The running jobs, for the budget (FR-313-8) and `/api/health`. */
-    internal suspend fun running(): List<Job> = mutex.withLock { streams.values.mapNotNull { it.current }.filter { !it.stopped } }
+    internal suspend fun running(): List<Job> = mutex.withLock { streams.values.flatMap { listOfNotNull(it.current) + it.retired.filter { j -> j.side } }.filter { !it.stopped } }
+
+    /** DEB-5646 (FR-313-20) — a side job is the first to go after a prewarm when the slots run out: every running one is stopped (its segments are kept). Returns how many. */
+    internal suspend fun stopSideJobs(): Int = mutex.withLock {
+        val side = streams.values.flatMap { s -> s.retired.filter { it.side && !it.stopped } }
+        side.forEach { it.stopped = true; kill(it) }
+        side.size
+    }
 
     /**
      * The file holding segment [k] of [variant] (`s<k>.m4s` / `.ts`), made on demand; null when it could not be made in
@@ -154,8 +167,12 @@ class EncoderJobs(
      * DEB-3100 (FR-2) — [restart] is given when the stream was started before (the process restarted, or its job idled out) and is
      * asked for again: the plan it carries is the one placed now, and the stream is not a first start, so it can never be marked refused.
      * A job that exits before it made the segment is started once more within the request; a second failure answers null (the route's 503).
+     *
+     * DEB-5646 (FR-313-19/-20) — [warm] is the server starting a job for a player that has not asked yet (a ticket, a prewarm, a hand-over): it is no
+     * read, so it does not count as the stream's start having been served. While a stream that started past 0 has had no read at or after its start,
+     * a read before the start is answered by a side job and does not replace the job at the start.
      */
-    internal suspend fun segment(streamId: String, plan: EncoderPlan, ffmpeg: String, variant: Int, k: Int, restart: Restart? = null): String? {
+    internal suspend fun segment(streamId: String, plan: EncoderPlan, ffmpeg: String, variant: Int, k: Int, restart: Restart? = null, warm: Boolean = false): String? {
         val askedAtMs = nowMs()
         var stats: EncoderStats? = null
         for (attempt in 1..2) {
@@ -164,6 +181,8 @@ class EncoderJobs(
                     Stream(null, EncoderStats(plan.rungs.map { "${it.height}p@${it.videoBps / 1000}k" }, plan.heldBy), started = restart != null, restart = restart)
                 }
                 stats = s.stats
+                val head = s.headStart
+                if (!warm && head != null && k >= head) s.headServed = true
                 // Already made by a job of this stream (the current one or a retired one): served without an encode.
                 (listOfNotNull(s.current) + s.retired).firstOrNull { k >= it.startSegment && access(it.file(variant, k), F_OK) == 0 }?.let { made ->
                     s.current?.let { touch(it, k) }
@@ -174,10 +193,23 @@ class EncoderJobs(
                 s.restart?.let { r -> if (r.kept != null && variant < r.streamRungs && variant !in r.kept) return null }
                 var j = s.current
                 if (j != null) refresh(j)
+                // FR-313-20 — the player reading the head while it prepares: a side job answers it, the job at the start keeps running.
+                if (!warm && head != null && head > 0 && !s.headServed && k < head && j != null && !j.stopped && !j.exited) {
+                    val running = s.retired.firstOrNull { it.side && it.reaches(k) && k < it.startSegment + SIDE_SEGMENTS }
+                    val sj = running ?: run {
+                        s.retired.filter { it.side && !it.stopped }.forEach { it.stopped = true; kill(it) }
+                        ensureRoom()
+                        start(streamId, s.restart?.plan ?: plan, ffmpeg, k, s.stats, canRefuse = false, streamRungs = plan.rungs.size, kept = s.restart?.kept, side = true)
+                            .also { keepRetired(s, it); Logger.info("encoder $streamId: the player read segment $k before the start at $head — a side job answers it (DEB-5646 FR-313-20)", "tv") }
+                    }
+                    touch(sj, k)
+                    return@withLock sj
+                }
                 if (j == null || !j.reaches(k)) {
-                    j?.let { old -> s.retired.addFirst(old); old.stopped = true; kill(old); while (s.retired.size > KEEP_RETIRED) s.retired.removeLast().let { gone -> scope.launch { removeTree(gone.dir) } } }
+                    j?.let { old -> old.stopped = true; kill(old); keepRetired(s, old) }
                     ensureRoom()
                     j = start(streamId, s.restart?.plan ?: plan, ffmpeg, k, s.stats, canRefuse = !s.started, streamRungs = plan.rungs.size, kept = s.restart?.kept)
+                    if (s.headStart == null) { s.headStart = k; s.headServed = !warm || k == 0 }
                     s.started = true
                     s.stats.newJob()
                     s.current = j
@@ -249,6 +281,12 @@ class EncoderJobs(
         stopAll(streamId, s, why)
     }
 
+    /** Keeps [job] in [s]'s retired list (its files still answer), dropping the oldest beyond [KEEP_RETIRED]. Called with the lock held. */
+    private fun keepRetired(s: Stream, job: Job) {
+        s.retired.addFirst(job)
+        while (s.retired.size > KEEP_RETIRED) s.retired.removeLast().let { gone -> gone.stopped = true; kill(gone); scope.launch { removeTree(gone.dir) } }
+    }
+
     private fun touch(j: Job, k: Int) {
         if (k > j.furthestRequest) j.furthestRequest = k
         j.lastRequestAtMs = nowMs()
@@ -264,6 +302,7 @@ class EncoderJobs(
      * ([reaches] counts [Job.prunedBelow]).
      */
     private fun prune(j: Job, furthest: Int, keepBehind: Int) {
+        if (j.side) return   // DEB-5646 — three segments at most; the head the player read stays until the job's folder goes
         val range = pruneRange(j.prunedBelow, furthest, keepBehind) ?: return
         for (k in range) for (v in 0 until j.variants) unlink(j.slotFile(v, k))
         j.prunedBelow = range.last + 1
@@ -274,14 +313,14 @@ class EncoderJobs(
     private fun refresh(j: Job) { while (access(j.slotFile(0, j.highest + 1), F_OK) == 0) j.highest++ }
 
     private suspend fun start(streamId: String, plan: EncoderPlan, ffmpeg: String, k: Int, stats: EncoderStats, canRefuse: Boolean = true,
-                              streamRungs: Int = plan.rungs.size, kept: List<Int>? = null): Job {
+                              streamRungs: Int = plan.rungs.size, kept: List<Int>? = null, side: Boolean = false): Job {
         val dir = "$root/$streamId-$k-${nowMs()}"
         mkdir(dir, 0x1C0u)
         for (v in 0 until plan.variantCount) mkdir("$dir/$v", 0x1C0u)
-        val job = Job(streamId, dir, k, plan.variantCount, plan, streamRungs, kept)
+        val job = Job(streamId, dir, k, plan.variantCount, plan, streamRungs, kept, side)
         val cmd = encoderCommand(plan, k, dir, ffmpeg)
         val deadlineMs = if (plan.cudaDevice != null && plan.cudaDevice !in warmCards) coldFirstSegmentDeadlineMs else firstSegmentDeadlineMs
-        Logger.info("encoder $streamId: start at segment $k — ${plan.codec} ${plan.rungs.size} rungs ${plan.rungs.joinToString("/") { "${it.height}p@${it.videoBps / 1000}k" }}, " +
+        Logger.info("encoder $streamId: ${if (side) "side job" else "start"} at segment $k — ${plan.codec} ${plan.rungs.size} rungs ${plan.rungs.joinToString("/") { "${it.height}p@${it.videoBps / 1000}k" }}, " +
             "${plan.audio.size} audio, ${plan.mux}, card ${plan.cudaDevice ?: "cpu"}${if (plan.tonemaps) ", tone-mapped" else ""}${if (plan.burnSubtitleOrder != null) ", burn-in" else ""}", "tv")
         if (canRefuse) scope.launch { watchFirstSegment(streamId, job, deadlineMs) }
         scope.launch {
@@ -298,6 +337,8 @@ class EncoderJobs(
                     parseProgressSpeed(line)?.let { speed = it }
                     if (!line.startsWith("progress=")) continue
                     refresh(job)
+                    // DEB-5646 (FR-313-20) — a side job has written what the player's opening read needs.
+                    if (job.side && !job.stopped && job.highest - job.startSegment + 1 >= SIDE_SEGMENTS) { job.stopped = true; kill(job) }
                     // DEB-2205 (FR-8) — ffmpeg's speed and how much it has read, once per progress report.
                     val rchar = if (job.pid > 0) readProcIo(job.pid)?.let { parseRchar(it) } else null
                     val sp = speed
@@ -448,6 +489,8 @@ class EncoderJobs(
         const val RESUME_AHEAD = 10      // 20 s
         const val REACH_AHEAD = 10       // a request up to 20 s past what exists waits for this job
         const val KEEP_RETIRED = 2
+        /** DEB-5646 (FR-313-20) — a side job stops after this many segments (6 s). */
+        const val SIDE_SEGMENTS = 3
         const val SEGMENT_WAIT_MS = 15_000L
         /** DEB-3629 (FR-313-12) — a stream's first job writes its first segment within this, or the stream is refused. */
         const val FIRST_SEGMENT_MS = 5_000L

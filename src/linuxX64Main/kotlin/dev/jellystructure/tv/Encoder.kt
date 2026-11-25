@@ -204,6 +204,8 @@ class Encoder(
         val tryOrder = if (cardsLastFirst) cards.reversed() else cards
         var placement = place(tryOrder, codec, rungs)
         if (placement == null && stopPrewarms(if (cardsLastFirst) "a download stream needs the slot" else "a play needs the slot") > 0) placement = place(tryOrder, codec, rungs)
+        // DEB-5646 (FR-313-20) — a side job (a few seconds of a player's opening read) goes next after the prewarms.
+        if (placement == null && stopSideJobs() > 0) placement = place(tryOrder, codec, rungs)
         placement ?: return null to "no encoder slot free on any card"
         if (placement.rungs < rungs.size) {
             val kept = trimRungs(rungs, start, placement.rungs)
@@ -229,7 +231,7 @@ class Encoder(
         return placeJob(cards, load, codec, rungs[0].boxHeight, rungs.size)
     }
 
-    /** Registers [plan] behind a new stream id (the capability, FR-313-7); the job starts when a player reads it. */
+    /** Registers [plan] behind a new stream id (the capability, FR-313-7); a play's job starts with its ticket ([startWithTicket], DEB-5646), a stream with no ticket kick when a player reads it. */
     suspend fun register(plan: EncoderPlan, jellyfinPlaySessionId: String, expiresAt: Long, deviceId: String = "", itemId: String = "", startMs: Long = 0, qoeKey: String = ""): String {
         val id = secureHexId()
         mutex.withLock {
@@ -262,7 +264,7 @@ class Encoder(
             val (id, e) = existing
             if (samePlay(e.plan, plan) && kotlin.math.abs((e.prewarmSegment ?: 0) - startSegment) <= 1) {
                 mutex.withLock { e.expiresAt = expiresAt }
-                if (kickJobs) scope.launch { jobs.segment(id, e.plan, ffmpegPath, 0, e.prewarmSegment ?: startSegment) }
+                if (kickJobs) scope.launch { jobs.segment(id, e.plan, ffmpegPath, 0, e.prewarmSegment ?: startSegment, warm = true) }
                 return id
             }
             stopFor(key)
@@ -270,7 +272,7 @@ class Encoder(
         val id = register(plan, key, expiresAt, deviceId, itemId)
         mutex.withLock { entries[id]?.let { it.prewarmSegment = startSegment; it.startMs = startSegment * ENCODER_SEGMENT_MS } }
         Logger.info("encoder: prewarm device=$deviceId item=$itemId at segment $startSegment ${plan.codec} rungs=${plan.rungs.size} start=${plan.startRung} (309)", "tv")
-        if (kickJobs) scope.launch { jobs.segment(id, plan, ffmpegPath, 0, startSegment) }
+        if (kickJobs) scope.launch { jobs.segment(id, plan, ffmpegPath, 0, startSegment, warm = true) }
         return id
     }
 
@@ -313,9 +315,22 @@ class Encoder(
         val e = entry(id) ?: return false
         if (!kickJobs) return false
         val made = boundedOrNull(waitMs, "encoder warm-and-wait (DEB-2205 FR-4)") {
-            jobs.segment(id, e.plan, ffmpegPath, e.plan.startRung, startSegment)
+            jobs.segment(id, e.plan, ffmpegPath, e.plan.startRung, startSegment, warm = true)
         }
         return made != null
+    }
+
+    /**
+     * DEB-5646 (FR-313-19) — a play's ticket names stream [id]: its first job starts now, at the ticket's [startSegment], as a prewarm's does,
+     * so the encode overlaps the player's own open. Nothing waits for it. The job runs under the rules it has (40 s ahead, [EncoderJobs.IDLE_MS]
+     * unread from now, FR-313-12's deadline from its own start); a ticket that adopted a prewarm already has its job and does not call this.
+     */
+    suspend fun startWithTicket(id: String, startSegment: Int) {
+        if (!kickJobs) return
+        val e = entry(id) ?: return
+        val k = encoderSeekSegment(e.plan.source.durationMs, startSegment * ENCODER_SEGMENT_MS)   // the segment the player's first read and init name (DEB-3642 FR-7)
+        Logger.info("encoder $id: the ticket starts the job at segment $k (DEB-5646 FR-313-19)", "tv")
+        scope.launch { jobs.segment(id, e.plan, ffmpegPath, 0, k, warm = true) }
     }
 
     /** 309 — the viewer left the detail page without pressing Play: the prewarm stops at once (owner). */
@@ -359,7 +374,7 @@ class Encoder(
         return mutex.withLock {
             jobs.count { j ->
                 val e = entries[j.streamId]
-                e == null || (e.prewarmSegment == null && e.downloadOwner != exceptDownloadOwner)
+                !j.side && (e == null || (e.prewarmSegment == null && e.downloadOwner != exceptDownloadOwner))
             }
         }
     }
@@ -389,6 +404,9 @@ class Encoder(
         if (keys.isNotEmpty()) Logger.info("encoder: stopped ${keys.size} prewarm(s) — $why (313/309)", "tv")
         return keys.size
     }
+
+    /** DEB-5646 (FR-313-20) — a side job never holds a slot a play needs; stopped after the prewarms. Returns how many. */
+    internal suspend fun stopSideJobs(): Int = jobs.stopSideJobs()
 
     private fun samePlay(a: EncoderPlan, b: EncoderPlan): Boolean =
         a.source.path == b.source.path && a.codec == b.codec && a.mux == b.mux && a.rungs == b.rungs && a.startRung == b.startRung &&

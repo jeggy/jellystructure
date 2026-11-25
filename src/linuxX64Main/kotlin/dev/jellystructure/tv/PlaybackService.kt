@@ -917,6 +917,8 @@ class PlaybackService(
                 val qoeKey = device?.let { qoeKeyOf(it, jellyfinId) } ?: ""
                 val adopted = device?.let { encoder.adoptPrewarm(it.deviceId, jellyfinId, plan, startSegment, jellyfinPlaySessionId, ticket.expiresAt, qoeKey) }
                 val id = adopted ?: encoder.register(plan, jellyfinPlaySessionId, ticket.expiresAt, device?.deviceId ?: "", jellyfinId, startMs = ticket.startPositionMs, qoeKey = qoeKey)
+                // DEB-5646 (FR-313-19) — the first job starts with the ticket, at its start; an adopted prewarm already has it.
+                if (adopted == null && !handover) encoder.startWithTicket(id, startSegment)
                 // DEB-2205 (FR-4) — the player is still on its direct stream and switches at H: the job starts at H's segment now, and
                 // this answer waits for that segment, so a ticket that arrives means the first segment the player reads is made.
                 if (handover) {
