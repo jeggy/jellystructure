@@ -1453,6 +1453,8 @@ class PlaybackService(
         if (asStartOver || asShuffle) Logger.info("playback start: device=${device.deviceId} item=$jellyfinId startOver=$asStartOver shuffle=$asShuffle prior=${plan.priorPositionMs}ms (R343)", "tv")
 
         val startResult = playbackTracker.started(device, jellyfinId, startPositionMs, jellyfinPlaySessionId)
+        // DEB-5647 (FR-313-21) — a start of another item ends the stream the device's last stop kept warm.
+        encoder.stopKeptWarmExcept(device.deviceId, jellyfinId)
 
         // Phase 180 (FR-180-1) — a still-active earlier session for this exact (device, item) key is
         // being replaced without an intervening stop; release it too, or its encode leaks forever (this
@@ -1857,6 +1859,10 @@ class PlaybackService(
         // back): it folds R347's tick (previously a separate `mark` that sent its own stop at 0 and raced this one),
         // R343's unwatched write-back and R375's date. None for a song or an id outside the library (no plan).
         val userData = plan?.let { stopUserData(positionMs, it, startOverUnplayed) }
+        // DEB-5647 (FR-313-21) — a stop that leaves a resume point keeps our encode warm as the device's prewarm; releaseSession's stop then finds nothing to delete.
+        // A finished item, and the watchdog's reap (no session id here), are not kept.
+        if (jellyfinPlaySessionId != null && stopLeavesResumePoint(positionMs, plan, decision))
+            runCatching { encoder.keepWarm(jellyfinPlaySessionId, positionMs) }.onFailure { Logger.warn("encoder: keeping the stream warm failed: ${it.message}", "tv") }
         releaseSession(device, jellyfinId, decision.reportMs, jellyfinPlaySessionId, startOverUnplayed = startOverUnplayed, restoreLastPlayed = restoreLastPlayed,
             reason = reason, userData = userData)
         // Phase 185 (FR-185-4) — session genuinely completed (this IS the stop path, not a mid-session

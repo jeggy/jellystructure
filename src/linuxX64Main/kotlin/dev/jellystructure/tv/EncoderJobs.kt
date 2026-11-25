@@ -62,6 +62,9 @@ class EncoderJobs(
     private val firstSegmentDeadlineMs: Long = FIRST_SEGMENT_MS,
     /** …and the same for the first job on a card since the backend started (a cold CUDA start was measured at 9 s). Tests only replace it. */
     private val coldFirstSegmentDeadlineMs: Long = COLD_FIRST_SEGMENT_MS,
+    /** DEB-5647 (FR-313-21) — how long a stream's job may go unread before it is stopped, and how often that is looked at. Tests only replace them. */
+    private val idleMs: Long = IDLE_MS,
+    private val idleSweepMs: Long = IDLE_SWEEP_MS,
 ) {
     /**
      * DEB-3100 (FR-2) — a restart that found no slot for the whole ladder: [kept] are the indexes (in the stream's own plan) of the rungs
@@ -109,7 +112,9 @@ class EncoderJobs(
                          /** DEB-5646 (FR-313-20) — the segment the stream's first job started at; null before any job. */
                          var headStart: Int? = null,
                          /** …and whether a player has read a segment at or after it (a ticket's own start of the job does not count). */
-                         var headServed: Boolean = true)
+                         var headServed: Boolean = true,
+                         /** DEB-5647 (FR-313-21) — segments already counted in a summary filed while the stream stayed warm. */
+                         var segmentsReported: Int = 0)
 
     /** 313 (found live 2026-10-09) — ffmpeg refused [streamId]'s plan (its URLs then answer 410, never a retried 404). */
     suspend fun isRefused(streamId: String): Boolean = mutex.withLock { streams[streamId]?.refused == true }
@@ -140,9 +145,9 @@ class EncoderJobs(
         scope.launch { sweep(root) }
         scope.launch {
             while (true) {
-                delay(10_000)
+                delay(idleSweepMs)
                 val idle = mutex.withLock {
-                    val ids = streams.filter { (_, s) -> s.current?.let { nowMs() - it.lastRequestAtMs > IDLE_MS } ?: true }.keys.toList()
+                    val ids = streams.filter { (_, s) -> s.current?.let { nowMs() - it.lastRequestAtMs > idleMs } ?: true }.keys.toList()
                     ids.mapNotNull { id -> streams.remove(id)?.let { id to it } }
                 }
                 idle.forEach { (id, s) -> stopAll(id, s, "idle") }
@@ -279,6 +284,24 @@ class EncoderJobs(
     suspend fun stop(streamId: String, why: String) {
         val s = mutex.withLock { streams.remove(streamId) } ?: return
         stopAll(streamId, s, why)
+    }
+
+    /**
+     * DEB-5647 (FR-313-21) — [streamId]'s play has stopped and the stream stays warm: its jobs keep running (or paused) under the 40 s rule, its
+     * idle clock starts now so the warm minute runs from the stop and not from the last segment the player read, and the summary of the play
+     * so far is returned (and its counters cleared, so the stop of an adopting play files its own). Null when no job of this process has the stream.
+     */
+    suspend fun warmStop(streamId: String): EncoderSummary? {
+        val (s, all) = mutex.withLock { streams[streamId]?.let { it to (listOfNotNull(it.current) + it.retired) } } ?: return null
+        if (all.isEmpty()) return null
+        all.forEach { refresh(it) }
+        return mutex.withLock {
+            s.current?.lastRequestAtMs = nowMs()
+            val made = all.sumOf { (it.highest - it.startSegment + 1).coerceAtLeast(0) }
+            s.stats.segmentsMade(made - s.segmentsReported)
+            s.segmentsReported = made
+            s.stats.summary().also { s.stats.clear() }
+        }
     }
 
     /** Keeps [job] in [s]'s retired list (its files still answer), dropping the oldest beyond [KEEP_RETIRED]. Called with the lock held. */
@@ -424,7 +447,7 @@ class EncoderJobs(
         val all = listOfNotNull(s.current) + s.retired
         all.forEach { refresh(it); it.stopped = true; kill(it) }
         if (all.isNotEmpty()) {
-            val summary = mutex.withLock { s.stats.segmentsMade(all.sumOf { (it.highest - it.startSegment + 1).coerceAtLeast(0) }); s.stats.summary() }
+            val summary = mutex.withLock { s.stats.segmentsMade(all.sumOf { (it.highest - it.startSegment + 1).coerceAtLeast(0) } - s.segmentsReported); s.stats.summary() }
             Logger.info(summary.logLine(streamId, why), "tv")
             runCatching { onStopped(streamId, summary) }
         }
@@ -502,6 +525,7 @@ class EncoderJobs(
          *  so the 4 GB work folder fits more streams than [MAX_JOBS]. A seek further back restarts the job (~1–2 s). */
         const val KEEP_BEHIND = 30
         const val IDLE_MS = 60_000L
+        const val IDLE_SWEEP_MS = 10_000L
         /** DEB-3100 (FR-2) — less free than this in the work folder and a job is not started before the folder has been pruned. */
         const val MIN_FREE_BYTES = 300_000_000L
         /** …what is kept behind a player while the folder is that full. */

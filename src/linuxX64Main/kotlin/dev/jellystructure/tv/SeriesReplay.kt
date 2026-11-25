@@ -109,6 +109,10 @@ internal data class StopDecision(val reportMs: Long, val markPlayed: Boolean)
 internal fun readBackStillOurs(stopLandedAtMs: Long, viewerMarkedAtMs: Long?): Boolean =
     viewerMarkedAtMs == null || viewerMarkedAtMs < stopLandedAtMs
 
+/** DEB-5647 (FR-313-21) — a stop that leaves a resume point: R347 does not call the item finished (a stop at its credits, or past 90 %, is). Our encode may then stay warm. */
+internal fun stopLeavesResumePoint(positionMs: Long, plan: SessionPlan?, decision: StopDecision): Boolean =
+    plan != null && !decision.markPlayed && !playbackFinished(positionMs, plan.durationMs, plan.creditsStartMs)
+
 internal fun resolveStop(positionMs: Long, plan: SessionPlan?): StopDecision {
     val duration = plan?.durationMs ?: 0L
     val finished = playbackFinished(positionMs, duration, plan?.creditsStartMs)

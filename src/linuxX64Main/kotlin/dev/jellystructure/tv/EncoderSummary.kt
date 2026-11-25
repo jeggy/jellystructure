@@ -115,6 +115,12 @@ internal class EncoderStats(private val rungs: List<String>, private val heldBy:
         if (was503) responses503++
     }
 
+    /** DEB-5647 (FR-313-21) — a summary has been filed for what was counted so far; what follows is the next play's. */
+    fun clear() {
+        speeds.clear(); longestWaitMs = 0; slowWaits = 0; inputBytes = 0; inputMs = 0; lastSample = null
+        segments = 0; everPaused = false; responses.clear(); responses503 = 0
+    }
+
     fun paused() { everPaused = true }
     fun segmentsMade(n: Int) { segments += n }
 

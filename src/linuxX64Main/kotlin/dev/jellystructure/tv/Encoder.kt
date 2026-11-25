@@ -55,6 +55,8 @@ class Encoder(
     private val freeBytes: (() -> Long)? = null,
     /** DEB-3629 (FR-313-12) — tests only: the first-segment deadline of a stream's first job, and of the first job on a card since start. */
     private val firstSegmentDeadlinesMs: Pair<Long, Long> = EncoderJobs.FIRST_SEGMENT_MS to EncoderJobs.COLD_FIRST_SEGMENT_MS,
+    /** DEB-5647 (FR-313-21) — tests only: how long a job may go unread, and how often that is looked at. */
+    private val idleTimingMs: Pair<Long, Long> = EncoderJobs.IDLE_MS to EncoderJobs.IDLE_SWEEP_MS,
 ) {
     private fun nowMs(): Long = clock()
 
@@ -74,7 +76,9 @@ class Encoder(
                         /** When the store last heard of a read (a write at most once a minute per stream). */
                         var persistedAtMs: Long = 0,
                         /** DEB-4062 (DEB-3995 FR-6) — a download stream, not a play: [downloadOwner] is the phone that holds it, [lastReadMs] its last segment request. */
-                        var downloadOwner: String? = null, var lastReadMs: Long = 0) {
+                        var downloadOwner: String? = null, var lastReadMs: Long = 0,
+                        /** DEB-5647 (FR-313-21) — a stopped play's stream kept as the device's prewarm ([keepWarm]); false again once a play adopts it. */
+                        var keptWarm: Boolean = false) {
         val download: Boolean get() = downloadOwner != null
     }
 
@@ -92,12 +96,18 @@ class Encoder(
         val root = cfg.workDir.takeIf { mkdirs(it) } ?: "/tmp/js-encoder"
         mkdirs(cfg.cudaCacheDir)
         EncoderJobs(root, freeBytes = freeBytes ?: { freeBytesOf(root) },
-            firstSegmentDeadlineMs = firstSegmentDeadlinesMs.first, coldFirstSegmentDeadlineMs = firstSegmentDeadlinesMs.second, envPrefix = { "CUDA_DEVICE_ORDER=PCI_BUS_ID CUDA_CACHE_PATH='${cfg.cudaCacheDir}'" },
+            firstSegmentDeadlineMs = firstSegmentDeadlinesMs.first, coldFirstSegmentDeadlineMs = firstSegmentDeadlinesMs.second,
+            idleMs = idleTimingMs.first, idleSweepMs = idleTimingMs.second, envPrefix = { "CUDA_DEVICE_ORDER=PCI_BUS_ID CUDA_CACHE_PATH='${cfg.cudaCacheDir}'" },
             onRefused = { plan, rc -> refused.markRefused(plan.source.path, plan.codec, rc, clock()); onRefusedFile?.invoke(plan.source.path) },
             onStopped = { id, summary ->
                 // DEB-2205 (FR-8) — a PLAY's job stopped: its summary goes to the play's QoE row. A prewarm nobody played has none.
                 val e = mutex.withLock { entries[id] }
                 if (e != null && e.prewarmSegment == null && e.deviceId.isNotBlank()) onSummary?.invoke(e.deviceId, e.itemId, e.qoeKey, summary)
+                // DEB-5647 (FR-313-21) — a kept stream whose job idled out has nothing left to adopt: its entry goes with its folder.
+                if (e != null && e.keptWarm && e.prewarmSegment != null) mutex.withLock {
+                    entries.remove(id)
+                    byPlay[e.jellyfinPlaySessionId]?.let { l -> l.remove(id); if (l.isEmpty()) byPlay.remove(e.jellyfinPlaySessionId) }
+                }
             })
     }
 
@@ -290,6 +300,7 @@ class Encoder(
             val e = hit.value
             if (!samePlay(e.plan, plan) || kotlin.math.abs((e.prewarmSegment ?: 0) - startSegment) > 1) return@withLock null
             e.prewarmSegment = null
+            e.keptWarm = false
             e.startMs = startSegment * ENCODER_SEGMENT_MS
             e.jellyfinPlaySessionId = jellyfinPlaySessionId
             e.qoeKey = qoeKey
@@ -331,6 +342,51 @@ class Encoder(
         val k = encoderSeekSegment(e.plan.source.durationMs, startSegment * ENCODER_SEGMENT_MS)   // the segment the player's first read and init name (DEB-3642 FR-7)
         Logger.info("encoder $id: the ticket starts the job at segment $k (DEB-5646 FR-313-19)", "tv")
         scope.launch { jobs.segment(id, e.plan, ffmpegPath, 0, k, warm = true) }
+    }
+
+    /**
+     * DEB-5647 (FR-313-21) — the play behind [jellyfinPlaySessionId] stopped at [atMs] and leaves a resume point: its stream is not deleted but becomes
+     * the device's prewarm for the item (the entry [prewarm] makes, keyed by device and item), at the stop's segment, so Back then Play again, or the
+     * app hidden and brought back, is adopted ([adoptPrewarm]) and starts from what is on disk. What it made stays and its job stays under FR-313-1's
+     * rules; unread for [EncoderJobs.IDLE_MS] from now it stops and its folder goes. The play's [onSummary] is filed now, as at a stop. Returns false
+     * (nothing kept, the caller's [stopFor] deletes the stream) for a stream that is no play, a download, one with no job or one ffmpeg refused (FR-313-12).
+     */
+    suspend fun keepWarm(jellyfinPlaySessionId: String, atMs: Long): Boolean {
+        val (id, e) = mutex.withLock {
+            byPlay[jellyfinPlaySessionId]?.lastOrNull { i -> entries[i]?.let { it.deviceId.isNotBlank() && !it.download && it.prewarmSegment == null } == true }
+                ?.let { it to entries.getValue(it) }
+        } ?: return false
+        if (!jobs.hasStream(id) || jobs.isRefused(id)) return false
+        val key = prewarmKey(e.deviceId, e.itemId)
+        stopFor(key)   // one prewarm per (device, item): the viewer's page prewarm, if any, is replaced by this stream
+        val summary = jobs.warmStop(id) ?: return false
+        runCatching { onSummary?.invoke(e.deviceId, e.itemId, e.qoeKey, summary) }
+        val segment = (atMs.coerceAtLeast(0) / ENCODER_SEGMENT_MS).toInt()
+        val kept = mutex.withLock {
+            if (entries[id] !== e || byPlay[jellyfinPlaySessionId]?.remove(id) != true) return@withLock false
+            if (byPlay[jellyfinPlaySessionId]?.isEmpty() == true) byPlay.remove(jellyfinPlaySessionId)
+            e.prewarmSegment = segment
+            e.keptWarm = true
+            e.startMs = segment * ENCODER_SEGMENT_MS
+            e.jellyfinPlaySessionId = key
+            e.expiresAt = clock() + EncoderJobs.IDLE_MS
+            byPlay.getOrPut(key) { mutableListOf() }.add(id)
+            true
+        }
+        if (kept) Logger.info("encoder $id: stays warm as the prewarm for device=${e.deviceId} item=${e.itemId} at segment $segment (DEB-5647 FR-313-21)", "tv")
+        return kept
+    }
+
+    /** DEB-5647 (FR-313-21) — the segment (device, item)'s prewarm waits at, or null when it has none. */
+    internal suspend fun prewarmSegmentOf(deviceId: String, itemId: String): Int? = mutex.withLock {
+        entries.values.firstOrNull { it.prewarmSegment != null && it.deviceId == deviceId && it.itemId == itemId }?.prewarmSegment
+    }
+
+    /** DEB-5647 (FR-313-21) — [deviceId] starts [itemId]: a stream kept warm for any other item of the device is stopped. Returns how many. */
+    suspend fun stopKeptWarmExcept(deviceId: String, itemId: String): Int {
+        val keys = mutex.withLock { entries.values.filter { it.keptWarm && it.prewarmSegment != null && it.deviceId == deviceId && it.itemId != itemId }.map { prewarmKey(it.deviceId, it.itemId) }.distinct() }
+        keys.forEach { stopFor(it) }
+        return keys.size
     }
 
     /** 309 — the viewer left the detail page without pressing Play: the prewarm stops at once (owner). */
