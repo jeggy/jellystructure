@@ -53,7 +53,7 @@ async function stubCatalogue(page: Page) {
 async function openLayout(page: Page) {
   await page.goto("/#/ravilo?tab=layout");
   await page.click("#rav-scope-global");
-  await expect(page.locator("#sect-rows .cfg-row.hascond")).toBeVisible({ timeout: 15_000 });
+  await expect(page.locator("#sect-rows .cfg-row.hascond").first()).toBeVisible({ timeout: 15_000 });
 }
 
 // The collection editor saves only in the global scope, so go through the layout page's own switcher and its Edit
@@ -73,7 +73,8 @@ const globalRowsFromServer = async (page: Page) => {
 
 test.describe.serial("Continue Watching — Hide titles tagged (editor)", () => {
   let page: Page;
-  const sub = () => page.locator("#sect-rows .cfg-row.hascond .cw-cond");
+  // DEB-5003 adds a second sub-row under Newly Added, so the Continue one is picked by its row's name.
+  const sub = () => page.locator('#sect-rows .cfg-row.hascond:has(.nm:text-is("Continue Watching")) .cw-cond');
   const chips = () => sub().locator(".cw-chip");
 
   test.beforeAll(async ({ browser }: { browser: Browser }) => {
@@ -97,8 +98,8 @@ test.describe.serial("Continue Watching — Hide titles tagged (editor)", () => 
     await expect(sub().locator(".cw-facet")).toHaveText("Hide titles tagged");
     await expect(chips()).toHaveCount(0);
     await expect(sub().locator(".cw-add")).toHaveText("＋ Add tag");
-    // Only the first Continue row has one — not Newly Added.
-    await expect(page.locator("#sect-rows .cw-cond")).toHaveCount(1);
+    // Only the first Continue row has one; the other is Newly Added's (DEB-5003, its own describe below).
+    await expect(page.locator("#sect-rows .cw-cond")).toHaveCount(2);
   });
 
   // FR-8 — nothing typed: the header and the six most used tags, the footer always.
@@ -192,10 +193,11 @@ test.describe.serial("Continue Watching — Hide titles tagged (editor)", () => 
 
   // FR-7 — switched off, the sub-row is not shown; the tags are kept and return when it is switched back on.
   test("switching the row off hides the sub-row and keeps its tags", async () => {
-    const toggle = page.locator("#sect-rows .cfg-row.hascond [data-row-toggle]");
-    const enabled = page.locator("#sect-rows .cfg-row.hascond input[data-row-enabled]");
+    const continueRow = page.locator('#sect-rows .cfg-row.hascond:has(.nm:text-is("Continue Watching"))');
+    const toggle = continueRow.locator("[data-row-toggle]");
+    const enabled = continueRow.locator("input[data-row-enabled]");
     await toggle.click();
-    await expect(page.locator("#sect-rows .cfg-row.hascond")).toHaveClass(/\boff\b/);
+    await expect(continueRow).toHaveClass(/\boff\b/);
     await expect(sub()).toBeHidden();
     await expect(enabled).not.toBeChecked();   // the row's own checkbox follows the toggle, so Save sends what is shown
     await toggle.click();
@@ -228,7 +230,7 @@ test.describe.serial("Continue Watching — Hide titles tagged (editor)", () => 
     await failing.route("**/api/metadata/tags**", (route) => route.fulfill({ status: 500, body: "boom" }));
     await failing.goto("/#/ravilo?tab=layout");
     await failing.click("#rav-scope-global");
-    const fsub = failing.locator("#sect-rows .cfg-row.hascond .cw-cond");
+    const fsub = failing.locator('#sect-rows .cfg-row.hascond:has(.nm:text-is("Continue Watching")) .cw-cond');
     await expect(fsub.locator(".cw-chip .nm")).toHaveText(["kids-tv", "old-kids-block"]);
     await expect(fsub.locator(".cw-chip .n")).toHaveText(["–", "–"]);
     await fsub.locator(".cw-add").click();
@@ -242,7 +244,8 @@ test.describe.serial("Continue Watching — Hide titles tagged (editor)", () => 
 test.describe.serial("Continue Watching — Hide titles tagged (a Custom collection)", () => {
   let page: Page;
   const CH = "ch-hide-tags-fixture";
-  const sub = () => page.locator("#ch-rows-list .cfg-row.hascond .cw-cond");   // DEB-2850: the system rows are entries of the one Rows list
+  // DEB-2850: the system rows are entries of the one Rows list. DEB-5003: Newly Added carries one too, so pick by row.
+  const sub = () => page.locator('#ch-rows-list .cfg-row.hascond:has([data-systog="continue"]) .cw-cond');
 
   test.beforeAll(async ({ browser }: { browser: Browser }) => {
     page = await browser.newPage();
@@ -270,8 +273,8 @@ test.describe.serial("Continue Watching — Hide titles tagged (a Custom collect
     await expect(sub()).toBeVisible({ timeout: 15_000 });
     await expect(sub().locator(".cw-chip .nm")).toHaveText(["cartoons"]);
     await expect(sub().locator(".cw-chip .n")).toHaveText("14");
-    // Newly Added has none.
-    await expect(page.locator(".cw-cond")).toHaveCount(1);
+    // Newly Added has its own (DEB-5003), and it is empty here.
+    await expect(page.locator(".cw-cond")).toHaveCount(2);
   });
 
   // FR-7 — the toggle hides it (the page's own `off` class) and the tags stay.

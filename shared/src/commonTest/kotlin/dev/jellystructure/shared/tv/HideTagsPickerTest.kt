@@ -2,6 +2,7 @@ package dev.jellystructure.shared.tv
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -59,5 +60,32 @@ class HideTagsPickerTest {
 
     @Test fun `the catalogue holds one entry per name`() {
         assertEquals(listOf("a", "b"), HideTagsPicker.catalogueOf(listOf(TagCount("a", 1), TagCount("A", 9), TagCount("", 3), TagCount("b", 2))).map { it.name })
+    }
+}
+
+/** DEB-5003 (FR-3, FR-7) — which row carries the Newly Added sub-row, and when it is hidden. */
+class NewlyHideTagsTest {
+    private fun newly(id: String, order: Int, on: Boolean = true, mediaKind: String? = null) =
+        RowConfig(id = id, kind = RowKind.NEWLY_ADDED, order = order, enabled = on, mediaKind = mediaKind)
+
+    @Test fun `the first Newly Added row in order carries the list, switched on or not`() {
+        val rows = listOf(RowConfig(id = "c", kind = RowKind.CONTINUE, order = 0), newly("b", 2), newly("a", 1, on = false))
+        assertEquals("a", NewlyHideTags.hostRowId(rows))
+    }
+
+    @Test fun `a layout with no Newly Added row has no host`() {
+        assertNull(NewlyHideTags.hostRowId(listOf(RowConfig(id = "c", kind = RowKind.CONTINUE, order = 0))))
+    }
+
+    @Test fun `the sub-row stays while any Newly Added row is shown`() {
+        val offMain = newly("a", 0, on = false)
+        assertTrue(NewlyHideTags.homeSubRowOff(listOf(offMain), merge = false))
+        assertFalse(NewlyHideTags.homeSubRowOff(listOf(newly("a", 0)), merge = false))
+        assertFalse(NewlyHideTags.homeSubRowOff(listOf(offMain, newly("t", 1, mediaKind = "MOVIE")), merge = false))
+        assertFalse(NewlyHideTags.homeSubRowOff(listOf(offMain), merge = true))
+    }
+
+    @Test fun `no Newly Added row at all is off`() {
+        assertTrue(NewlyHideTags.homeSubRowOff(emptyList(), merge = false))
     }
 }

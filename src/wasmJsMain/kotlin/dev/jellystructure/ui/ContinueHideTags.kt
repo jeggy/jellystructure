@@ -19,8 +19,9 @@ import kotlin.time.TimeSource
 
 /**
  * DEB-1264 slice 3 (FR-7..FR-10) — the *Hide titles tagged* sub-row under a Continue Watching system row, and its
- * picker. The same component serves Layout → Content rows (global and per-user) and a Custom collection's System
- * rows. It owns no state: the list is read through [mountHideTags]'s `tags` and written through `onChange`, which
+ * picker. DEB-5003 (FR-7) puts a second one under the Newly Added system row; each mount reads and writes only its
+ * own list, and [closeOpenPicker] keeps one picker open across both. The same component serves Layout → Content rows
+ * (global and per-user) and a Custom collection's System rows. It owns no state: the list is read through [mountHideTags]'s `tags` and written through `onChange`, which
  * only edits the editor's unsaved layout — the existing layout Save sends it (FR-9). Styling is `.cw-*` in wf.css.
  *
  * The parent row must carry `hascond` (so the sub-row wraps onto its own line) and `off` while the row is switched
@@ -30,6 +31,16 @@ import kotlin.time.TimeSource
 /** The mount point the editors drop into the parent row; [mountHideTags] fills it. */
 internal const val HIDE_TAGS_MOUNT_ATTR = "data-cw-hide-tags"
 internal fun hideTagsMountHtml(key: String): String = """<div class="cw-cond" $HIDE_TAGS_MOUNT_ATTR="${key.escHideTags()}"></div>"""
+
+/** The mount for [key] inside [root]. Several mounts share a page (Continue Watching and Newly Added), so a bare query is not enough. */
+internal fun findHideTagsMount(root: Element, key: String): HTMLElement? {
+    val all = root.querySelectorAll("[$HIDE_TAGS_MOUNT_ATTR]")
+    for (i in 0 until all.length) {
+        val el = all.item(i) as? HTMLElement ?: continue
+        if (el.getAttribute(HIDE_TAGS_MOUNT_ATTR) == key) return el
+    }
+    return null
+}
 
 private fun String.escHideTags() = replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;")
 

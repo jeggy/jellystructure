@@ -57,3 +57,23 @@ object HideTagsPicker {
 
     private val byCountThenName = compareByDescending<TagCount> { it.count }.thenBy { it.name.lowercase() }
 }
+
+/**
+ * DEB-5003 (FR-3, FR-7) — where the admin puts the Newly Added *Hide titles tagged* sub-row and when it is greyed out.
+ * Pure, so the rule can be tested without the DOM.
+ */
+object NewlyHideTags {
+    /**
+     * The row that carries the layout's one Newly Added list: the first `NEWLY_ADDED` row in `order`, switched on or
+     * not (FR-3). A later `NEWLY_ADDED` row never carries one.
+     */
+    fun hostRowId(rows: List<RowConfig>): String? =
+        rows.sortedBy { it.order }.firstOrNull { it.kind == RowKind.NEWLY_ADDED }?.id
+
+    /**
+     * FR-7 — the Home sub-row is hidden (`off`, tags kept) only when the layout shows no Newly Added row at all:
+     * no `NEWLY_ADDED` row switched on, which covers the split row, the typed rows and the merged one, and *Merge* off.
+     */
+    fun homeSubRowOff(rows: List<RowConfig>, merge: Boolean): Boolean =
+        !merge && rows.none { it.kind == RowKind.NEWLY_ADDED && it.enabled }
+}

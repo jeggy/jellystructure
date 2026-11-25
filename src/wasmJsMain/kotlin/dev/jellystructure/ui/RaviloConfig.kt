@@ -16,6 +16,7 @@ import dev.jellystructure.shared.tv.ChannelConfig
 import dev.jellystructure.shared.tv.CHANNEL_ORDER_CONTINUE
 import dev.jellystructure.shared.tv.CHANNEL_ORDER_NEWLY
 import dev.jellystructure.shared.tv.ChannelRowsConfig
+import dev.jellystructure.shared.tv.NewlyHideTags
 import dev.jellystructure.shared.tv.resolvedOrder
 import dev.jellystructure.shared.tv.ChannelSystemRows
 import dev.jellystructure.shared.tv.ChannelStyle
@@ -385,7 +386,7 @@ private fun reloadScopeIntoSections(container: Element, scope: CoroutineScope) {
 }
 
 /**
- * DEB-1264 (FR-9) — after a Save, a Continue Watching row's "Hide titles tagged" list is what the server stored
+ * DEB-1264 (FR-9), DEB-5003 (FR-8) — after a Save, a Continue Watching or Newly Added "Hide titles tagged" list is what the server stored
  * (entries trimmed, empties dropped, case-insensitive duplicates collapsed), read back for the scope just saved.
  * If the read fails the editor keeps what it sent; nothing else in [saved] is touched.
  */
@@ -396,9 +397,14 @@ private suspend fun withServerHideTags(saved: RaviloConfig): RaviloConfig {
     return saved.copy(
         rows = saved.rows.map { r -> echo.rows.firstOrNull { it.id == r.id }?.let { r.copy(hideTags = it.hideTags) } ?: r },
         channels = saved.channels.map { c ->
-            val stored = echo.channels.firstOrNull { it.id == c.id }?.rows?.system?.cont?.hideTags
+            val stored = echo.channels.firstOrNull { it.id == c.id }?.rows?.system
             val rows = c.rows
-            if (stored == null || rows == null) c else c.copy(rows = rows.copy(system = rows.system.copy(cont = rows.system.cont.copy(hideTags = stored))))
+            // DEB-5003 (FR-8) — a Custom collection's Newly Added list is read back the same way as its Continue list.
+            if (stored == null || rows == null) c
+            else c.copy(rows = rows.copy(system = rows.system.copy(
+                cont = rows.system.cont.copy(hideTags = stored.cont.hideTags),
+                newly = rows.system.newly.copy(hideTags = stored.newly.hideTags),
+            )))
         },
     )
 }
@@ -1142,7 +1148,7 @@ private fun openChannelEditorPage(container: Element, scope: CoroutineScope, idx
         val off = " off"
         when (token) {
             CHANNEL_ORDER_CONTINUE -> """<div class="cfg-row hascond${if (!contShow) off else ""}" draggable="true" data-chrow-i="$pos" style="margin-bottom:6px;${if (!contShow) "opacity:.5" else ""}">$grabHtml<span class="badge ok" style="flex:none;font-size:.65rem">system</span><div style="flex:1;min-width:0"><div class="nm">Continue Watching</div><div class="src">In-progress titles from this collection</div></div><span class="toggle${if (contShow) " on" else ""}" data-systog="continue" style="cursor:pointer;flex:none"></span>${hideTagsMountHtml("collection-continue")}</div>"""
-            CHANNEL_ORDER_NEWLY -> """<div class="cfg-row hascond${if (!newlyShow) off else ""}" draggable="true" data-chrow-i="$pos" style="margin-bottom:6px;${if (!newlyShow) "opacity:.5" else ""}">$grabHtml<span class="badge ok" style="flex:none;font-size:.65rem">system</span><div style="flex:1;min-width:0"><div class="nm">Newly Added</div><div class="src">Newest titles in this collection${if (newlyMerge) " · combined" else " · Movies + Series"}</div></div><span class="toggle${if (newlyShow) " on" else ""}" data-systog="newly" style="cursor:pointer;flex:none"></span><label class="cf-sysmerge" style="flex-basis:100%;display:flex;align-items:center;gap:8px;margin-top:8px;padding-top:8px;border-top:1px solid var(--line);font-size:.82rem;cursor:pointer"><span class="toggle${if (newlyMerge) " on" else ""}" data-sysmerge style="cursor:pointer;flex:none"></span>Merge movies &amp; series into one Newly Added row</label></div>"""
+            CHANNEL_ORDER_NEWLY -> """<div class="cfg-row hascond${if (!newlyShow) off else ""}" draggable="true" data-chrow-i="$pos" style="margin-bottom:6px;${if (!newlyShow) "opacity:.5" else ""}">$grabHtml<span class="badge ok" style="flex:none;font-size:.65rem">system</span><div style="flex:1;min-width:0"><div class="nm">Newly Added</div><div class="src">Newest titles in this collection${if (newlyMerge) " · combined" else " · Movies + Series"}</div></div><span class="toggle${if (newlyShow) " on" else ""}" data-systog="newly" style="cursor:pointer;flex:none"></span>${hideTagsMountHtml("collection-newly")}<label class="cf-sysmerge" style="flex-basis:100%;display:flex;align-items:center;gap:8px;margin-top:8px;padding-top:8px;border-top:1px solid var(--line);font-size:.82rem;cursor:pointer"><span class="toggle${if (newlyMerge) " on" else ""}" data-sysmerge style="cursor:pointer;flex:none"></span>Merge movies &amp; series into one Newly Added row</label></div>"""
             else -> rowsCustomItems.indexOfFirst { it.id == token }.let { i -> if (i < 0) "" else chItemRowHtml(i, rowsCustomItems[i], pos) }
         }
     }.joinToString("")
@@ -1301,17 +1307,21 @@ private fun openChannelEditorPage(container: Element, scope: CoroutineScope, idx
     }
     // DEB-1264 (FR-7) — a Custom collection's own Continue Watching list; shown only inside the Custom body, so a collection
     // on "Same as Home" has none. The edit goes to the unsaved layout without re-rendering the page, so a picker stays open.
-    (container.querySelector("[$HIDE_TAGS_MOUNT_ATTR]") as? HTMLElement)?.let { host ->
+    // DEB-5003 (FR-7) — and its own Newly Added list beside it; each mount is picked by key and edits only its own list.
+    fun mountCollectionHideTags(key: String, read: (ChannelSystemRows) -> List<String>, write: (ChannelSystemRows, List<String>) -> ChannelSystemRows) {
+        val host = findHideTagsMount(container, key) ?: return
         mountHideTags(host, scope,
-            tags = { currentConfig.channels.getOrNull(idx)?.rows?.system?.cont?.hideTags.orEmpty() },
+            tags = { currentConfig.channels.getOrNull(idx)?.rows?.system?.let(read).orEmpty() },
             onChange = { next ->
                 val list = currentConfig.channels.toMutableList()
                 val cur = list.getOrNull(idx) ?: return@mountHideTags
                 val existing = cur.rows ?: ChannelRowsConfig(mode = "custom")
-                list[idx] = cur.copy(rows = existing.copy(mode = "custom", system = existing.system.copy(cont = existing.system.cont.copy(hideTags = next))))
+                list[idx] = cur.copy(rows = existing.copy(mode = "custom", system = write(existing.system, next)))
                 currentConfig = currentConfig.copy(channels = list)
             })
     }
+    mountCollectionHideTags("collection-continue", { it.cont.hideTags }) { sys, next -> sys.copy(cont = sys.cont.copy(hideTags = next)) }
+    mountCollectionHideTags("collection-newly", { it.newly.hideTags }) { sys, next -> sys.copy(newly = sys.newly.copy(hideTags = next)) }
     container.querySelectorAll("[data-systog]").let { tg ->
         for (i in 0 until tg.length) {
             val el = tg.item(i) as? HTMLElement ?: continue
@@ -1999,6 +2009,22 @@ private fun buildRowSlots(): List<RowSlot> {
     return real.toMutableList().apply { add(pos, RowSlot.LiveTv) }
 }
 
+/**
+ * Greys out (`off`) each *Hide titles tagged* sub-row to match the layout, without redrawing the list so an open picker
+ * is not lost: the Continue one follows its own row's switch (DEB-1264 FR-7), the Newly Added one is off only when the
+ * layout shows no Newly Added row at all (DEB-5003 FR-7).
+ */
+private fun syncHideTagsOff(sect: Element) {
+    val rows = currentConfig.rows
+    val continueId = rows.sortedBy { it.order }.firstOrNull { it.kind == RowKind.CONTINUE }?.id
+    val newlyId = NewlyHideTags.hostRowId(rows)
+    val newlyOff = NewlyHideTags.homeSubRowOff(rows, currentConfig.mergeNewlyAdded)
+    for ((id, off) in listOf(continueId to (rows.firstOrNull { it.id == continueId }?.enabled == false), newlyId to newlyOff)) {
+        if (id == null) continue
+        (findHideTagsMount(sect, id)?.closest(".cfg-row") as? HTMLElement)?.classList?.toggle("off", off)
+    }
+}
+
 private fun renderRows(container: Element) {
     val sect = container.querySelector("#sect-rows") ?: return
     val merging = currentConfig.mergeNewlyAdded
@@ -2011,6 +2037,9 @@ private fun renderRows(container: Element) {
     val placement = currentConfig.liveTvHome ?: dev.jellystructure.shared.tv.LiveTvHomePlacement()
     // DEB-1264 (FR-3, FR-7) — the admin offers one list; a layout with several Continue rows gets it on the first in order.
     val hideTagsRowId = currentConfig.rows.sortedBy { it.order }.firstOrNull { it.kind == RowKind.CONTINUE }?.id
+    // DEB-5003 (FR-3, FR-7) — and the layout's one Newly Added list on the first Newly Added row in order, on or off.
+    val newlyTagsRowId = NewlyHideTags.hostRowId(currentConfig.rows)
+    val newlyTagsOff = NewlyHideTags.homeSubRowOff(currentConfig.rows, merging)
 
     val rows = slots.mapIndexed { i, slot ->
         if (slot is RowSlot.LiveTv) {
@@ -2035,8 +2064,11 @@ private fun renderRows(container: Element) {
             // DEB-1264 (FR-7) — the first Continue Watching row carries the "Hide titles tagged" sub-row; `hascond` lets it
             // wrap onto its own line and `off` hides it (the tags are kept) while the row is switched off.
             val hasTags = r.id == hideTagsRowId
-            val rowCls = "cfg-row" + (if (hasTags) " hascond" else "") + (if (hasTags && !r.enabled) " off" else "")
-            """<div class="$rowCls" draggable="true" data-row-i="$i" style="${rowOpacity}transition:opacity .2s"><span class="grab" style="cursor:grab;user-select:none;flex-shrink:0">&#x2807;</span><span class="badge ok" style="flex:none;font-size:.65rem">system</span><div style="flex:1;min-width:0"><div class="nm">${name.htmlEsc()}</div>${if (srcLine.isNotEmpty()) """<div class="src">${srcLine.htmlEsc()}</div>""" else ""}</div>$toggleHtml${if (hasTags) hideTagsMountHtml(r.id) else ""}</div>"""
+            // DEB-5003 (FR-7) — the Newly Added sub-row is `off` only when the layout shows no Newly Added row at all.
+            val hasNewlyTags = r.id == newlyTagsRowId
+            val rowCls = "cfg-row" + (if (hasTags || hasNewlyTags) " hascond" else "") +
+                (if ((hasTags && !r.enabled) || (hasNewlyTags && newlyTagsOff)) " off" else "")
+            """<div class="$rowCls" draggable="true" data-row-i="$i" style="${rowOpacity}transition:opacity .2s"><span class="grab" style="cursor:grab;user-select:none;flex-shrink:0">&#x2807;</span><span class="badge ok" style="flex:none;font-size:.65rem">system</span><div style="flex:1;min-width:0"><div class="nm">${name.htmlEsc()}</div>${if (srcLine.isNotEmpty()) """<div class="src">${srcLine.htmlEsc()}</div>""" else ""}</div>$toggleHtml${if (hasTags) hideTagsMountHtml(r.id) else ""}${if (hasNewlyTags) hideTagsMountHtml(r.id) else ""}</div>"""
         } else if (r.kind == RowKind.RECOMMENDED) {
             val name = r.title?.takeIf { it.isNotBlank() } ?: defaultRowTitle(r.kind)
             """<div class="cfg-row" draggable="true" data-row-i="$i" style="${rowOpacity}transition:opacity .2s"><span class="grab" style="cursor:grab;user-select:none;flex-shrink:0">&#x2807;</span><span class="badge ok" style="flex:none;font-size:.65rem">for you</span><div style="flex:1;min-width:0"><input class="input" style="width:100%;max-width:200px;font-size:.84rem;padding:3px 8px;height:auto" placeholder="Row title" value="${name.htmlEsc()}" data-row-title="$i"><div class="src" style="margin-top:3px">${recommendedRowSource(r, "data-row-limit=\"$i\"")}</div></div>$toggleHtml<button class="btn sm ghost" data-row-del="$i" style="color:var(--bad)">&#x2715;</button></div>"""
@@ -2086,16 +2118,18 @@ private fun renderRows(container: Element) {
                 val cb = sect.querySelector("[data-row-enabled='$idx']") as? HTMLInputElement ?: return@addEventListener
                 cb.checked = !cb.checked; tog.classList.toggle("on", cb.checked)
                 val lbl = tog.previousElementSibling as? HTMLElement; lbl?.textContent = if (cb.checked) "show" else "hidden"
-                (tog.closest(".cfg-row.hascond") as? HTMLElement)?.classList?.toggle("off", !cb.checked)   // DEB-1264 (FR-7)
                 collectConfig(container); renderPreview(container)
+                syncHideTagsOff(sect)   // DEB-1264 (FR-7), DEB-5003 (FR-7)
             }
         }
     }
     // DEB-1264 (FR-7..FR-9) — the list is edited in the unsaved layout and rides the existing Save, like a row toggle.
-    if (hideTagsRowId != null) (sect.querySelector("[$HIDE_TAGS_MOUNT_ATTR]") as? HTMLElement)?.let { host ->
-        mountHideTags(host, rcScope ?: return@let,
-            tags = { currentConfig.rows.firstOrNull { it.id == hideTagsRowId }?.hideTags.orEmpty() },
-            onChange = { next -> currentConfig = currentConfig.copy(rows = currentConfig.rows.map { if (it.id == hideTagsRowId) it.copy(hideTags = next) else it }) })
+    // DEB-5003 (FR-7) — the Newly Added list is a second, independent mount; each is picked by its row's id.
+    for (rowId in listOfNotNull(hideTagsRowId, newlyTagsRowId)) {
+        val host = findHideTagsMount(sect, rowId) ?: continue
+        mountHideTags(host, rcScope ?: continue,
+            tags = { currentConfig.rows.firstOrNull { it.id == rowId }?.hideTags.orEmpty() },
+            onChange = { next -> currentConfig = currentConfig.copy(rows = currentConfig.rows.map { if (it.id == rowId) it.copy(hideTags = next) else it }) })
     }
     sect.querySelector("#merge-newly-added")?.addEventListener("change") { _ ->
         val checked = (sect.querySelector("#merge-newly-added") as? HTMLInputElement)?.checked ?: false
