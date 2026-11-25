@@ -14,6 +14,7 @@ import dev.jellystructure.shared.tv.PlayerCommandEnvelope
 import dev.jellystructure.shared.tv.PlaystateCommandEnvelope
 import dev.jellystructure.shared.tv.RaviloWireJson
 import dev.jellystructure.shared.tv.RememberedChoice
+import dev.jellystructure.shared.tv.SkipMode
 import dev.jellystructure.shared.tv.SessionLoadEnvelope
 import dev.jellystructure.shared.tv.TrackInput
 import dev.jellystructure.shared.tv.rememberPick
@@ -33,6 +34,7 @@ import dev.jellystructure.shared.tv.ReceiverSubPick
 import dev.jellystructure.shared.tv.VttCue
 import dev.jellystructure.shared.tv.activeCueText
 import dev.jellystructure.shared.tv.parseVtt
+import dev.jellystructure.shared.tv.playbackFinished
 import dev.jellystructure.shared.tv.receiverSelectedAudio
 import dev.jellystructure.shared.tv.receiverSelectedSub
 import dev.jellystructure.shared.tv.receiverSubPick
@@ -77,6 +79,9 @@ private const val LONG_AWAY_MS = 5 * 60_000L
 private const val RECONNECT_MAX_MS = 30_000L
 /** R264 — the next-up card's countdown, and when it appears on a title with no credits marker. */
 private const val NEXT_UP_SECS = 10
+
+/** DEB-5630 (FR-48) — the card at the credits, by its primary action (Android TV's `CreditsCardMode`). */
+private enum class CreditsMode { STINGER, NEXT, SKIP }
 /** DEB-5396 (FR-36) — with no trusted credits marker the next episode's encode starts this long before the end (R381's own lead). */
 private const val NEXT_WARM_LEAD_MS = 60_000L
 /** R264 — rows the TV picker shows at once; the window follows the focus. */
@@ -106,12 +111,12 @@ private class Screen(private val serverUrl: String) {
     /** DEB-5396 (FR-36) — the next episode's encode, started at the credits (or 60 s before the end) and dropped by anything but its own start. */
     private val nextWarm = ScreenPrewarm(api, backend::capabilities, ::rememberedAudioFor)
     private val shell = ScreenShell(api, serverUrl, ::reopenServerSetup, onProfileMenu = { openProfileMenu() }, onPlay = ::playFromTv,
+        playback = ScreenPlaybackSwitches(api, { config }, { config = it }),
         prewarmCapabilities = backend::capabilities, prewarmRemembered = ::rememberedAudioFor)
 
     private val signIn = ScreenSignIn(api, deviceId, deviceName(), ::onPaired, onBack = { showPicker() }, onChangeServer = ::reopenServerSetup)
     private val profileUi = ScreenProfiles(profiles, ::selectProfile, ::showSignIn, ::showPicker, ::signOut,
         ::openSettings, ::openMyList)
-        playback = ScreenPlaybackSwitches(api, { config }, { config = it }),
     private var eventsJob: Job? = null
     private var config: RaviloConfig? = null
     private var itemId: String? = null
@@ -161,6 +166,15 @@ private class Screen(private val serverUrl: String) {
     private var nextTitle: String? = null
     private var nextKicker: String? = null
     private var skipShown = false
+    /** DEB-5630 (FR-47) — Auto's countdown ends here; Back on the pill latches [skipIntroCancelled] for this item; [skipIntroDone] holds until the playhead leaves the intro (a seek takes a tick to show). */
+    private var skipDeadline = 0L
+    private var skipIntroCancelled = false
+    private var skipIntroDone = false
+    /** DEB-5630 (FR-48) — the card at the credits (it is [nextUpShown]'s card): which primary action it offers, and whether Watch credits has the focus. */
+    private var creditsMode = CreditsMode.NEXT
+    private var cardOnStay = false
+    /** Skip to scene was taken: the scene's card does not rise again for this item. */
+    private var stingerSkipped = false
     private var nextUpShown = false
     private var nextUpCancelled = false
     private var nextUpDeadline = 0L
@@ -334,7 +348,9 @@ private class Screen(private val serverUrl: String) {
         val requestedUser = activeUserId ?: return
         val fresh = runCatching { api.getConfig() }.getOrNull() ?: return
         if (activeUserId != requestedUser) return
+        val showedProgress = config?.showContinueProgress ?: true
         config = fresh
+        if (fresh.showContinueProgress != showedProgress) shell.redrawHome()
     }
 
     // ── events socket: reconnect with backoff (FR-R264-6) ──
@@ -348,9 +364,7 @@ private class Screen(private val serverUrl: String) {
                     onHomeChanged = { shell.stateChanged() },
                     onPlaystateChanged = { shell.stateChanged() },
                     onPlayItem = { env -> onPlayItem(env) },
-        val showedProgress = config?.showContinueProgress ?: true
                     onPlaystateCommand = { env -> onPlaystateCommand(env) },
-        if (fresh.showContinueProgress != showedProgress) shell.redrawHome()
                     onPlayerCommand = { env -> onPlayerCommand(env) },
                     onNavigate = { env -> onNavigate(env) },
                     onSessionDirective = { type, text -> onSessionDirective(type, text) },
@@ -436,6 +450,7 @@ private class Screen(private val serverUrl: String) {
         segments = env.segments
         nextId = env.nextId; nextTitle = env.nextTitle; nextKicker = env.nextKicker
         nextUpCancelled = false; finishedUnderNextUp = false
+        skipIntroCancelled = false; skipIntroDone = false; stingerSkipped = false   // FR-47, FR-48 — a latch lasts one item
         hideSkip(); hideNextUp(); closePicker(); hideChrome(); chromeFocus = ChromeFocus.PLAY   // FR-29 — a start focuses Play
         loaded = false
         el("loading-title").textContent = env.title.orEmpty()
@@ -821,9 +836,9 @@ private class Screen(private val serverUrl: String) {
 
     // ── R264 (FR-R264-3): Skip Intro, next-up and auto-advance ──
 
-    /** Every 250 ms while loaded: the intro window decides the Skip pill; the credits (or, with no credits
-     *  marker, the last 20 s — and never before a post-credits scene's credits) decide the next-up card,
-     *  whose countdown plays the next episode when it runs out (unless the household turned autoplay off). */
+    /** Every 250 ms while loaded: the intro window decides the Skip pill (DEB-5630, FR-47: by the household's `skip_intro`); the credits
+     *  decide the card (FR-48: a trusted marker, or with none only a Next Episode card in the last second), whose countdown plays the
+     *  next episode when it runs out (unless the household turned autoplay off). */
     private suspend fun segmentLoop() {
         while (true) {
             delay(250)
@@ -832,27 +847,50 @@ private class Screen(private val serverUrl: String) {
             val seg = segments
             val introStart = seg?.introStartMs; val introEnd = seg?.introEndMs
             val inIntro = introStart != null && introEnd != null && pos >= introStart && pos < introEnd - 1_000
-            if (inIntro && !skipShown && !pickerOpen) showSkip() else if (!inIntro && skipShown) hideSkip()
-            if (nextId == null || nextUpCancelled) continue
-            val creditsAt = seg?.creditsStartMs?.takeIf { seg.stinger == null }
-            // DEB-5396 (FR-36) — the next episode's encode starts at the credits, or 60 s before the end with no trusted marker (earlier
-            // than the card, and the same with autoplay off). The loop re-posts it every 30 s.
-            // The position never drops it: a seek back does, from its target ([dropWarmForSeek]), and a re-prepare reads 0 for a moment.
-            val warmAt = nextWarmAtMs()
-            if (warmAt != null && pos >= warmAt) nextId?.let { nextWarm.warm(it, seriesId) }
-            val due = when {
-                creditsAt != null -> pos >= creditsAt
-                // R384 (FR-R384-4) — no marker: the last second (it was 20 s); the countdown runs on past the end.
-                dur > 0 -> dur - pos <= NEXT_UP_NO_MARKER_MS
-                else -> false
+            if (!inIntro) skipIntroDone = false
+            val introMode = skipIntroMode()
+            val pillWanted = inIntro && introMode != SkipMode.OFF && !skipIntroCancelled && !skipIntroDone
+            if (pillWanted && !skipShown && !pickerOpen) showSkip() else if (!pillWanted && skipShown) hideSkip()
+            if (skipShown && introMode == SkipMode.AUTO) {
+                if (nowMs() >= skipDeadline) skipIntro() else el("skip").textContent = skipLabel()
             }
-            if (due && !nextUpShown && !pickerOpen) showNextUp()
-            if (nextUpShown) {
+            if (!nextUpCancelled) {
+                // DEB-5396 (FR-36) — the next episode's encode starts at the credits, or 60 s before the end with no trusted marker (earlier
+                // than the card, and the same with autoplay off). The loop re-posts it every 30 s.
+                // The position never drops it: a seek back does, from its target ([dropWarmForSeek]), and a re-prepare reads 0 for a moment.
+                val warmAt = nextWarmAtMs()
+                if (warmAt != null && pos >= warmAt) nextId?.let { nextWarm.warm(it, seriesId) }
+                if (!nextUpShown && !pickerOpen && cardDue(pos, dur)) showNextUp(creditsModeOf())
+            }
+            if (nextUpShown && creditsMode == CreditsMode.NEXT) {
                 val left = ((nextUpDeadline - nowMs()) / 1000).toInt().coerceAtLeast(0)
                 if (autoplay()) el("nu-c").textContent = ScreenLanguage.t("receiver.starts_in", left)
                 if (autoplay() && nowMs() >= nextUpDeadline) playNext()
             }
         }
+    }
+
+    private fun skipIntroMode(): SkipMode = config?.skipIntro ?: SkipMode.PROMPT
+    private fun skipCreditsMode(): SkipMode = config?.skipCredits ?: SkipMode.PROMPT
+    private fun skipSecs(): Int = (config?.skipSecs ?: 6).coerceIn(1, 30)
+
+    /** FR-48 — Android TV's `creditsCardMode`: a stinger always wins, else a real next episode, else the plain skip. */
+    private fun creditsModeOf(): CreditsMode = when {
+        segments?.stinger != null -> CreditsMode.STINGER
+        nextId != null -> CreditsMode.NEXT
+        else -> CreditsMode.SKIP
+    }
+
+    /**
+     * FR-48 (R230, R384, DEB-3950) — is the card due? *Skip credits: Off* never raises it from the playhead (the real end does, [onFinished]).
+     * At a trusted credits marker it rises for every mode; with none, only a Next Episode card that can advance, in the last second —
+     * never *Skip credits* or *Skip to scene*, which would offer a jump past credits that are already over.
+     */
+    private fun cardDue(pos: Long, dur: Long): Boolean {
+        if (skipCreditsMode() == SkipMode.OFF) return false
+        val creditsAt = trustedCreditsStartMs(segments?.creditsStartMs, dur)
+        if (creditsAt != null) return pos >= creditsAt && !(stingerSkipped && creditsModeOf() == CreditsMode.STINGER)
+        return nextId != null && segments?.stinger == null && dur > 0 && dur - pos <= NEXT_UP_NO_MARKER_MS
     }
 
     private fun autoplay(): Boolean = config?.autoplayNext != false
@@ -884,8 +922,16 @@ private class Screen(private val serverUrl: String) {
 
     private fun showSkip() {
         skipShown = true
-        el("skip").textContent = ScreenLanguage.t("player.skip_intro")
+        skipDeadline = nowMs() + skipSecs() * 1000L
+        el("skip").textContent = skipLabel()
         el("skip").classList.add("on")
+    }
+
+    /** FR-47 — *Auto* counts the seconds left on the pill; *Prompt* is the plain label. */
+    private fun skipLabel(): String {
+        val label = ScreenLanguage.t("player.skip_intro")
+        if (skipIntroMode() != SkipMode.AUTO) return label
+        return label + " · " + ((skipDeadline - nowMs() + 999) / 1000).toInt().coerceIn(0, skipSecs())
     }
     private fun hideSkip() {
         skipShown = false
@@ -896,21 +942,79 @@ private class Screen(private val serverUrl: String) {
     /** FR-R264-4 — from either remote: to the end of the intro, never past it. */
     private fun skipIntro() {
         val end = segments?.introEndMs ?: return
+        skipIntroDone = true
         backend.seekTo(end)
         hideSkip()
         showChrome()
         sendStatus()
     }
 
-    private fun showNextUp() {
+    /** The credits card (FR-48) in [mode]: *Next Episode* is today's card with its countdown; the other two wait for the viewer. */
+    private fun showNextUp(mode: CreditsMode) {
+        creditsMode = mode; cardOnStay = false
         nextUpShown = true
         nextUpDeadline = nowMs() + NEXT_UP_SECS * 1000L
-        el("nu-k").textContent = ScreenLanguage.t("player.up_next")
-        el("nu-t").textContent = listOfNotNull(nextKicker, nextTitle).joinToString(" · ")
-        el("nu-c").textContent = if (autoplay()) ScreenLanguage.t("receiver.starts_in", NEXT_UP_SECS) else ScreenLanguage.t("player.next")
+        val episode = seriesName != null || kicker != null
+        when (mode) {
+            CreditsMode.NEXT -> {
+                el("nu-k").textContent = ScreenLanguage.t("player.up_next")
+                el("nu-t").textContent = listOfNotNull(nextKicker, nextTitle).joinToString(" · ")
+                el("nu-c").textContent = if (autoplay()) ScreenLanguage.t("receiver.starts_in", NEXT_UP_SECS) else ScreenLanguage.t("player.next")
+                el("nu-p").textContent = ScreenLanguage.t("player.next")
+            }
+            CreditsMode.STINGER -> {
+                el("nu-k").textContent = ScreenLanguage.t("player.credits_kicker")
+                el("nu-t").textContent = ScreenLanguage.t("player.stinger_title")
+                el("nu-c").textContent = ""
+                el("nu-p").textContent = ScreenLanguage.t("player.skip_to_scene")
+            }
+            CreditsMode.SKIP -> {
+                el("nu-k").textContent = ScreenLanguage.t("player.credits_kicker")
+                el("nu-t").textContent = ScreenLanguage.t(if (episode) "player.end_of_episode" else "player.end_of_movie")
+                el("nu-c").textContent = ""
+                el("nu-p").textContent = ScreenLanguage.t("player.skip_credits")
+            }
+        }
+        el("nu-w").textContent = ScreenLanguage.t("player.watch_credits")
+        renderCardFocus()
         el("nextup").classList.add("on")
         sendStatus()
     }
+    private fun renderCardFocus() {
+        el("nu-p").classList.toggle("foc", !cardOnStay)
+        el("nu-w").classList.toggle("foc", cardOnStay)
+    }
+
+    /** FR-48 — the card's keys: Left/Right between the two, OK acts, Back is *Watch credits*. False for a key the card does not use. */
+    private fun onCardKey(e: KeyboardEvent): Boolean = when {
+        e.key == "Enter" -> { if (cardOnStay) cancelNextUp() else creditsPrimary(); true }
+        isBack(e) -> { cancelNextUp(); true }
+        e.key == "ArrowLeft" || e.key == "ArrowRight" -> { cardOnStay = e.key == "ArrowRight"; renderCardFocus(); true }
+        else -> false
+    }
+
+    private fun creditsPrimary() = when (creditsMode) {
+        CreditsMode.NEXT -> playNext()
+        CreditsMode.STINGER -> skipToScene()
+        CreditsMode.SKIP -> skipCredits()
+    }
+
+    /** FR-48 — to the scene (R182: its marker, else 2 s before the end of the file, past the long credits roll); the card does not rise again. */
+    private fun skipToScene() {
+        val pos = backend.positionMs()
+        val target = segments?.stinger?.atMs ?: (backend.durationMs() - 2_000L).coerceAtLeast(pos)
+        stingerSkipped = true
+        hideNextUp()
+        seekTo(target, forward = true)
+        showChrome()
+    }
+
+    /** FR-48 — nothing to seek to: the item ends as the end of the stream does, stopped at its length when R347's rule calls it finished. */
+    private fun skipCredits() {
+        hideNextUp()
+        if (playbackFinished(backend.positionMs(), backend.durationMs(), segments?.creditsStartMs)) endHere() else stopAndIdle()
+    }
+
     private fun hideNextUp() { nextUpShown = false; el("nextup").classList.remove("on") }
 
     /** Back on the card, or the phone's *cancel*: this title plays to its end and the set goes idle. R384 — after the
@@ -1094,7 +1198,7 @@ private class Screen(private val serverUrl: String) {
         // the end used to play the next episode at once, cutting a countdown that started 1 s before it to one tick.
         if (nextId != null && !nextUpCancelled && autoplay()) {
             finishedUnderNextUp = true
-            if (!nextUpShown) showNextUp()
+            if (!nextUpShown || creditsMode != CreditsMode.NEXT) showNextUp(CreditsMode.NEXT)   // a stinger's or a film's card has nothing left to offer: the real end is R230's countdown
             return
         }
         endHere()
@@ -1149,7 +1253,9 @@ private class Screen(private val serverUrl: String) {
         // so the phone's remote shows a TV-remote pause within one push. Precedence: the picker, then the
         // next-up card, then Skip Intro, then the transport.
         if (pickerOpen) { onPickerKey(e); if (!pickerOpen) showChrome(); return }   // FR-29 — closing it leaves the controls up, on Audio & subtitles
-        if (nextUpShown && (e.key == "Enter" || isBack(e))) { if (e.key == "Enter") playNext() else cancelNextUp(); sendStatus(); return }
+        if (nextUpShown && onCardKey(e)) { sendStatus(); return }
+        // FR-47 — Auto: Back on the pill cancels the skip for this item (before any other Back, so it does not also hide the controls).
+        if (skipShown && skipIntroMode() == SkipMode.AUTO && isBack(e) && (!chromeUp || chromeFocus == ChromeFocus.SKIP)) { skipIntroCancelled = true; hideSkip(); return }
         if (skipShown && e.key == "Enter" && (!chromeUp || chromeFocus == ChromeFocus.SKIP)) { skipIntro(); return }
         if (!onTransportKey(e)) return
         sendStatus()
@@ -1477,7 +1583,7 @@ private class Screen(private val serverUrl: String) {
             noServer = false,
             // R264 — the next-up card, mirrored to the phone's remote (FR-R245-9's shape).
             hasNext = nextId != null,
-            nextUpSecs = if (nextUpShown && autoplay()) ((nextUpDeadline - nowMs()) / 1000).toInt().coerceAtLeast(0) else null,
+            nextUpSecs = if (nextUpShown && creditsMode == CreditsMode.NEXT && autoplay()) ((nextUpDeadline - nowMs()) / 1000).toInt().coerceAtLeast(0) else null,
             nextTitle = nextTitle,
             audioTracks = t?.let { audioTracksOf(it).map(CastTrack::toScreenTrack) } ?: emptyList(),
             subtitleTracks = t?.let { subtitleTracksOf(it, trackIdBase = 100).map(CastTrack::toScreenTrack) } ?: emptyList(),
