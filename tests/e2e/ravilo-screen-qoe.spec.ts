@@ -19,12 +19,17 @@ const ticket = {
   hls_url: `${API}/hls/m1/master.m3u8`, start_position_ms: 0, expires_at: 9_999_999_999, start_variant_bps: START_VARIANT_BPS,
 };
 
-/** `subs`: the fake AVPlay's position when each sidecar subtitle was asked for (DEB-5503 FR-44). */
-type Seen = { qoe: any[]; probes: string[]; starts: any[]; restreams: any[]; order: string[]; subs: number[] };
+/**
+ * `subs`: the fake AVPlay's position when each sidecar subtitle was asked for (DEB-5503 FR-44).
+ * `firstFrame`: the report each start posts at its first frame (DEB-5621 FR-25); `qoe` holds every report after it, so the
+ * older tests keep counting stalls, switches and the end. `all` is both, in the order they arrived.
+ */
+type Seen = { qoe: any[]; firstFrame: any[]; all: any[]; probes: string[]; starts: any[]; restreams: any[]; order: string[]; subs: number[] };
 
 /** `restreamAnswer`: what /api/tv/playback/restream answers with (default: the same single stream, as the server's DEB-4541 FR-1 would not). */
-async function boot(page: Page, restreamAnswer: object = ticket, startTicket: object = ticket, restreamDelayMs = 0, qoeDelayMs = 0): Promise<Seen> {
-  const seen: Seen = { qoe: [], probes: [], starts: [], restreams: [], order: [], subs: [] };
+async function boot(page: Page, restreamAnswer: object = ticket, startTicket: object = ticket, restreamDelayMs = 0, qoeDelayMs = 0, fakeClock = false): Promise<Seen> {
+  let startsAnswered = 0;
+  const seen: Seen = { qoe: [], firstFrame: [], all: [], probes: [], starts: [], restreams: [], order: [], subs: [] };
   await page.addInitScript(fakeAvPlayInitScript);
   await page.addInitScript(() => {
     localStorage.setItem("ravilo.screen.serverUrl", "http://app:9505");
@@ -42,7 +47,10 @@ async function boot(page: Page, restreamAnswer: object = ticket, startTicket: ob
     if (path === "/api/tv/playback/qoe") {
       const report = JSON.parse(req.postData()!);
       if (qoeDelayMs) await new Promise((r) => setTimeout(r, qoeDelayMs));
-      seen.qoe.push(report); seen.order.push("qoe");
+      seen.all.push(report);
+      // The first report of a start that reached a picture is the first-frame one (it precedes any stall, switch or end).
+      if (seen.starts.length > startsAnswered && report.start_failure_status == null) { startsAnswered = seen.starts.length; seen.firstFrame.push(report); }
+      else { seen.qoe.push(report); seen.order.push("qoe"); }
       return route.fulfill({ status: 204 });
     }
     if (path === "/api/tv/playback/start") { seen.starts.push(JSON.parse(req.postData() ?? "{}")); return json(route, 200, startTicket); }
@@ -59,6 +67,7 @@ async function boot(page: Page, restreamAnswer: object = ticket, startTicket: ob
     if (path.startsWith("/api/tv/image/")) return route.fulfill({ status: 204 });
     return json(route, 404);
   });
+  if (fakeClock) await page.clock.install();   // DEB-5621 — time still flows; `page.clock.runFor` jumps it, firing every timer on the way
   await page.goto(SCREEN_URL);
   await expect(page.locator("#shell-body .home-feed")).toBeVisible();
   return seen;
@@ -641,5 +650,108 @@ test.describe("DEB-5503 — a direct play on AVPlay", () => {
     await page.evaluate(() => (window as any).__avplay.hold());
     await expect.poll(() => seen.restreams.length, { timeout: 10_000 }).toBe(1);
     expect(seen.restreams[0]).toMatchObject({ item_id: "m1", below_bandwidth_bps: FILE_BPS });
+  });
+});
+
+// DEB-5621 (FR-25) — a clean play reaches the server often enough to prove the path: a report at the first frame, another after
+// every 120 s of play since the last post, and one at the end. Under `page.clock` a test jumps time instead of sitting through it;
+// the fake AVPlay's playhead and the app's position loop both run on the same faked timers, so 120 s of play is `runFor(120_000)`.
+test.describe("DEB-5621 FR-25 — a clean play posts at the first frame and after every 120 s of play", () => {
+  const { start_variant_bps: _noRung, ...plain } = ticket;
+  const direct = { ...plain, container: "mkv", direct_play: true, hls_url: `${API}/file/m1.mkv`, encoder: "direct", stream_bps: 14_000_000 };
+  const longStream = (page: Page) => page.evaluate(() => (window as any).__avplay.setDuration(3_600_000));
+  /** Time the app sees pass, and a beat of real time for the post's round trip to land. */
+  const runFor = async (page: Page, ms: number) => { await page.clock.runFor(ms); await page.waitForTimeout(300); };
+
+  test("a ladder play posts at its first frame, again after 120 s of play on the same variant, and at Back", async ({ page }) => {
+    test.setTimeout(90_000);
+    const seen = await boot(page, ticket, ticket, 0, 0, true);
+    await longStream(page);
+    await openAndPlay(page);
+    await expect.poll(() => seen.firstFrame.length, { timeout: 10_000 }).toBe(1);
+    expect(seen.firstFrame[0]).toMatchObject({ item_id: "m1", per_item: true, variant_bandwidth_bps: START_VARIANT_BPS });
+    expect(seen.firstFrame[0].direct_play ?? false).toBe(false);
+    expect(seen.firstFrame[0].rebuffer_count ?? 0).toBe(0);
+    expect(seen.firstFrame[0].first_frame_ms).toBeGreaterThan(0);
+
+    await runFor(page, 115_000);
+    expect(seen.qoe, "115 s of play is under the window").toEqual([]);
+    await runFor(page, 7_000);
+    await expect.poll(() => seen.qoe.length, { timeout: 10_000 }).toBe(1);
+    expect(seen.qoe[0]).toMatchObject({ item_id: "m1", per_item: true, variant_bandwidth_bps: START_VARIANT_BPS });
+    expect(seen.qoe[0].direct_play ?? false).toBe(false);
+    expect(seen.qoe[0].rebuffer_count ?? 0).toBe(0);
+
+    await runFor(page, 30_000);
+    expect(seen.qoe, "the count restarted at that post").toHaveLength(1);
+    await page.keyboard.press("Escape");
+    await expect.poll(() => seen.qoe.length, { timeout: 10_000 }).toBe(2);
+    expect(seen.qoe[1]).toMatchObject({ item_id: "m1", per_item: true, variant_bandwidth_bps: START_VARIANT_BPS });
+  });
+
+  test("a pause of 60 s inside the window delays the second post by 60 s", async ({ page }) => {
+    test.setTimeout(90_000);
+    const seen = await boot(page, ticket, ticket, 0, 0, true);
+    await longStream(page);
+    await openAndPlay(page);
+    await expect.poll(() => seen.firstFrame.length, { timeout: 10_000 }).toBe(1);
+
+    await runFor(page, 30_000);
+    await page.keyboard.press("Enter");                    // pause
+    await expect(page.locator("#overlay")).toHaveClass(/\bon\b/);
+    await runFor(page, 60_000);
+    await page.keyboard.press("Enter");                    // play again
+    await runFor(page, 85_000);                            // 115 s of play, 175 s of wall time: a clock that counted the pause would have posted
+    expect(seen.qoe, "paused time is not play").toEqual([]);
+    await runFor(page, 8_000);
+    await expect.poll(() => seen.qoe.length, { timeout: 10_000 }).toBe(1);
+    expect(seen.qoe[0]).toMatchObject({ per_item: true, variant_bandwidth_bps: START_VARIANT_BPS });
+    expect(seen.qoe[0].rebuffer_count ?? 0).toBe(0);
+  });
+
+  test("a stall at 90 s posts when it ends, and the next timed post is 120 s of play after that one", async ({ page }) => {
+    test.setTimeout(90_000);
+    const seen = await boot(page, ticket, ticket, 0, 0, true);
+    const ap = avplay(page);
+    await longStream(page);
+    await openAndPlay(page);
+    await expect.poll(() => seen.firstFrame.length, { timeout: 10_000 }).toBe(1);
+
+    await runFor(page, 90_000);
+    expect(seen.qoe).toEqual([]);
+    await ap.wait(1_500);
+    await expect.poll(() => seen.qoe.length, { timeout: 10_000 }).toBe(1);
+    expect(seen.qoe[0]).toMatchObject({ per_item: true, rebuffer_count: 1 });
+    expect(seen.qoe[0].stalls).toHaveLength(1);
+
+    // 30 s after the first frame would have been the first timed post's due date had the stall not restarted the count.
+    await runFor(page, 115_000);
+    expect(seen.qoe, "the count restarted at the stall's post").toHaveLength(1);
+    await runFor(page, 8_000);
+    await expect.poll(() => seen.qoe.length, { timeout: 10_000 }).toBe(2);
+    expect(seen.qoe[1]).toMatchObject({ per_item: true, rebuffer_count: 1, variant_bandwidth_bps: START_VARIANT_BPS });
+    expect(seen.qoe[1].stalls).toHaveLength(1);
+  });
+
+  test("a direct play posts at the same moments with direct_play and no variant", async ({ page }) => {
+    test.setTimeout(90_000);
+    const seen = await boot(page, ticket, direct, 0, 0, true);
+    await longStream(page);
+    await openAndPlay(page);
+    await expect.poll(() => seen.firstFrame.length, { timeout: 10_000 }).toBe(1);
+    expect(seen.firstFrame[0]).toMatchObject({ item_id: "m1", per_item: true, direct_play: true });
+    expect(seen.firstFrame[0].variant_bandwidth_bps ?? null).toBeNull();
+
+    await runFor(page, 115_000);
+    expect(seen.qoe).toEqual([]);
+    await runFor(page, 7_000);
+    await expect.poll(() => seen.qoe.length, { timeout: 10_000 }).toBe(1);
+    expect(seen.qoe[0]).toMatchObject({ per_item: true, direct_play: true });
+    expect(seen.qoe[0].variant_bandwidth_bps ?? null).toBeNull();
+    expect(seen.qoe[0].rebuffer_count ?? 0).toBe(0);
+
+    await page.keyboard.press("Escape");
+    await expect.poll(() => seen.qoe.length, { timeout: 10_000 }).toBe(2);
+    expect(seen.qoe[1]).toMatchObject({ per_item: true, direct_play: true });
   });
 });

@@ -43,6 +43,31 @@ class StreamRecordTest {
         assertEquals(1_200, h4.sinceSec)
     }
 
+    @Test fun `DEB-5621 FR-25 — a Samsung first-frame report and one 121 s later prove its rung and a stall in the second does not`() {
+        // The Samsung sends no bandwidth_estimate_bps and no variant but the rung it plays: only variantBps and the stalls reach the fold.
+        val rung = 4_000_000L
+        val clean = RecordSample(rung, emptyList(), perItem = true)
+        val (r1, h1) = foldRecord(StreamRecord(), null, clean, now = 5_000)
+        assertNull(r1.provenBps, "the first-frame report opens the hold and proves nothing")
+        val (r2, _) = foldRecord(r1, h1, clean, now = 5_000 + 121)
+        assertEquals(rung, r2.provenBps)
+        assertEquals(5_000 + 121, r2.provenAt)
+
+        val stalled = RecordSample(rung, listOf(stall(after = 60_000, ms = 1_500, variant = rung)), perItem = true)
+        val (s2, hs2) = foldRecord(r1, h1, stalled, now = 5_000 + 121)
+        assertNull(s2.provenBps, "a stall between the two reports restarts the hold")
+        assertEquals(5_000 + 121, hs2!!.sinceSec)
+    }
+
+    @Test fun `DEB-5621 FR-25 — a direct play with no variant of its own proves the file's bitrate`() {
+        // PlaybackService reads the file's bitrate (fileStreamBpsOf) when a direct play's report carries no variant_bandwidth_bps.
+        val file = 14_000_000L
+        val sample = RecordSample(file, emptyList(), perItem = true)
+        val (r1, h1) = foldRecord(StreamRecord(), null, sample, now = 9_000)
+        val (r2, _) = foldRecord(r1, h1, sample, now = 9_000 + 121)
+        assertEquals(file, r2.provenBps)
+    }
+
     @Test fun `a hold older than the stall neither proves nor clears it`() {
         // The previous play of this file held 53 Mbps for hours; the new play's hand-over has just written the stall.
         val stalled = StreamRecord(stalledBps = 53_000_000, stalledAt = 10_000)

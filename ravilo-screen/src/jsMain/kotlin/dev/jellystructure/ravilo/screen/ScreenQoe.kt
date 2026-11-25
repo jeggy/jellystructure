@@ -28,6 +28,8 @@ private const val CRAWL_WINDOW_MS = 10_000L
 private const val CRAWL_MIN_ADVANCE_PCT = 70L
 /** DEB-5024 (FR-32) — a position this close to the item's duration is the end of the stream: it is neither watched nor restreamed. */
 private const val END_OF_STREAM_MS = 3_000L
+/** DEB-5621 (FR-25) — a report goes out after this much play since the last post, so a clean play closes 309's 2-minute proof hold (`PROOF_HOLD_SEC`). */
+private const val PROOF_EVERY_MS = 120_000L
 /** R381 — the report carries the item's newest 20. */
 private const val MAX_STALLS = 20
 
@@ -40,7 +42,9 @@ private const val MAX_STALLS = 20
  *   subtitle pick, FR-27's step-down) keeps them, and its own start is not a stall.
  * - The **first frame** is the first moving play time while no wait is open; a wait before it is the start, never a stall.
  * - A wait after it that lasts [STALL_MIN_MS] or more is a stall, unless a seek, a pause or a resume explains it.
- * - A report goes out when a stall ends, at a rung switch, and at [end]. A failed post is the post's own business ([post]).
+ * - A report goes out at the first frame, when a stall ends, at a rung switch, after every [PROOF_EVERY_MS] of play since the last
+ *   post (DEB-5621), and at [end]. Play is the position moving: paused time, a stall and a restream's wait do not count, and a post
+ *   for any reason restarts the count. A failed post is the post's own business ([post]).
  * - **FR-27:** once per item, a stall ends with [askLowerRung] when the playing rung is the lowest and it was a second stall
  *   within 2 minutes or one of 4 s or more. The report goes out first.
  * - **FR-32:** AVPlay does not always say when it stalls, so [watchPosition] reads the position itself. One that has not moved
@@ -87,6 +91,10 @@ internal class ScreenQoe(
     private var lastSwitchAtMs = -1L
     private var firstFrameMs: Long? = null
     private var lastStallEndMs = -1L
+    /** DEB-5621 (FR-25) — play time since the last post, and the last position read that counted (-1 = no read to measure from). */
+    private var playSincePostMs = 0L
+    private var playReadAtMs = -1L
+    private var playReadPositionMs = 0L
     private var askedLowerRung = false
     private var frozenRestreamed = false
     private var recoveryAtMs = -1L
@@ -142,6 +150,7 @@ internal class ScreenQoe(
         firstFrameMs = null
         lastStallEndMs = -1L; askedLowerRung = false
         frozenRestreamed = false; recoveryAtMs = -1L
+        playSincePostMs = 0L
         resetLoad()
     }
 
@@ -174,6 +183,7 @@ internal class ScreenQoe(
         waitStartMs = -1L
         watchPositionMs = -1L; frozenStartMs = -1L; quietUntilMs = -1L
         crawlSinceMs = -1L
+        playReadAtMs = -1L
     }
 
     /** A seek, or a play or a pause the viewer made: the wait that follows within moments is theirs, not a stall. */
@@ -227,6 +237,7 @@ internal class ScreenQoe(
     fun watchPosition(positionMs: Long, avPlaying: Boolean, durationMs: Long = 0L) {
         if (itemId == null) return
         val now = clock()
+        countPlay(now, positionMs, avPlaying)
         if (!avPlaying || paused || firstFrameAtMs < 0 || waitStartMs >= 0 || now < quietUntilMs) {
             if (frozenStartMs >= 0) endFrozen(now, count = waitStartMs < 0, ladder = false, hideView = true)
             watchPositionMs = -1L
@@ -250,6 +261,21 @@ internal class ScreenQoe(
             startFrozen(positionMs, watchSinceMs)
         }
         if (!frozenRestreamed && now - frozenStartMs >= FROZEN_RESTREAM_MS) restreamFrozen(now)
+    }
+
+    /**
+     * DEB-5621 (FR-25) — the wall time between two reads is play when AVPlay says PLAYING, nothing waits or is paused, and the position
+     * moved between them. A freeze, a wait, a pause and a restream (its first frame is not here yet) count nothing; the read after
+     * one only measures from itself. [PROOF_EVERY_MS] of it posts.
+     */
+    private fun countPlay(now: Long, positionMs: Long, avPlaying: Boolean) {
+        if (!avPlaying || paused || firstFrameAtMs < 0 || waitStartMs >= 0) { playReadAtMs = -1L; return }
+        val before = playReadAtMs
+        val beforePositionMs = playReadPositionMs
+        playReadAtMs = now; playReadPositionMs = positionMs
+        if (before < 0 || positionMs <= beforePositionMs) return
+        playSincePostMs += now - before
+        if (playSincePostMs >= PROOF_EVERY_MS) postReport(null)
     }
 
     /**
@@ -355,8 +381,10 @@ internal class ScreenQoe(
         val moved = before >= 0 && ms > before
         if (firstFrameAtMs < 0 && moved) {
             firstFrameAtMs = clock()
-            if (firstFrameMs == null) firstFrameMs = firstFrameAtMs - loadAtMs
+            val firstOfItem = firstFrameMs == null
+            if (firstOfItem) firstFrameMs = firstFrameAtMs - loadAtMs
             logStartSpans()
+            if (firstOfItem) postReport(null)   // DEB-5621 (FR-25) — the first frame opens a hold the server can close; a restream's first frame is not the item's
         }
         if (recoveryAtMs >= 0 && moved) finishRecovery(clock())   // FR-32 — the stream a freeze asked for is moving
     }
@@ -416,6 +444,7 @@ internal class ScreenQoe(
 
     private fun postReport(failure: Int?) {
         val id = itemId ?: return
+        playSincePostMs = 0L
         post(PlaybackQoeReport(
             itemId = id,
             rebufferCount = rebufferCount,
