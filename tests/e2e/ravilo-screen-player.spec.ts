@@ -610,14 +610,17 @@ test.describe("DEB-5078 FR-33 — a start that fails on our encoder is asked onc
     // Hold the second start so Back lands while it is in flight.
     let release!: () => void;
     const held = new Promise<void>((r) => { release = r; });
-    await page.route(`${API}/api/tv/playback/start`, async (route) => { if (seen.starts.length >= 1) await held; await route.fallback(); });
+    let starts = 0, inFlight = 0;   // counted here, because the boot's own handler only records a start once it is let through
+    await page.route(`${API}/api/tv/playback/start`, async (route) => { if (starts++ >= 1) { inFlight++; await held; } await route.fallback(); });
     await failNext(page, 1);
     await pressPlay(page);
-    await expect.poll(() => seen.starts.length, { timeout: 15_000 }).toBe(1);
+    // Back only once the second ask is on the wire: before that the title is still the first attempt's (loaded), and Back means something else.
+    await expect.poll(() => inFlight, { timeout: 15_000 }).toBe(1);
     await expect(page.locator("#loading")).toHaveClass(/\bon\b/);
     await page.keyboard.press("Escape");
     await expect(page.locator("#idle")).toHaveClass(/\bon\b/, { timeout: 10_000 });
     release();
+    await expect.poll(() => seen.starts.length, { timeout: 10_000 }).toBe(2);   // the held start is answered, and the app drops it
     await page.waitForTimeout(1_500);
     expect(await opens(page), "the second ticket is never opened").toHaveLength(1);
     await expect(page.locator("#failed")).not.toHaveClass(/\bon\b/);
