@@ -464,3 +464,34 @@ amendment and are listed at the end.
 - Stop on the desktop capsule while the remote is closed (FR-7), and the Screens sheet's end row still reading
   *Stop casting* (`cast.stop`): R245's 2026-10-23 amendment makes the device chip's *Stop casting* **Stop**. The music
   cast block in today's Playing page keeps `cast.stop` until slice 3 retires it (FR-4).
+
+## Amendment 2026-11-25 — what slice 3 chose where this file was silent (DEB-2225)
+
+Slice 3 builds FR-3 and FR-4 as written, keeping the 2026-10-27 rules (a song or a book keeps its speakers and never gets
+subtitles). This text says what the build decided where the file did not, so QA reads the same file the code does.
+
+- **One driver for a queue this app holds.** A song or a book playing on this device, and the same queue cast from it to a
+  speaker, are one driver (`LocalMusicRemote`), read off the player's own state. [`MusicPlayback`] already sends a press to the
+  engine or to the speaker, so the driver needs no second path. It is chosen wherever the player holds a song or a book and the
+  door is this device's own row, this app's cast link, or the *Playing* tab. FR-5's two drivers stay for everything else.
+- **FR-3 on a place reached only through the server.** The session carries the queue's ids and titles and no track facts, so the
+  remote draws the title, the artist, the cover, seek, the transport the place offers, the volume block, **Up next** (a tap jumps,
+  `jump`) and **Stop**. ♥, the version chips and *Bonus*, ⋯, the lyrics, *Playing from*, the cover's swipe and *Up next*'s
+  reorder are **absent** there, as FR-5.3 says of a control the place cannot do. They are present whenever this app holds the
+  queue. Putting the track's facts on `SessionDetail` would be an additive wire field (FR-14) and is not part of this slice.
+- **FR-4's state line has no shipped key.** FR-4 says *Playing here*, FR-15 lists no key for it. Two keys are added,
+  `cast.playing_here` (*Playing here*) and `cast.paused_here` (*Paused here*); the design draws only the first, and the second
+  is the same line while it is paused. da and fo are drafts, as `volume.kept`'s are.
+- **Volume on this device** is the player's level R357 reports (the desktop bar's, the phone's player output), through the same
+  slider row as every place (FR-10 to FR-12). A cast shows the speaker's level or R371's rooms.
+- **Stop on this device** is what the dashboard's Stop already does (FR-R322-12): the song stops and the queue stays, paused
+  where it was, so the remote stays open on *Paused here*. A cast ends and the song comes back to the phone paused (FR-R356-14).
+- **A book on a computer** (the 2026-10-23 amendment left this to slice 3). The bar carries ⏯, −30 s / +30 s and the seek, as it
+  already does for a book. The page keeps what only a book has: the whole-book scrubber with *… left*, the speed and the sleep
+  timer, *Add bookmark* and ⋯ in the column, and the chapters beside the cover where a song has its lyrics. Without the bar (the
+  remote opened over the window, `Dest.Remote`) the column draws the seek and the transport itself.
+- **A station keeps its own page.** FR-3 and FR-4 name songs and books; the radio's *Playing* page (DEB-2659) and its remote shape
+  (DEB-2660) are unchanged, and `RadioPlayingScreen` stays.
+- **Landscape on a phone** keeps FR-R322-6's full-screen page, so its header draws the back; portrait draws none inside the tab.
+- **Retired:** `MusicPlayingScreen`, `BookPlayingScreen`, `DeskPlaying` and `DeskBookPlaying`, with the helpers only they used.
+  `LyricsView`, the book's seek bars, strip, transport and sheets are the same code, now drawn by the remote.
