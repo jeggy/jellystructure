@@ -44,6 +44,9 @@ fun TvApiClient.asSamsungBackend(): SamsungTvBackend = object : SamsungTvBackend
 /** Where a failure's one button leads. */
 enum class Target { FIND, STEP1, STEP2, STEP3, ASK, WAITING }
 
+/** DEB-5504 (FR-13) — which remote the viewer holds: a long one with real number keys, or a Smart Remote with the *123* key. */
+enum class Remote { KEYS, NOKEYS }
+
 /** One screen of the guide. Everything the screen shows is in the value; nothing is derived in the composable. */
 sealed interface GuideScreen {
     data object Loading : GuideScreen
@@ -51,7 +54,8 @@ sealed interface GuideScreen {
     data object Searching : GuideScreen
     data class Pick(val tvs: List<SamsungTv>, val forInstall: Boolean) : GuideScreen
     data object NotFound : GuideScreen
-    data class Step1(val tv: SamsungTv) : GuideScreen
+    /** [remote] is null on the question and set on the instruction (DEB-5504, FR-13). */
+    data class Step1(val tv: SamsungTv, val remote: Remote? = null) : GuideScreen
     data class Step2(val tv: SamsungTv, val phoneIp: String) : GuideScreen
     data class Step3(val tv: SamsungTv) : GuideScreen
     data class Checking(val tv: SamsungTv) : GuideScreen
@@ -80,6 +84,8 @@ class SamsungGuide(
     val screen: StateFlow<GuideScreen> = _screen
     private var job: Job? = null
     private var chosen: SamsungTv? = null
+    /** DEB-5504 (FR-13) — held for as long as the guide is open, forgotten on [open], never persisted. */
+    private var remote: Remote? = null
     private var request: SamsungTvRequest? = null
 
     private fun go(block: suspend () -> Unit) {
@@ -95,6 +101,7 @@ class SamsungGuide(
     /** Opens the guide: re-reads the viewer's requests and lands on the screen their state says. */
     fun open() = go {
         _screen.value = GuideScreen.Loading
+        remote = null
         val mine = backend.list().firstOrNull { it.state != "WITHDRAWN" }
         request = mine
         _screen.value = when (mine?.state) {
@@ -129,7 +136,13 @@ class SamsungGuide(
 
     fun choose(tv: SamsungTv, forInstall: Boolean) {
         chosen = tv
-        if (forInstall) go { checkThenInstall(tv) } else _screen.value = GuideScreen.Step1(tv)
+        if (forInstall) go { checkThenInstall(tv) } else _screen.value = GuideScreen.Step1(tv, remote)
+    }
+
+    /** A tap on one of step 1's two remotes, or on the other tab: the instruction changes in place. */
+    fun pickRemote(r: Remote) {
+        remote = r
+        (_screen.value as? GuideScreen.Step1)?.let { _screen.value = it.copy(remote = r) }
     }
 
     fun next() {
@@ -153,7 +166,7 @@ class SamsungGuide(
         val tv = chosen
         when (to) {
             Target.FIND -> find()
-            Target.STEP1 -> _screen.value = if (tv != null) GuideScreen.Step1(tv) else GuideScreen.Intro(platform.phoneAddress() != null)
+            Target.STEP1 -> _screen.value = if (tv != null) GuideScreen.Step1(tv, remote) else GuideScreen.Intro(platform.phoneAddress() != null)
             Target.STEP2 -> { val ip = platform.phoneAddress(); _screen.value = if (tv != null && ip != null) GuideScreen.Step2(tv, ip) else GuideScreen.Intro(ip != null) }
             Target.STEP3 -> _screen.value = if (tv != null) GuideScreen.Step3(tv) else GuideScreen.Intro(platform.phoneAddress() != null)
             Target.ASK -> _screen.value = if (tv != null) GuideScreen.Ask(tv) else GuideScreen.Intro(platform.phoneAddress() != null)

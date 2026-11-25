@@ -14,6 +14,8 @@ import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.captureToImage
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.runComposeUiTest
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import dev.jellystructure.ravilo.ui.i18n.WithLocale
 import dev.jellystructure.ravilo.ui.theme.AuroraColors
@@ -43,8 +45,11 @@ class GuideScreenshotsTest {
         "03-found" to GuideScreen.Pick(listOf(tv), false),
         "04-found-several" to GuideScreen.Pick(listOf(tv, tvNew), false),
         "05-not-found" to GuideScreen.NotFound,
-        "06-step1" to GuideScreen.Step1(tv),
-        "07-step1-2024" to GuideScreen.Step1(tvNew),
+        "06-step1-question" to GuideScreen.Step1(tv),
+        "06a-step1-keys" to GuideScreen.Step1(tv, Remote.KEYS),
+        "06b-step1-keys-2024" to GuideScreen.Step1(tvNew, Remote.KEYS),
+        "07-step1-nokeys" to GuideScreen.Step1(tv, Remote.NOKEYS),
+        "07a-step1-nokeys-2024" to GuideScreen.Step1(tvNew, Remote.NOKEYS),
         "08-step2" to GuideScreen.Step2(tv, "192.168.1.52"),
         "09-step3" to GuideScreen.Step3(tv),
         "10-checking" to GuideScreen.Checking(tv),
@@ -74,13 +79,13 @@ class GuideScreenshotsTest {
         override suspend fun withdraw(id: Long) = error("not used")
     }
 
-    @Test fun `every guide screen renders in light and dark`() {
-        val dir = File(System.getProperty("samsung.shots") ?: "build/samsung-guide-shots").also { it.mkdirs() }
+    private fun render(dir: File, name: String, themeName: String, colors: dev.jellystructure.ravilo.ui.theme.RaviloColors, screen: GuideScreen, locale: String = "en", fontScale: Float = 1f) {
         val guide = SamsungGuide(stub, backend, CoroutineScope(Dispatchers.Unconfined))
-        for ((themeName, colors) in listOf("dark" to AuroraColors, "light" to DaylightColors)) {
-            for ((name, screen) in screens) runComposeUiTest {
-                setContent {
-                    WithLocale("en") {
+        runComposeUiTest {
+            setContent {
+                val d = LocalDensity.current
+                CompositionLocalProvider(LocalDensity provides Density(d.density, fontScale)) {
+                    WithLocale(locale) {
                         CompositionLocalProvider(LocalRaviloColors provides colors) {
                             Column(Modifier.size(412.dp, 860.dp).background(colors.background).padding(horizontal = 24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                                 GuideBody(screen, guide)
@@ -88,10 +93,28 @@ class GuideScreenshotsTest {
                         }
                     }
                 }
-                val file = File(dir, "$name-$themeName.png")
-                ImageIO.write(onRoot().captureToImage().toAwtImage(), "png", file)
-                assertTrue(file.length() > 1000, "$file is empty")
             }
+            val file = File(dir, "$name-$themeName.png")
+            ImageIO.write(onRoot().captureToImage().toAwtImage(), "png", file)
+            assertTrue(file.length() > 1000, "$file is empty")
+        }
+    }
+
+    private val themes = listOf("dark" to AuroraColors, "light" to DaylightColors)
+    private fun shots() = File(System.getProperty("samsung.shots") ?: "build/samsung-guide-shots").also { it.mkdirs() }
+
+    @Test fun `every guide screen renders in light and dark`() {
+        val dir = shots()
+        for ((themeName, colors) in themes) for ((name, screen) in screens) render(dir, name, themeName, colors, screen)
+    }
+
+    /** DEB-5504 (FR-13a) — the question in Faroese at the 200 % font setting: the labels no longer fit side by side, so the cards stack. */
+    @Test fun `the question stacks its cards at the largest font`() {
+        val dir = shots()
+        for ((themeName, colors) in themes) {
+            render(dir, "06c-step1-question-fo-200", themeName, colors, GuideScreen.Step1(tv), locale = "fo", fontScale = 2f)
+            render(dir, "06d-step1-question-da", themeName, colors, GuideScreen.Step1(tv), locale = "da")
+            render(dir, "06e-step1-nokeys-fo-200", themeName, colors, GuideScreen.Step1(tv, Remote.NOKEYS), locale = "fo", fontScale = 2f)
         }
     }
 }

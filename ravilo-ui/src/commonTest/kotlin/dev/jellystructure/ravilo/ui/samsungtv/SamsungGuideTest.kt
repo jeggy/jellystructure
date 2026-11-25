@@ -94,6 +94,54 @@ class GuideTest {
         g.choose(assertIs<GuideScreen.Pick>(g.screen.value).tvs[0], false); g.next(); g.next(); return g
     }
 
+    // DEB-5504 FR-13 — step 1 asks which remote.
+    private suspend fun TestScope.atStep1(phone: Phone = Phone()): SamsungGuide {
+        val g = guide(phone, Backend()); g.find(); advanceUntilIdle()
+        g.choose(assertIs<GuideScreen.Pick>(g.screen.value).tvs[0], false); return g
+    }
+
+    @Test fun stepOneOpensOnTheQuestion() = runTest {
+        val g = atStep1()
+        assertEquals(null, assertIs<GuideScreen.Step1>(g.screen.value).remote)
+    }
+
+    @Test fun eachChoiceLeadsToItsOwnInstruction() = runTest {
+        for (r in Remote.values()) {
+            val g = atStep1(); g.pickRemote(r)
+            assertEquals(r, assertIs<GuideScreen.Step1>(g.screen.value).remote)
+            g.next(); assertIs<GuideScreen.Step2>(g.screen.value)   // the instruction's one button is FR-3's Next
+        }
+    }
+
+    @Test fun aTabTapSwitchesTheInstructionWithoutLeavingStepOne() = runTest {
+        val g = atStep1(); g.pickRemote(Remote.KEYS); g.pickRemote(Remote.NOKEYS)
+        val s = assertIs<GuideScreen.Step1>(g.screen.value)
+        assertEquals(Remote.NOKEYS, s.remote); assertEquals("192.168.1.9", s.tv.ip)
+        g.pickRemote(Remote.KEYS); assertEquals(Remote.KEYS, assertIs<GuideScreen.Step1>(g.screen.value).remote)
+    }
+
+    @Test fun backAndAnFr4CheckLandOnTheChosenInstruction() = runTest {
+        val g = atStep1(Phone(tv = tvBody(dev = "0"))); g.pickRemote(Remote.NOKEYS)
+        g.next(); g.next(); g.next(); advanceUntilIdle()
+        val p = assertIs<GuideScreen.Problem>(g.screen.value); assertEquals(Target.STEP1, p.back)
+        g.back(p.back); assertEquals(Remote.NOKEYS, assertIs<GuideScreen.Step1>(g.screen.value).remote)
+        g.next(); g.back(Target.STEP1)   // Back from a later step too
+        assertEquals(Remote.NOKEYS, assertIs<GuideScreen.Step1>(g.screen.value).remote)
+    }
+
+    @Test fun closingTheGuideForgetsTheRemote() = runTest {
+        val g = atStep1(); g.pickRemote(Remote.KEYS)
+        g.open(); advanceUntilIdle(); g.find(); advanceUntilIdle()
+        g.choose(assertIs<GuideScreen.Pick>(g.screen.value).tvs[0], false)
+        assertEquals(null, assertIs<GuideScreen.Step1>(g.screen.value).remote)
+    }
+
+    @Test fun aPickOffStepOneIsHeldForWhenTheGuideGetsThere() = runTest {
+        val g = atStep1(); g.next(); g.pickRemote(Remote.KEYS)
+        assertIs<GuideScreen.Step2>(g.screen.value)   // the screen did not move
+        g.back(Target.STEP1); assertEquals(Remote.KEYS, assertIs<GuideScreen.Step1>(g.screen.value).remote)
+    }
+
     @Test fun developerModeOffSendsYouBackToStepOne() = runTest {
         val g = atStep3(Phone(tv = tvBody(dev = "0"))); g.next(); advanceUntilIdle()
         val p = assertIs<GuideScreen.Problem>(g.screen.value)

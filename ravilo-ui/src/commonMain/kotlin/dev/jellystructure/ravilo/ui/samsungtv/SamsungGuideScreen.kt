@@ -2,13 +2,17 @@ package dev.jellystructure.ravilo.ui.samsungtv
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -16,6 +20,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -27,6 +32,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
@@ -34,14 +40,21 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.jellystructure.ravilo.ui.i18n.str
@@ -52,6 +65,9 @@ import dev.jellystructure.ravilo.ui.theme.accentGradient
 
 const val SAMSUNG_GUIDE_TAG = "samsung-guide"
 const val SAMSUNG_GUIDE_PRIMARY_TAG = "samsung-guide-primary"
+/** DEB-5504 (FR-13) — `-keys` / `-nokeys` on the two cards of the question and on the two tabs of the instruction. */
+const val SAMSUNG_GUIDE_REMOTE_CARD_TAG = "samsung-guide-remote-card"
+const val SAMSUNG_GUIDE_REMOTE_TAB_TAG = "samsung-guide-remote-tab"
 
 /**
  * DEB-4843 (FR-3) — the guide. One action per screen, one big button, a drawing, under about 40 words. A screen is a value of
@@ -96,11 +112,18 @@ internal fun GuideBody(screen: GuideScreen, guide: SamsungGuide) {
             s.tvs.forEach { tv -> TvChoice(tv, selectable = s.tvs.size > 1) { guide.choose(tv, s.forInstall) } }
         }
         GuideScreen.NotFound -> Page(null, "samsungtv.notfound.title", body = "samsungtv.notfound.body", art = Art.TV, cta = "samsungtv.retry", onCta = { guide.find() })
-        is GuideScreen.Step1 -> Page(
-            1, "samsungtv.step1.title", art = Art.REMOTE,
-            body = if (s.tv.appSettingsMenu) "samsungtv.step1.body_new" else "samsungtv.step1.body", hint = "samsungtv.step1.hint",
-            cta = "samsungtv.next", onCta = { guide.next() },
-        )
+        is GuideScreen.Step1 -> if (s.remote == null) {
+            // DEB-5504 (FR-13a) — the question: no illustration slot, no primary button; the tap is the step's whole action.
+            Page(1, "samsungtv.step1.title", art = null, body = "samsungtv.step1.which") { RemoteCards { guide.pickRemote(it) } }
+        } else {
+            val keys = s.remote == Remote.KEYS
+            Page(
+                1, "samsungtv.step1.title", art = if (keys) Art.REMOTE_KEYS else Art.REMOTE_NOKEYS,
+                body = "samsungtv.step1." + (if (keys) "keys_body" else "nokeys_body") + (if (s.tv.appSettingsMenu) "_new" else ""),
+                cta = "samsungtv.next", onCta = { guide.next() },
+                aboveArt = { RemoteTabs(s.remote) { guide.pickRemote(it) } },
+            )
+        }
         is GuideScreen.Step2 -> Page(
             2, "samsungtv.step2.title", art = Art.SWITCH, body = "samsungtv.step2.body", hint = "samsungtv.step2.why",
             cta = "samsungtv.next", onCta = { guide.next() }, trouble = "samsungtv.step2.trouble",
@@ -149,13 +172,13 @@ internal fun GuideBody(screen: GuideScreen, guide: SamsungGuide) {
     }
 }
 
-private enum class Art { TV, REMOTE, SWITCH, POWER, WAIT, DONE }
+private enum class Art { TV, REMOTE_KEYS, REMOTE_NOKEYS, SWITCH, POWER, WAIT, DONE }
 
 @Composable
 private fun Page(
     step: Int?,
     title: String?,
-    art: Art,
+    art: Art?,
     body: String? = null,
     bodyText: String? = null,
     hint: String? = null,
@@ -167,6 +190,8 @@ private fun Page(
     quiet: String? = null,
     onQuiet: () -> Unit = {},
     outline: List<String>? = null,
+    /** Directly under the step indicator (DEB-5504, FR-13b: the remote tabs). */
+    aboveArt: (@Composable () -> Unit)? = null,
     extra: (@Composable () -> Unit)? = null,
 ) {
     val colors = RaviloTheme.colors
@@ -176,8 +201,11 @@ private fun Page(
         Text(str("samsungtv.step", mapOf("n" to step.toString())).uppercase(), color = colors.textDim, fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = Sora, letterSpacing = 1.2.sp)
         Spacer(Modifier.height(10.dp))
     }
-    Illustration(art)
-    Spacer(Modifier.height(22.dp))
+    aboveArt?.let { it(); Spacer(Modifier.height(18.dp)) }
+    if (art != null) {
+        Illustration(art)
+        Spacer(Modifier.height(22.dp))
+    }
     if (title != null) {
         Text(str(title), color = colors.text, fontSize = 26.sp, lineHeight = 31.sp, fontWeight = FontWeight.Bold, fontFamily = SpaceGrotesk, textAlign = TextAlign.Center)
         Spacer(Modifier.height(12.dp))
@@ -270,6 +298,12 @@ private fun ProgressBar(fraction: Float?) {
 @Composable
 private fun Illustration(art: Art) {
     val colors = RaviloTheme.colors
+    if (art == Art.REMOTE_KEYS || art == Art.REMOTE_NOKEYS) {
+        Box(Modifier.size(width = 220.dp, height = 150.dp), contentAlignment = Alignment.Center) {
+            RemoteDrawing(if (art == Art.REMOTE_KEYS) Remote.KEYS else Remote.NOKEYS, lit = true, height = 150.dp, face = colors.card, bottom = false)
+        }
+        return
+    }
     val ink = colors.fg.copy(alpha = 0.55f)
     val face = colors.surface
     val accent = colors.accent
@@ -289,13 +323,7 @@ private fun Illustration(art: Art) {
                     else -> drawCircle(accent, 14.dp.toPx(), c)
                 }
             }
-            Art.REMOTE -> {
-                drawRoundRect(face, Offset(w * 0.36f, h * 0.02f), Size(w * 0.28f, h * 0.96f), CornerRadius(22.dp.toPx()))
-                drawRoundRect(ink, Offset(w * 0.36f, h * 0.02f), Size(w * 0.28f, h * 0.96f), CornerRadius(22.dp.toPx()), style = stroke)
-                for (i in 0 until 5) drawCircle(accent, 5.dp.toPx(), Offset(w * (0.43f + 0.07f * (i % 3)), h * (0.2f + 0.14f * (i / 3))))
-                for (i in 0 until 3) drawCircle(ink.copy(alpha = 0.35f), 5.dp.toPx(), Offset(w * (0.43f + 0.07f * i), h * 0.52f))
-                for (i in 0 until 3) drawCircle(ink.copy(alpha = 0.35f), 5.dp.toPx(), Offset(w * (0.43f + 0.07f * i), h * 0.68f))
-            }
+            Art.REMOTE_KEYS, Art.REMOTE_NOKEYS -> {}   // drawn above, by RemoteDrawing
             Art.SWITCH -> {
                 drawRoundRect(accent, Offset(w * 0.25f, h * 0.3f), Size(w * 0.5f, h * 0.38f), CornerRadius(h * 0.19f))
                 drawCircle(Color.White, h * 0.14f, Offset(w * 0.75f - h * 0.19f, h * 0.49f))
@@ -307,4 +335,135 @@ private fun Illustration(art: Art) {
             }
         }
     }
+}
+
+private val CARD_GAP = 12.dp
+private val CARD_PAD = 10.dp
+@Composable private fun cardLabelStyle() = TextStyle(fontSize = 15.sp, lineHeight = 20.sp, fontWeight = FontWeight.SemiBold, fontFamily = Sora)
+
+private fun Remote.labelKey() = if (this == Remote.KEYS) "samsungtv.step1.keys" else "samsungtv.step1.nokeys"
+
+/**
+ * DEB-5504 (FR-13a) — the question's two cards, side by side. When a label no longer fits its half — over two lines, or a word wider
+ * than the card — they stack, one per row, each drawing at the left. The decision is a measurement of the label, not a read of the font
+ * setting (the 200 % font setting is just the usual way to get there).
+ */
+@Composable
+private fun RemoteCards(onPick: (Remote) -> Unit) {
+    val colors = RaviloTheme.colors
+    val measurer = rememberTextMeasurer()
+    val density = LocalDensity.current
+    val labelStyle = cardLabelStyle()
+    val labels = listOf(Remote.KEYS, Remote.NOKEYS).map { it to str(it.labelKey()) }
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val inner = with(density) { ((maxWidth - CARD_GAP) / 2 - CARD_PAD * 2 - 2.dp).roundToPx() }
+        val sideBySide = labels.all { (_, label) ->
+            measurer.measure(label, labelStyle, constraints = Constraints(maxWidth = inner)).lineCount <= 2 &&
+                label.split(' ').all { measurer.measure(it, labelStyle).size.width <= inner }
+        }
+        @Composable fun card(r: Remote, label: String, modifier: Modifier) {
+            val base = modifier
+                .background(colors.card, RoundedCornerShape(14.dp))
+                .border(1.dp, colors.fg.copy(alpha = 0.09f), RoundedCornerShape(14.dp))
+                .testTag("$SAMSUNG_GUIDE_REMOTE_CARD_TAG-${r.name.lowercase()}")
+                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, role = Role.Button, onClick = { onPick(r) })
+            if (sideBySide) Column(base.padding(start = CARD_PAD, end = CARD_PAD, top = 16.dp, bottom = 14.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Box(Modifier.height(140.dp), contentAlignment = Alignment.BottomCenter) { RemoteDrawing(r, lit = false, height = 140.dp, face = colors.background, bottom = true) }
+                Text(label, color = colors.text, style = labelStyle, textAlign = TextAlign.Center)
+            } else Row(base.padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                RemoteDrawing(r, lit = false, height = 124.dp, face = colors.background, bottom = false)
+                Text(label, color = colors.text, style = labelStyle, modifier = Modifier.weight(1f))
+            }
+        }
+        if (sideBySide) Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(CARD_GAP)) {
+            labels.forEach { (r, label) -> card(r, label, Modifier.weight(1f).fillMaxHeight()) }
+        } else Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            labels.forEach { (r, label) -> card(r, label, Modifier.fillMaxWidth()) }
+        }
+    }
+}
+
+/**
+ * DEB-5504 (FR-13b) — the choice after the tap: both labels, the chosen one raised. The chosen tab takes the card surface, a hairline and
+ * a small shadow and never the accent, which on this screen means "the key to press".
+ */
+@Composable
+private fun RemoteTabs(chosen: Remote, onPick: (Remote) -> Unit) {
+    val colors = RaviloTheme.colors
+    Row(
+        Modifier.fillMaxWidth().background(colors.fg.copy(alpha = 0.06f), RoundedCornerShape(14.dp)).padding(4.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        for (r in listOf(Remote.KEYS, Remote.NOKEYS)) {
+            val on = r == chosen
+            val shape = RoundedCornerShape(10.dp)
+            Box(
+                Modifier.weight(1f).heightIn(min = 44.dp)
+                    .testTag("$SAMSUNG_GUIDE_REMOTE_TAB_TAG-${r.name.lowercase()}")
+                    .let { if (on) it.shadow(1.dp, shape).background(colors.card, shape).border(1.dp, colors.fg.copy(alpha = 0.16f), shape) else it }
+                    .selectable(selected = on, interactionSource = remember { MutableInteractionSource() }, indication = null, role = Role.Tab, onClick = { onPick(r) })
+                    .padding(horizontal = 8.dp, vertical = 6.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(str(r.labelKey()), color = if (on) colors.text else colors.textDim, fontSize = 13.5.sp, lineHeight = 18.sp, fontWeight = FontWeight.SemiBold, fontFamily = Sora, textAlign = TextAlign.Center)
+            }
+        }
+    }
+}
+
+/** FR-13c — the four coloured keys every Samsung remote carries. Fixed data, never the accent: a key's colour is the key's own identity. */
+private val KEY_COLOURS = listOf(Color(0xFFE05260), Color(0xFF3FBF7F), Color(0xFFE8C045), Color(0xFF4AA3E8))
+
+/** The basic remote is 300 units long and the Smart Remote 212, on one scale, so the long one looks longer at every size (FR-13c). */
+private const val REMOTE_UNITS_LONG = 300f
+private const val REMOTE_UNITS_SMART = 212f
+
+/**
+ * DEB-5504 (FR-13c) — one of the two remotes as our own vectors on a canvas [height] tall (the long remote's full length; the Smart
+ * Remote takes its share of it, [bottom]- or centre-aligned in it). [lit] draws what the viewer presses: keys 1–5 filled with the accent,
+ * or an accent ring on the Number/Color key. [face] is the surface the remote is not standing on.
+ */
+@Composable
+private fun RemoteDrawing(kind: Remote, lit: Boolean, height: Dp, face: Color, bottom: Boolean) {
+    val colors = RaviloTheme.colors
+    val fg = colors.fg; val accent = colors.accent
+    Canvas(Modifier.size(width = height / 3, height = height)) {
+        val u = size.height / REMOTE_UNITS_LONG
+        val dy = if (kind == Remote.KEYS) 0f else (REMOTE_UNITS_LONG - REMOTE_UNITS_SMART) * u * (if (bottom) 1f else 0.5f)
+        if (kind == Remote.KEYS) drawKeypadRemote(u, face, fg, accent, lit) else drawSmartRemote(u, dy, face, fg, accent, lit)
+    }
+}
+
+private fun DrawScope.disc(u: Float, dy: Float, x: Float, y: Float, r: Float, color: Color) = drawCircle(color, r * u, Offset(x * u, y * u + dy))
+
+private fun DrawScope.drawKeypadRemote(u: Float, face: Color, fg: Color, accent: Color, lit: Boolean) {
+    val key = fg.copy(alpha = 0.14f)
+    drawRoundRect(face, Offset(20 * u, 3 * u), Size(60 * u, 294 * u), CornerRadius(18 * u))
+    drawRoundRect(fg.copy(alpha = 0.5f), Offset(20 * u, 3 * u), Size(60 * u, 294 * u), CornerRadius(18 * u), style = Stroke(2.4f * u))
+    disc(u, 0f, 31f, 22f, 5f, key); disc(u, 0f, 69f, 22f, 5f, key)                       // power, source
+    for (n in 1..9) disc(u, 0f, 31f + ((n - 1) % 3) * 19f, 56f + ((n - 1) / 3) * 24f, 7.6f, if (lit && n <= 5) accent else key)
+    disc(u, 0f, 50f, 128f, 7.6f, key)                                                      // 0
+    drawCircle(fg.copy(alpha = 0.26f), 25 * u, Offset(50 * u, 188 * u), style = Stroke(4.6f * u))
+    disc(u, 0f, 50f, 188f, 9.5f, key)                                                      // D-pad
+    KEY_COLOURS.forEachIndexed { i, c -> disc(u, 0f, 28.5f + i * 14.3f, 240f, 5.2f, c) }
+    drawRoundRect(key, Offset(24 * u, 258 * u), Size(18 * u, 34 * u), CornerRadius(9 * u))   // volume, channel
+    drawRoundRect(key, Offset(58 * u, 258 * u), Size(18 * u, 34 * u), CornerRadius(9 * u))
+}
+
+private fun DrawScope.drawSmartRemote(u: Float, dy: Float, face: Color, fg: Color, accent: Color, lit: Boolean) {
+    val key = fg.copy(alpha = 0.14f)
+    drawRoundRect(face, Offset(22 * u, 3 * u + dy), Size(56 * u, 206 * u), CornerRadius(26 * u))
+    drawRoundRect(fg.copy(alpha = 0.5f), Offset(22 * u, 3 * u + dy), Size(56 * u, 206 * u), CornerRadius(26 * u), style = Stroke(2.4f * u))
+    disc(u, dy, 33f, 24f, 4.6f, key); disc(u, dy, 67f, 24f, 4.6f, key)
+    // The Number/Color key, drawn larger than true scale because it is the subject of the sentence. Ringed, not filled: its own marking stays readable.
+    val k = Offset(23 * u, 37 * u + dy); val ks = Size(34 * u, 27 * u)
+    drawRoundRect(fg.copy(alpha = if (lit) 0.07f else 0.14f), k, ks, CornerRadius(13.5f * u))
+    if (lit) drawRoundRect(accent, k, ks, CornerRadius(13.5f * u), style = Stroke(2.6f * u))
+    KEY_COLOURS.forEachIndexed { i, c -> disc(u, dy, 31f + i * 6f, 50.5f, 2.1f, c) }
+    disc(u, dy, 69f, 50.5f, 5f, key)
+    drawCircle(fg.copy(alpha = 0.26f), 25 * u, Offset(50 * u, 104 * u + dy), style = Stroke(4.6f * u))
+    disc(u, dy, 50f, 104f, 9f, key)
+    disc(u, dy, 32f, 148f, 4.8f, key); disc(u, dy, 50f, 148f, 4.8f, key); disc(u, dy, 68f, 148f, 4.8f, key)
+    drawRoundRect(key, Offset(26 * u, 166 * u + dy), Size(17 * u, 34 * u), CornerRadius(8.5f * u))
+    drawRoundRect(key, Offset(57 * u, 166 * u + dy), Size(17 * u, 34 * u), CornerRadius(8.5f * u))
 }
