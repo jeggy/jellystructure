@@ -183,3 +183,72 @@ answers for the receiver with a video copy (`no ladder: … reencodes=false` in 
 - FR-6: `CastRecoveryTest` covers the receiver's failure status (an error that carries a status gives that status, and one
   that carries none gives `-1`, only when no first frame was seen). A `PlaybackService` test checks that a report with
   `startFailureStatus` logs the line.
+
+## Amendment 2026-11-25 (DEB-5640) — a floor-first ladder keeps a rung to climb to
+
+> Owner on DEB-5531, 2026-11-25: *"lets also try to add support for pre buffering and ladder up again etc. So it feels
+> faster and better and with highest quality possible."* On DEB-5620 the same day: make the Samsung's QoE better.
+
+**What prod shows.** The household's Samsung was measured at 7.3 Mb/s and has never been proven. Its
+take is therefore `measured × 0.7` ≈ 5.1 Mb/s, under `FLOOR_FIRST_TAKE_BPS`, so every one of its 48 plays over three days
+was floor-first. On a 1080p source whose own bitrate is about 7 Mb/s, the backend log of 2026-11-25 reads
+`takes 5108k → cap 5108k` and `rungs=1080p@7034k/480p@1500k/360p@800k/240p@400k start=1`. The rule above keeps the top,
+then 240p, then 360p, and drops the middle rungs from just under the top first. That leaves the 720p rung out:
+
+- The start is 480p (peak `BANDWIDTH` 2.44 Mb/s), the best listed rung inside the take.
+- The only rung above it is the top, at a peak of about 10.7 Mb/s, which a 7.3 Mb/s line cannot carry. AVPlay has nothing
+  it can climb to, so the whole evening plays at 480p.
+- DEB-5621's FR-25 amendment makes a clean play prove its path. But 309's proof is the variant that was held, so 480p
+  proves 2.44 Mb/s, the take does not move, and the next play is the same ladder again.
+
+The floor rungs are right for a thin path. Dropping the one rung the take could climb to is not: a ladder with no
+reachable rung above the start can never climb, and it can never prove the next one.
+
+**FR-2, amended: with a take, the floor-first limit keeps the start rung and the rung above it.** The bullet *"A path that
+is not known to be fast puts the floor first"* now has two cases.
+
+- **No take** (no record, as on a first cast): unchanged. The limit keeps the top, then 240p, then 360p, and drops rungs
+  from just under the top first.
+- **A take** (a measurement, a proof or a stall hold gives one, and it is under 6 Mb/s or a stall hold is live): the four
+  slots go, in this order, to:
+  1. **the start rung**, which is the best rung whose peak `BANDWIDTH` (`rungBandwidth`) fits the take, as `startRungFor`
+     picks it from the full list;
+  2. **the climb rung**, the next rung above the start in the full list. That is the top only when no middle rung lies
+     between them;
+  3. 240p;
+  4. 360p;
+  5. the middle rungs below the start, highest first;
+  6. the rungs above the climb rung, lowest first.
+
+  A rung already holding a slot is not counted twice, and a rung the full list does not have (a floor rung the source
+  sits below, as FR-2 says) is skipped. The listed rungs are drawn top first, as today, and the start rung is chosen
+  from them by `startRungFor`, as today.
+- **The top is dropped** when it is in none of the first four slots. This is the only case where a ladder's highest rung
+  is not the source's own size. Anything that reads `rungs[0]` as the size the job encodes, such as the card placement's
+  load (`jobLoad`), reads the highest listed rung, and that is what the job encodes.
+- **A path with a take of 6 Mb/s or more and no hold** is unchanged: today's rungs, with a floor rung only in a free slot.
+- `held_by` is unchanged (`floor_rungs` when a rung under 480p is listed). The playback log line already lists the rungs,
+  which is how the change is read on prod.
+
+**What it gives the Samsung above.** The same source at a take of 5.1 Mb/s gets `720p@4000k / 480p@1500k / 360p / 240p`,
+and starts at 480p. AVPlay's own ABR may then climb to 720p (peak 6.19 Mb/s) on a 7.3 Mb/s line. Once 720p is held for
+120 s with no stall, FR-25's posts prove it, the take becomes 6.19 Mb/s, the path is no longer floor-first, and the next
+play starts at 720p on today's ladder. A thin path keeps both floor rungs, and so does any take under 2.44 Mb/s: there
+the start is a floor rung or 480p, and the climb rung is the one above it. HEVC works the same way with its own figures.
+
+**Not changed:** the `6 Mb/s` threshold, the start rule, 309's headroom (`× 0.7`), the stall hold, Jellyfin's ladder and
+the route choice (FR-1). No wire change, no schema, no client change: every device that reaches our encoder on a path
+that is not proven gets the climb rung, the Chromecast and Android TV included.
+
+**Tests** (`EncoderPlanTest`):
+- a 1080p H.264 source at about 7 Mb/s with a take of 5.1 Mb/s gets `[720, 480, 360, 240]`, and `startRungFor` picks 480p;
+- the same source with a take of 7 Mb/s gets today's four rungs;
+- the same source with no record gets today's floor-first ladder `[1080, 480, 360, 240]`;
+- a take of 1 Mb/s gets a ladder whose start is 240p and whose next rung up is 360p, both floor rungs kept;
+- a live stall hold with a take of 3 Mb/s keeps 720p as the climb rung;
+- a 2160p HEVC source with a take of 3 Mb/s, the case in *Tests* above, is now `start + climb + 240p + 360p`, and the
+  test's expected list is updated in the same commit.
+
+**Proof (QA, parked on DEB-4608, does not block the build).** On the `tizen-emulator` row with the QA cap at 7 Mb/s and an
+uncapped control: the log's ladder lists 720p, the play starts at 480p, and `variant_switches_up ≥ 1` in the item's QoE
+row. *Field read*, 14 days after the deploy: the household set's start rung and its `proven_bps`.

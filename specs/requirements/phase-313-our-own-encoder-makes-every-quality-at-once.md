@@ -1082,3 +1082,111 @@ amendment restores the FR and says how it reads:
 refused at 5 s, and at 15 s when it is the card's first job since start. A first job that writes segment 0 at 4.9 s is
 not refused. A non-first job that stays silent is not refused. A refused-by-deadline stream answers 410 and its file is
 in `RefusedSources`.
+
+## Amendment 2026-11-25 — the encode is running at the start before the player asks, and a stop stays warm for a minute (DEB-5640)
+
+> Owner on DEB-5531, 2026-11-25: *"lets also try to add support for pre buffering and ladder up again etc. So it feels
+> faster and better and with highest quality possible."* On DEB-5620 the same day: buffering and cache improvements,
+> server-side fixes included when they serve the Samsung.
+
+**What prod shows.** The household's Samsung TV: median first frame 5.1 s over 48 plays (DEB-5531). On 2026-11-25 it
+resumed an episode at 10:44 (segment 322). The backend log reads, in this order:
+
+```
+encoder 20406325…: start at segment 0 — H264 4 rungs …
+encoder 20406325…: first segment in 528 ms (segment 0, variant 1)
+encoder 20406325…: start at segment 322 — H264 4 rungs …
+encoder 20406325…: first segment in 655 ms (segment 322, variant 1)
+```
+
+Two things in that start cost time, and they are both ours:
+
+1. **The job starts only when the player asks for a segment** (`register` → the first `segment()` call). The player's
+   whole open runs first: the ticket's answer, `open()`, the master, the variant playlist, and only then the segment
+   request that starts ffmpeg. Our encoder makes its first segment in about 0.5 s on a warm card, but no part of that
+   overlaps the player's own work.
+2. **A resume encodes the head of the file first.** The master carries `EXT-X-START` for a start past 0, but AVPlay's
+   `prepareAsync` reads segment 0 before the app's `seekTo(start)` (`MediaBackend.kt`). FR-313-7's seek rule then starts
+   a job at 0, and the seek replaces it with a second job at the start. A prewarmed resume (309 FR-309-6, the Samsung's
+   FR-35) is hit the same way: the warm job at the resume point is adopted, and then the read of segment 0 replaces it.
+   Every warm resume starts cold.
+
+A third gap is a cache gap. **A stop deletes everything at once** (FR-313-9, `stopFor`). A viewer who presses Back and
+then Play again, or hides the app and comes back (the Samsung's FR-22), gets a cold encode of the segments the server
+deleted a few seconds before.
+
+### FR-313-19 — A stream's first job starts with its ticket, at its start
+
+- When a play's ticket names one of our streams, its first job starts **when the ticket is issued**, at the ticket's
+  start segment, as a prewarm's does (`Encoder.prewarm`). It does not wait for the first segment request. This holds
+  for a start, a restream and a prepare that issues a ticket.
+- A ticket that adopts a prewarm (309) already has its job running, and nothing changes for it.
+- The job runs under the rules it has today. It pauses 40 s ahead (FR-313-1). If nobody reads it, it is stopped after
+  `IDLE_MS` (60 s), counted from the ticket. FR-313-12's first-segment deadline runs from the job's own start, so an
+  eager job is judged exactly like a lazy one.
+- The job takes its slot under FR-313-8 when it starts, as a play's job does today on its first segment.
+
+### FR-313-20 — The player's opening read does not move the job
+
+While a stream that starts past 0 has served **no segment at or after its start segment**, a request for a segment
+before the start does **not** replace the job at the start. The request is the player reading the head of the list
+while it prepares, as AVPlay does.
+
+- The request is answered by a **side job** of the same plan, started at that segment. It stops after it has written 3
+  segments (6 s), and is kept like a retired job (`KEEP_RETIRED`), so a repeat read of those segments costs nothing.
+- The job at the start keeps running. The first request at or after the start is served by that job, as if the head
+  had never been asked for.
+- Once a segment at or after the start has been served, FR-313-7's seek rule is unchanged. A later read before what the
+  stream has kept is a seek, and it restarts the job.
+- A side job takes a slot under FR-313-8 like any job, and is the first stopped after a prewarm when slots run out.
+- A stream that starts at 0 has no head to read, and nothing changes for it.
+
+### FR-313-21 — A stopped play's encode stays warm for a minute
+
+- When a play on our encoder stops and leaves a resume point, its stream is **not** deleted at once. It becomes the
+  device's prewarm for that item (309's entry, keyed by device and item, `prewarmKey`), with its start at the stop's
+  position, rounded to its segment. What it has made stays on disk, and its job stays paused or running under FR-313-1's
+  40 s rule. "Leaves a resume point" means that R347 does not call the item finished.
+- From there it is an ordinary prewarm:
+  - A play of the same item on the same device whose plan matches and whose start is within one segment adopts it,
+    as `adoptPrewarm` does. Its first segments are then served from disk.
+  - A prewarm post for the same item and plan (the title's page the viewer returns to, the Samsung's FR-35 and Android
+    TV's `DetailPrewarm`) keeps it alive, as `prewarm` does for a matching entry.
+  - Nobody touching it for `IDLE_MS` (60 s) stops it and deletes its folder, as for any idle job.
+  - A `cancelPrewarm` for the item, a start of any other item by the device, and FR-313-8's budget all stop it, as for
+    any prewarm.
+- A stop that finishes the item, a stop that a restream or a replacement makes (the play continues on another stream),
+  a refused stream (FR-313-12) and a download are deleted at once, as today.
+- `encoder_summary` is written at the stop, as today. A later adoption writes its own summary when it stops.
+- FR-313-9 (*"Everything a job wrote is deleted when it stops"*) now reads: when its stream ends, which for a play that
+  leaves a resume point is when this warm minute ends without an adoption.
+
+### Not changed
+
+The plan, the rungs, the start rung, 309's adoption rule (same plan, start within one segment), the 2 s segments, the
+seek rule after the opening read, and the tmpfs cap. No wire change, no schema, no client change. Android TV, the web and
+the Chromecast get FR-313-19 and FR-313-21. FR-313-20 changes nothing for a player that never reads the head.
+
+### Tests
+
+- **FR-313-19** (`EncoderJobsRestartTest`, `EncoderJobsFirstSegmentTest` or a new `EncoderEagerStartTest`, with their fake
+  ffmpeg): issuing a ticket at segment 30 starts one job at 30 before any segment request; the first request for segment
+  30 is served by it with no second start; a ticket never read is stopped at `IDLE_MS`; an adopted prewarm starts no new
+  job.
+- **FR-313-20:** a stream that starts at 322 serves a request for segment 0 from a side job and keeps the job at 322; the
+  next request, for 322, starts no job; the side job stops after 3 segments; after 322 has been served, a request for
+  segment 0 restarts the job as today; a stream at 0 is unchanged.
+- **FR-313-21:** a stop mid-item leaves a prewarm entry for (device, item) at the stop's segment; a start of the same item
+  within one segment adopts it and serves its first segment with no new job; a start 5 segments away stops it and starts
+  fresh; a start of another item stops it; 60 s untouched deletes its folder; a stop at the end, a restream's stop and a
+  download's stop delete at once.
+
+### Proof (QA, parked on DEB-4608; does not block the build)
+
+On the `tizen-emulator` row: a resume of an episode on our ladder logs one `start at segment <k>` and no `start at
+segment 0` before it. `first_frame_ms` against the same resume on the build before. Back, then Play again within 30 s,
+logs `play adopted the prewarm`, and the first frame is under 1.5 s. *Field read*, 14 days after the deploy: the household
+set's median `first_frame_ms` on our encoder, against 5.1 s.
+
+Build order: FR-313-19 and FR-313-20 are one piece. FR-313-21 is a second piece, `blocked` by the first, because both
+change `Encoder.kt` and `EncoderJobs.kt`.

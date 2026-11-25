@@ -1827,3 +1827,154 @@ OK on each sends one `PUT /api/tv/settings` with only that field; a 500 answer p
 with `show_continue_progress: false` no Continue Watching tile has a progress bar, and with `true` they do. In the player
 spec, `autoplay_next: false` set from Settings leaves the next-up card waiting at 0. A look on the set goes on the build's QA
 ticket, parked on DEB-4608.
+
+## Amendment 2026-11-25, fifth (DEB-5640) — a Continue Watching tile warms its play before the page opens
+
+> Owner on DEB-5531, 2026-11-25: *"lets also try to add support for pre buffering … So it feels faster."* On DEB-5620 the
+> same day: buffering and cache improvements on Tizen.
+
+**Why.** Every play on this app goes through a title's page: OK on a tile opens it (`ScreenRouter.activate`), and only the
+page's Play starts a stream. FR-35's warm encode waits until the page has loaded (`getSeries` or `getMovie`, then
+`getPlaystate`, one after the other) and then 2 s more. A viewer who knows what they want opens the page and presses Play
+inside that time, so the start is cold. Continue Watching is where that viewer starts from. Android TV has no Home
+prewarm, so this goes beyond parity, as the owner asked.
+
+**FR-50 · A Continue Watching tile that holds focus for 2 s warms what its page's Play would play.**
+- **Which tiles.** Every tile in the row the server sends as Continue Watching (`RowKind.CONTINUE`). Its card is a film
+  or a series (`MediaCard.kind`): the row has no episode cards, so a show in progress is a series card with its
+  `season_number` and `episode_number`.
+- **What it warms.** The item that tile's page would play (FR-35's `prewarmTarget`):
+  - a film card warms the film's id;
+  - a series card first reads what the page reads, `getSeries(id)` and then the series' entry in `getPlaystate`, and
+    warms `seriesPrimary(…)`'s episode, the page's own choice (the DEB-4832 amendment's order). Those reads start only
+    after the dwell, and a failed or late read (5 s) warms nothing. The page still makes its own reads when it opens.
+- **When.** After the tile has held focus for `ScreenPrewarm.DWELL_MS` (2 s), the app posts `prewarmPlayback` for that
+  item, with the start's own capabilities and FR-23's remembered audio (`prewarmRemembered`, keyed by the series id for a
+  series card and by nothing for a film). This is FR-35's holder (`pageWarm` in `ScreenRouter`), so there is only ever
+  one warm item.
+- **Focus moves.** Focus leaving the tile before the 2 s posts nothing. Focus leaving it after the post cancels at once
+  (`cancelPrewarm`), as FR-35's Back does, unless OK on the tile opened its page.
+- **OK on the tile.** The hold is kept while that tile's page loads. When the page is ready and its Play target is the
+  same item, FR-35 carries on from the hold, with no second dwell and no new post. If the target is another item (an
+  episode the server moved on from), FR-35's re-target rule applies: cancel the old item, then the 2 s again for the new one.
+- **Everything else is FR-35.** A `warm` answer is re-posted every 30 s. A `direct` or `none` answer, or a failure, ends
+  the loop. Home being left for anything other than that tile's page, a phone's push, or hiding the app (FR-22) cancels.
+  Play adopts the job on the server.
+- **No wire change, no backend change.**
+
+**Proof (CI),** `tests/e2e/ravilo-screen-detail.spec.ts` or a new `ravilo-screen-home-warm.spec.ts`, with the fake clock:
+- a Continue Watching film tile focused for 2 s posts one `/api/tv/playback/prewarm` for its id, and one focused for
+  1.5 s posts none;
+- a Continue Watching series tile focused for 2 s reads `/api/tv/series/{id}` and `/api/tv/playstate`, then posts the
+  prewarm for the episode the series' page would play (its `continue_episode_id`); a tile in any other row posts none;
+- moving focus off a warmed tile posts `/prewarm/cancel` for it;
+- OK on a warmed tile, then the page ready with the same target, posts no cancel and no second prewarm, and Play on the
+  page starts with no cancel;
+- the same with a page whose target is another episode cancels the first and warms the second 2 s later.
+
+## Amendment 2026-11-25, sixth (DEB-5640) — the parts of Android TV's pages the Samsung lacks
+
+> Owner on DEB-5620, 2026-11-25: *"These should be making the app better qoe and more like the android tv app etc."*
+> Under the *Parity* non-goal, each item below reaches the Samsung only through this amendment. Each one copies the Android
+> TV look into `screen.css`, so no design round is drawn. Strings are the ones Android TV already uses, all in
+> `ravilo-i18n`.
+
+**What is not a gap.** Android TV has no trickplay thumbnails (`StreamTicket.trickplay_url` is always null), no video
+chapter marks, no playback speed and no stats overlay, so none of them is a gap. The Samsung already has profile switching,
+focus memory per row, My List and the hero.
+
+**FR-51 · A title's page has *More like this*.** This is Android TV's related row (`MovieDetailScreen.kt`,
+`SeriesDetailScreen.kt`, the `related` blocks).
+- The page draws `MovieDetail.related` or `SeriesDetail.related` as a row headed `section.related`. It is the page's last
+  row: after the cast row (FR-7, the DEB-5621 amendment), or after the episodes or the overview when there is no cast.
+- Each tile is Home's poster tile (`ScreenHome.tile`, `TileShape.POSTER`), with FR-52's badges once FR-52 has landed.
+- It is a rail under FR-4, FR-39 and FR-41, and it counts toward FR-42's image slots. Down from the row above reaches it,
+  and Up returns.
+- OK on a tile pushes that title's page, as a tile anywhere else does. Back returns to this page with focus on the same
+  tile (FR-4). FR-35's warm moves with the page: the new page's target replaces the old one.
+- With an empty `related` there is no row and no heading.
+
+**FR-52 · Home's tiles carry Android TV's badges, and a row heading its count.** FR-5 is amended. Copied from
+`HomeScreen.kt` (the row's `Tile` call), `Tile.kt` (`resolveCornerBadges` and the corner badges) and `ContentRow.kt`
+(`rowHeadingCount`):
+- **Top-left:** on a Continue Watching tile, the episode code (`episodeCode(season_number, episode_number,
+  episode_number_end)`, as `S01E05` or `S01E01–E03`). For a newest-first series, the air date takes its place
+  (`continueDateBadge`: the date while in progress, `tile.new_on` before). Otherwise `upcoming_episode` as the *upcoming*
+  badge.
+- **Top-right:** the ✓ watched badge when `watched`, otherwise *upcoming* if the top-left did not take it. This is
+  `resolveCornerBadges` as Android TV calls it on Home (`isNew` false).
+- **Bottom-right:** `quality_badge` (`4K`, `HDR`, …) as R325 draws it.
+- **Under the title,** on a tile outside Continue Watching, `next_up_label` as a second line in `textSecondary`. On a
+  Continue Watching tile the code is on the art, so there is no second line.
+- **The row heading** is followed by its count: `rowHeadingCount(seedTotalCount, items.size)`, shown only when it is above 1.
+- The same tile is used in FR-6's grids and FR-51's row, so they get the badges too. A grid has no heading count.
+- `continueDateBadge`, `airDateText` and `rowHeadingCount` move from `ravilo-ui` to `shared` (pure Kotlin, no Compose),
+  so both apps use the one copy. `ravilo-ui`'s callers keep their behaviour.
+
+**FR-53 · Episode tiles say what they are, and each one can be marked watched.** FR-7 is amended for a series. Copied from
+`EpisodeCard.kt` and `SeriesDetailScreen.kt` (`EpisodeWatchToggle`, `markGroup`, the season's watched line):
+- **Each episode tile** adds, under today's code and title, the runtime (`up.runtime_min`, when `runtime > 0`) and the air
+  date (`airDateText`) on one line in `textSecondary`, then the overview (`Episode.overview`) clamped to two lines. The
+  tile that `continue_episode_id` names wears the `up.new_episode` ribbon, unless it is in progress.
+- **The season's line.** Above the rail: `detail.episodes_watched` (*watched / total*), counted over the season's counted
+  episodes from the page's overlay. When every one is watched, it reads `detail.all_watched`.
+- **A toggle under each tile** is a second focus target (R142): ✓ `action.watched` when watched, otherwise
+  `action.mark_watched`. Down from a tile reaches its toggle, Up returns to the tile, and Left/Right move along the toggles.
+  OK calls `setPlayed(id, !watched, episodeIds)` for the tile's group, as `markGroup` does (a multi-episode file marks
+  all its episodes). The page then redraws from the answer's play-state map: the ✓, the bar, the ribbon, the season line
+  and the primary action. It does not flip the toggle itself (FR-7, server-owned state). A failed call changes nothing.
+- The tile itself still plays its episode (FR-7).
+
+**FR-54 · The player has Android TV's episode rail.** FR-28 and FR-29 are amended. This replaces FR-29's *"↓ from the row
+does nothing, because the Samsung has no episode rail."* Copied from `PlayerScreen.kt` (`EpisodeChip`, `EpisodeRail`,
+`EpisodeRailCard`) and `PlayerScreenState.kt` (`dpadDown`, `chooseEpisode`, the rail's Left/Right/Back).
+- **When it exists.** The playing item is an episode started from the TV's own title page, so the page's `SeriesDetail`
+  is known. The play context (`ScreenPlayContext`) carries the playing episode's season, with its counted episodes and
+  the page's play-state overlay, as `playerEntriesForSeason` builds them. A play started by a phone's push has no rail in
+  this amendment. FR-29 stays as it was for that play.
+- **The chip.** With the controls up and no picker, card or rail open, an *Episodes* chip (`detail.episodes`, a down
+  arrow in the accent circle) sits 12 px under the transport row. It is `EpisodeChip`'s 36 px pill at FR-28's factor.
+- **Opening.** ↓ from the transport row opens the rail, with focus on the playing episode. The controls stay up while it
+  is open, as they do for the picker.
+- **The rail.** It is headed by the season label (`playerRailSeasonLabel`, `detail.season`) and the hint
+  (`player.rail_hint`). Its cards are 200 dp wide at FR-28's factor. Each card has the still, the number, the progress
+  bar, a ✓ when watched, the title and the runtime. The playing card wears `player.now_playing` and an accent ring at rest.
+  The focused card grows, as FR-41's tiles do.
+- **Keys.** ←/→ move along the rail. OK on the playing card closes the rail. OK on any other card starts that episode,
+  the way `playNext()` starts `nextId`: the current play stops, and the start carries that episode's context, with the one
+  after it as `nextId`. FR-23's remembered tracks apply, and FR-36's warm job is cancelled unless the choice is `nextId`.
+  Back or ↑ closes the rail and leaves focus on the transport row. The rail is not a seek, and nothing plays while it opens.
+- **The picker, the next-up card and the skip pill** keep their keys. While one of them is up, the chip is hidden and ↓
+  does not open the rail, as on Android TV.
+
+**Not in this amendment:** *See all* and the seeded grid behind it (after FR-49's person page lands, which shares the grid),
+search suggestions and genre chips, the IMDb, genre and *About* facts in the header, Shuffle, the versions tab in the
+picker, trailers (a YouTube frame on Tizen is unproven), and the focus-detail panel (still *Later*).
+
+**No wire change.** `related`, `MediaCard`'s badge fields, `Row.seedTotalCount`, `Episode.runtime`, `overview`,
+`air_date`, `CardPlayState.continue_episode_id` and `setPlayed(…, episodeIds)` are all decoded or called by `shared` today.
+
+**Proof (CI).** Every item has its own Playwright spec on `ravilo-screen`, with the existing mocks extended:
+- **FR-51,** in `ravilo-screen-detail.spec.ts`: a film with three `related` cards draws the row last, headed
+  `section.related`. Down reaches it. OK on a tile requests that title and draws its page, and Back returns focus to the
+  same tile. An empty `related` draws no heading.
+- **FR-52,** in `ravilo-screen-home.spec.ts`: a Continue Watching episode card shows `S01E05` on its art and has no second
+  line; a newest-first card shows its date; a watched card shows ✓ top-right; a `quality_badge: "4K"` card shows it
+  bottom-right; a row with `seedTotalCount: 37` reads its heading with 37, and a row with one item shows no count. A
+  `:shared:desktopTest` covers the moved functions.
+- **FR-53,** in `ravilo-screen-detail.spec.ts`: an episode tile shows its runtime, date and two-line overview; the
+  `continue_episode_id` tile wears the ribbon; the season line counts the overlay. Down to a toggle and OK posts
+  `PUT /api/tv/played` with that episode's group ids, and the answer redraws the ✓ and the line. A failed answer changes
+  nothing.
+- **FR-54,** in `ravilo-screen-player.spec.ts`: with an episode started from its page, the chip shows under the
+  transport row. ↓ opens the rail on the playing card, → then OK posts `/api/tv/playback/stop` for the current item and
+  `/api/tv/playback/start` for the chosen one, Back closes the rail, and a play from a phone's push shows no chip.
+- `check-tizen-bundle.sh` and FR-13's Chromium 63 CSS guard stay green. The look on the set goes on each build's QA
+  ticket, parked on DEB-4608.
+
+**Build order** (one piece each, each `blocked` only where it shares code with another):
+- FR-51 follows DEB-5631 (FR-7's cast row and FR-49), because both add a row to `ScreenDetail.render` and both route OK
+  on a page tile in `ScreenRouter.activate`.
+- FR-53 follows FR-51, in the same `ScreenDetail.kt`.
+- FR-52 and FR-54 stand alone. FR-54's changes to `Screen.kt` are in the key handling and the chrome, not in the parts
+  DEB-5629 and DEB-5630 changed.
