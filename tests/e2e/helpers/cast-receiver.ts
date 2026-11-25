@@ -17,6 +17,9 @@ export function fakeCafInitScript() {
   w.__castCanDisplay = [];      // every canDisplayType(mime, codec) probe
   w.__castState = "IDLE";       // what getPlayerState() answers; a test flips it
   w.__castLoads = [];           // playerManager.load(request) calls
+  w.__castTime = 0;             // what getCurrentTimeSec() answers (DEB-4994): the player's clock, in seconds
+  w.__castActive = [];          // what the text-track manager's getActiveIds() answers: [] unless a test is the platform's caption control
+  w.__castSetActive = [];       // every setActiveByIds(ids) the receiver asked CAF for
   const interceptors: Record<string, (req: any) => any> = {};
   const listeners: Record<string, Array<(ev: any) => void>> = {};
   const noop = () => {};
@@ -26,8 +29,8 @@ export function fakeCafInitScript() {
     getPlayerState() { return w.__castState; },
     getMediaInformation() { return null; },
     getStats() { return {}; },
-    getTextTracksManager() { return { getActiveIds: () => [], setActiveByIds: noop, getTracks: () => [] }; },
-    getCurrentTimeSec() { return 0; },
+    getTextTracksManager() { return { getActiveIds: () => w.__castActive, setActiveByIds: (ids: number[]) => { w.__castSetActive.push(Array.from(ids)); }, getTracks: () => [] }; },
+    getCurrentTimeSec() { return w.__castTime; },
     getDurationSec() { return 0; },
     seek: noop,
     setTextTrackStyle: noop,
@@ -51,7 +54,7 @@ export function fakeCafInitScript() {
     framework: {
       CastReceiverContext: { getInstance: () => ctx },
       messages: {
-        MessageType: { LOAD: "LOAD" },
+        MessageType: { LOAD: "LOAD", EDIT_TRACKS_INFO: "EDIT_TRACKS_INFO" },
         StreamType: { BUFFERED: "BUFFERED" },
         TrackType: { TEXT: "TEXT" },
         TextTrackType: { SUBTITLES: "SUBTITLES", FORCED: "FORCED" },
@@ -72,7 +75,10 @@ export function fakeCafInitScript() {
     Promise.resolve(interceptors.LOAD({ media: { customData }, customData }))
       .then((r: any) => (r ? { contentId: r.media?.contentId ?? null, contentType: r.media?.contentType ?? null, autoplay: r.autoplay } : null));
   w.__castFire = (type: string, ev: any) => { for (const fn of listeners[type] ?? []) fn(ev); return (listeners[type] ?? []).length; };
-  w.__castHasInterceptor = () => typeof interceptors.LOAD === "function";
+  // DEB-4994 — a phone's or a Mac's EDIT_TRACKS_INFO, through the receiver's interceptor as CAF routes it. Answers what
+  // the interceptor hands back to CAF (the request itself, unchanged) or null.
+  w.__castEdit = (req: any) => { const r = interceptors.EDIT_TRACKS_INFO(req); return r === req ? "same" : r ? "other" : null; };
+  w.__castHasInterceptor = () => typeof interceptors.LOAD === "function" && typeof interceptors.EDIT_TRACKS_INFO === "function";
 }
 
 export async function castSent(page: Page): Promise<any[]> {
@@ -83,6 +89,10 @@ export async function castSent(page: Page): Promise<any[]> {
  *  bundle to register its LOAD interceptor (Receiver.start() runs on window load). */
 export async function openReceiver(page: Page, appUrl: string, opts: { headless?: boolean } = {}) {
   await page.addInitScript(fakeCafInitScript);
+  // One receiver for every spec of the suite (the backend takes any `cast-…` id of 10 to 64 characters on enrolment and
+  // reuses that device). A receiver that has just ended a play still counts against `max_sessions` for 120 s
+  // (PLAYBACK_DEFER_GRACE_MS), so a fresh receiver per spec made the third one wait out the first two's grace.
+  await page.addInitScript(() => { localStorage.setItem("ravilo.cast.receiverId", "cast-e2e-receiver"); });
   if (opts.headless) await page.addInitScript(() => { (window as any).__castHeadless = true; });   // a speaker: no display
   await page.route("https://www.gstatic.com/**", (route) => route.fulfill({ status: 200, contentType: "application/javascript", body: "/* CAF stubbed by the e2e suite */" }));
   await page.goto(`${appUrl}/cast/`, { waitUntil: "load", timeout: 15_000 });

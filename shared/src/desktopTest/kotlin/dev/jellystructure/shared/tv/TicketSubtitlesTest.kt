@@ -28,6 +28,24 @@ class TicketSubtitlesTest {
         assertNull(TicketSubtitles.retryAfterMs(null))
     }
 
+    // ── DEB-4994 (FR-R285-4 b′) — the receiver keeps the active text position ─────────────────────
+    @Test fun an_edit_naming_a_text_track_is_that_position() = assertEquals(1, TicketSubtitles.editedPosition(listOf(101), 2))
+    @Test fun an_edit_takes_the_first_text_id_among_others() = assertEquals(0, TicketSubtitles.editedPosition(listOf(1, 100, 101), 2))
+    @Test fun an_edit_naming_no_text_track_is_off() {
+        assertEquals(-1, TicketSubtitles.editedPosition(emptyList(), 2))
+        assertEquals(-1, TicketSubtitles.editedPosition(listOf(1, 2), 2))
+        assertEquals(-1, TicketSubtitles.editedPosition(listOf(102), 2))
+    }
+    @Test fun an_edit_with_no_active_ids_leaves_the_position_alone() = assertNull(TicketSubtitles.editedPosition(null, 2))
+    @Test fun a_report_names_its_first_text_position() {
+        assertEquals(1, TicketSubtitles.reportedPosition(listOf(101), 2))
+        assertNull(TicketSubtitles.reportedPosition(emptyList(), 2))
+        assertNull(TicketSubtitles.reportedPosition(listOf(100), 0))
+    }
+    @Test fun a_report_that_changed_becomes_the_position() = assertEquals(1, TicketSubtitles.cafChange(1, lastRead = -1))
+    @Test fun a_report_that_did_not_change_overrides_nothing() = assertNull(TicketSubtitles.cafChange(0, lastRead = 0))
+    @Test fun an_empty_report_never_clears() = assertNull(TicketSubtitles.cafChange(null, lastRead = 1))
+
     // ── the Cast receiver's request handler ───────────────────────────────────────────────────────
     private val ownUrl = "$base$own"
 

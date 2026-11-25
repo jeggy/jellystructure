@@ -95,6 +95,28 @@ object TicketSubtitles {
         }
     }
 
+    /** DEB-4994 (FR-R285-4 b′) — CAF track id of text position 0; text position `i` is `FIRST_TEXT_ID + i`. */
+    const val FIRST_TEXT_ID = 100
+
+    /**
+     * DEB-4994 (FR-R285-4 b′) — the text position an `EDIT_TRACKS_INFO`'s `activeTrackIds` ([ids]) names, over [textCount]
+     * text tracks: the first id from 100 to 100 + [textCount] − 1, else -1 (Off). Null — a request with no `activeTrackIds`,
+     * a style or language-only edit — leaves the position alone.
+     */
+    fun editedPosition(ids: List<Int>?, textCount: Int): Int? =
+        ids?.firstOrNull { it in FIRST_TEXT_ID until FIRST_TEXT_ID + textCount }?.let { it - FIRST_TEXT_ID } ?: ids?.let { -1 }
+
+    /** DEB-4994 — the first text position in a CAF `getActiveIds()` report [ids], or null when it names none. */
+    fun reportedPosition(ids: List<Int>, textCount: Int): Int? =
+        ids.firstOrNull { it in FIRST_TEXT_ID until FIRST_TEXT_ID + textCount }?.let { it - FIRST_TEXT_ID }
+
+    /**
+     * DEB-4994 (FR-R285-4 b′) — CAF's own report as the fallback for the platform's caption control: a text position that
+     * differs from [lastRead] (the last one the receiver read from CAF) becomes the position. An empty report, or one that
+     * has not changed, returns null: it never clears a position the receiver set, and a stale answer never overrides one.
+     */
+    fun cafChange(reported: Int?, lastRead: Int): Int? = reported?.takeIf { it != lastRead }
+
     /**
      * DEB-2205 (FR-6) — "the client retries in the background and shows the subtitle when it arrives. It never waits on
      * it." Runs [attempt] until it answers the file: a 202 again after its `Retry-After` (clamped to

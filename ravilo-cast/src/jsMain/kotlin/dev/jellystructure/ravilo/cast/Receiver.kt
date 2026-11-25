@@ -197,6 +197,9 @@ private class Receiver {
     private val subtitleGaveUp = mutableSetOf<String>()
     private var emptySubtitleUrl: String? = null
     private var cueJob: Job? = null
+    /** DEB-4994 (FR-R285-4 b′) — the text position the receiver draws (-1 = none), and the last one it read from CAF's report. */
+    private var textPosition = -1
+    private var cafLastRead = -1
     private var recoveryFrom = -1L
     private var recoveryReason = ""
     private var recoveryRung: Pair<Int?, Long?> = null to null
@@ -396,6 +399,18 @@ private class Receiver {
                 if (current != null) sendStatus()
             }
         }.onFailure { console.warn("ravilo-cast: no SENDER_CONNECTED on this framework (${it.message})") }
+        // DEB-4994 (FR-R285-4 b′) — a sender's pick (the phone's or the Mac's EDIT_TRACKS_INFO) sets the position the receiver
+        // draws, then goes to CAF unchanged so the senders' status and the platform caption list stay as they are. A request
+        // with no activeTrackIds (a style or language-only edit) leaves the position alone. Registered on its own and may fail,
+        // like the QUEUE ones below: a framework build that refuses it costs this path, never the receiver.
+        runCatching { playerManager.setMessageInterceptor(messages.MessageType.EDIT_TRACKS_INFO) { request: dynamic ->
+            runCatching {
+                val ids = request.activeTrackIds
+                val count = receiverSubtitles(ticket).count { it.deliveryMethod != "encode" }
+                TicketSubtitles.editedPosition(if (ids == null) null else idList(ids), count)?.let { setTextPosition(it) }
+            }
+            request
+        } }.onFailure { console.warn("ravilo-cast: no interceptor for EDIT_TRACKS_INFO on this framework (${it.message})") }
         // 286 (dev review 4) — Google's own next/previous (the Home app, the Assistant, a display's remote) arrive
         // as queue messages; on a music LOAD they land on OUR list, never on CAF's (which holds one item).
         //
@@ -787,6 +802,8 @@ private class Receiver {
         request.media.metadata.title = data.title
         request.media.metadata.subtitle = data.kicker ?: ""
         if (defaultSub != null) { val active = js("[]"); active.push(defaultSub); request.activeTrackIds = active }
+        // DEB-4994 (FR-R285-4 b′) — a LOAD sets the position from the ticket: its shown text track, or none.
+        setTextPosition(defaultSub?.let { it - 100 } ?: -1)
         request.currentTime = ((data.positionMs ?: t.startPositionMs) / 1000.0)
         // R285 — a track change made while paused stays paused; every other load autoplays, as before.
         val keepPaused = restream != null && paused
@@ -2022,13 +2039,41 @@ private class Receiver {
      *  place if there is one, else the track this stream carries muxed (R285). */
     private fun selectedAudioPosition(): Int = activeRendition.takeIf { it >= 0 } ?: receiverSelectedAudio(ticket)
 
-    /** Position (in receiverSubtitles) of the CAF text track showing now; -1 = none. Ids are 100 + position. */
-    private fun activeTextPosition(): Int = runCatching {
+    /**
+     * Position (in receiverSubtitles) of the text track showing now; -1 = none. Ids are 100 + position.
+     *
+     * DEB-4994 (FR-R285-4 b′) — the receiver keeps this itself ([textPosition]: set by a LOAD, our `subtitle` command and an
+     * `EDIT_TRACKS_INFO`), so a track CAF dropped (it was handed an empty `blob:` file) cannot take the layer with it.
+     * CAF's own report is only the fallback for the platform's caption control: a text id that differs from the last one
+     * read from it becomes the position. A report that stays empty never clears what the receiver set.
+     */
+    private fun activeTextPosition(): Int {
+        val reported = cafTextPosition()
+        TicketSubtitles.cafChange(reported, cafLastRead)?.let {
+            note("DEB-4994: the platform's caption control picked text track $it")
+            textPosition = it
+        }
+        if (reported != null) cafLastRead = reported
+        return textPosition
+    }
+
+    /** The text position CAF's text-track manager reports active, or null when it reports none (or no text id). */
+    private fun cafTextPosition(): Int? = runCatching {
         val ids = playerManager.getTextTracksManager().getActiveIds()
-        if (ids != null && (ids.length as Int) > 0) (ids[0] as Int) - 100 else -1
-    }.getOrDefault(-1)
+        TicketSubtitles.reportedPosition(idList(ids), receiverSubtitles(ticket).count { it.deliveryMethod != "encode" })
+    }.getOrNull()
+
+    private fun idList(ids: dynamic): List<Int> =
+        if (ids == null) emptyList() else (0 until (ids.length as Int)).mapNotNull { (ids[it] as? Number)?.toInt() }
+
+    /** DEB-4994 — the receiver's own pick (a LOAD, our command, an edit): what CAF answers right now is not a change by the platform. */
+    private fun setTextPosition(position: Int) {
+        textPosition = position
+        cafTextPosition()?.let { cafLastRead = it }
+    }
 
     private fun setActiveText(position: Int) {
+        setTextPosition(position)
         runCatching {
             val ids = js("[]"); if (position >= 0) ids.push(100 + position)
             playerManager.getTextTracksManager().setActiveByIds(ids)

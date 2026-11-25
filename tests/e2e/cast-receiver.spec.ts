@@ -161,4 +161,113 @@ test.describe("Chromecast receiver (R297, R299)", () => {
     expect(notes.some((n) => n.startsWith("load none"))).toBe(true);
     expect((await castSent(page)).map((m) => m.type)).toEqual(["noserver"]);
   });
+
+  // DEB-4994 (R285 FR-R285-4 b′) — the receiver keeps the active text subtitle itself. Its fake CAF reports no active track
+  // at all (`getActiveIds()` is `[]` throughout, as it is when CAF drops a track it could not load), and a pick still
+  // reaches the layer by every path: the LOAD's default, a phone's EDIT_TRACKS_INFO, our `subtitle` command, and — the one
+  // thing that does come from CAF — the platform's own caption control.
+  test("the receiver draws the text subtitle it was given, picked and cleared without CAF reporting any (DEB-4994)", async ({ page, request }) => {
+    test.setTimeout(120_000);
+    const pageErrors: string[] = [];
+    page.on("pageerror", (err) => pageErrors.push(err.message));
+    const login = await request.post("/api/tv/login", {
+      data: { username: JF_USER, password: JF_PASS, device_id: "e2e-cast-phone-4994", device_name: "E2E Cast Phone 4994" }, headers: R252,
+    });
+    expect(login.status(), await login.text()).toBe(200);
+    const phoneToken = (await login.json()).device_token as string;
+    const handoff = await request.post("/api/tv/cast/handoff", { headers: { authorization: `Bearer ${phoneToken}`, ...R252 } });
+    const code = (await handoff.json()).code as string;
+    const itemId = await scannedItemId(request, phoneToken, "Sintel", { username: JF_USER, password: JF_PASS });
+
+    // The ticket the backend hands the receiver gets two text tracks (the first the default), each a path on this server
+    // that needs the device token — the shape DEB-2205 gave an embedded track. Everything else in it is the real ticket.
+    const files: Record<string, string> = {
+      "/api/tv/subtitles/e2e4994/0.vtt": "WEBVTT\n\n1\n00:00:01.000 --> 00:00:50.000\nFirst track line\n",
+      "/api/tv/subtitles/e2e4994/1.vtt": "WEBVTT\n\n1\n00:00:01.000 --> 00:00:50.000\nSecond track line\n",
+    };
+    const asked: Array<{ path: string; authorization: string | undefined }> = [];
+    await page.route("**/api/tv/playback/start", async (route) => {
+      const real = await route.fetch();
+      const ticket = await real.json();
+      ticket.burned_subtitle_index = null;
+      ticket.subtitles = [
+        { index: 3, language: "eng", label: "English", is_default: true, url: "/api/tv/subtitles/e2e4994/0.vtt", delivery_method: "external" },
+        { index: 4, language: "dan", label: "Dansk", is_default: false, url: "/api/tv/subtitles/e2e4994/1.vtt", delivery_method: "external" },
+      ];
+      await route.fulfill({ response: real, json: ticket });
+    });
+    await page.route("**/api/tv/subtitles/e2e4994/*.vtt", async (route) => {
+      const path = new URL(route.request().url()).pathname;
+      asked.push({ path, authorization: route.request().headers()["authorization"] });
+      await route.fulfill({ status: 200, contentType: "text/vtt", body: files[path] ?? "WEBVTT\n\n" });
+    });
+
+    await openReceiver(page, APP_URL);
+    const load = await page.evaluate(
+      (d) => (window as any).__castLoad(d),
+      { server_url: APP_URL, code, item_id: itemId, title: "Sintel", device_name: "E2E Chromecast", lang: "en", sub_size: "M" },
+    );
+    expect(load, "the interceptor should hand CAF a request with a stream").not.toBeNull();
+    const cue = page.locator("#subtitle");
+    const clock = (sec: number) => page.evaluate((s) => { (window as any).__castTime = s; }, sec);
+    const edit = (ids: number[] | undefined) => page.evaluate((a) => (window as any).__castEdit(a === undefined ? { type: "EDIT_TRACKS_INFO" } : { type: "EDIT_TRACKS_INFO", activeTrackIds: a }), ids);
+    const command = (index: number) => page.evaluate((i) => (window as any).__castCommand({ type: "subtitle", index: i }), index);
+    const cueElements = () => page.locator("#subtitle").count();
+
+    // The LOAD's shown track is drawn at its cue's time — and not before it.
+    await clock(0);
+    await expect(cue).toHaveText("");
+    await clock(2);
+    await expect(cue).toHaveText("First track line", { timeout: 10_000 });
+    await expect(cue).toHaveClass(/\bon\b/);
+    // …fetched by the receiver with the device token, once (CAF is handed an empty file, never this URL).
+    expect(asked.map((a) => a.path)).toEqual(["/api/tv/subtitles/e2e4994/0.vtt"]);
+    expect(asked[0].authorization).toMatch(/^Bearer \S+/);
+
+    // A phone's EDIT_TRACKS_INFO: [101] → track 1, [] → off, [100] → track 0 again; each is handed back to CAF as it came.
+    expect(await edit([101])).toBe("same");
+    await expect(cue).toHaveText("Second track line", { timeout: 10_000 });
+    expect(await edit([])).toBe("same");
+    await expect(cue).toHaveText("");
+    await expect(cue).not.toHaveClass(/\bon\b/);
+    expect(await edit([100])).toBe("same");
+    await expect(cue).toHaveText("First track line");
+    // A style or language-only edit has no activeTrackIds and leaves the pick as it is.
+    expect(await edit(undefined)).toBe("same");
+    await page.waitForTimeout(800); // bounded: a clear would land within a tick or two
+    await expect(cue).toHaveText("First track line");
+
+    // Our own `subtitle` command: a text index, then Off.
+    await command(1);
+    await expect(cue).toHaveText("Second track line");
+    await command(-1);
+    await expect(cue).toHaveText("");
+    await command(0);
+    await expect(cue).toHaveText("First track line");
+
+    // CAF's report stays empty all through: the receiver asked it for each pick, and none was needed for the layer.
+    expect(await page.evaluate(() => (window as any).__castActive)).toEqual([]);
+    expect(await page.evaluate(() => (window as any).__castSetActive)).toEqual([[101], [], [100]]);
+
+    // The platform's caption control: CAF's report turning to [101] on its own switches the layer…
+    await page.evaluate(() => { (window as any).__castActive = [101]; });
+    await expect(cue).toHaveText("Second track line", { timeout: 10_000 });
+    // …and its report going empty again clears nothing the receiver holds.
+    await page.evaluate(() => { (window as any).__castActive = []; });
+    await page.waitForTimeout(800);
+    await expect(cue).toHaveText("Second track line");
+
+    // One cue element at a time, and the clock past the cue's end draws nothing.
+    expect(await cueElements()).toBe(1);
+    await clock(60);
+    await expect(cue).toHaveText("");
+
+    // The play ends as a real one does, so its session is not left counting against the receivers' ceiling (`max_sessions`)
+    // for the next spec: the layer clears with it, and the backend is told to stop.
+    const stoppedBefore = (await (await request.get(`${JF_URL}/__mock/stats`)).json()).stopped as number;
+    await page.evaluate(() => { (window as any).__castState = "PLAYING"; (window as any).__castFire("MEDIA_FINISHED", { endedReason: "END_OF_STREAM" }); });
+    await expect.poll(async () => (await castSent(page)).filter((m) => m.type === "ended").length, { timeout: 10_000 }).toBe(1);
+    await expect.poll(async () => (await (await request.get(`${JF_URL}/__mock/stats`)).json()).stopped - stoppedBefore, { timeout: 10_000 }).toBe(1);
+    expect(pageErrors).toEqual([]);
+  });
 });
