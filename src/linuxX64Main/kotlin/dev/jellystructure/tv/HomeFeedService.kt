@@ -529,11 +529,21 @@ class HomeFeedService(
             return canonical.any { it.mediaItem.matchesChannel(channelCfg, heroIds) && !it.mediaItem.hiddenBy(hideTags) }
         }
 
+        // DEB-5003 (FR-4): a Newly Added row counts only while at least one candidate survives its list.
+        fun newlyRowNonEmpty(hideTags: List<String>, mediaKind: String? = null): Boolean = filtered.any {
+            !it.hiddenBy(hideTags) && when (mediaKind) {
+                "MOVIE" -> it.kind == MediaKind.MOVIE
+                "SERIES" -> it.kind == MediaKind.TV_SHOW
+                "MUSIC_VIDEO" -> it.kind == MediaKind.MUSIC_VIDEO
+                else -> true
+            }
+        }
+
         val channelRows = channelCfg.rows
         if (channelRows?.mode == "custom") {
             val sys = channelRows.system
             if (sys.cont.show && continueRowNonEmpty(sys.cont.hideTags)) return true
-            if (sys.newly.show) return true  // filtered already known non-empty above; addNewlyAddedRows applies no further per-item filter
+            if (sys.newly.show && newlyRowNonEmpty(sys.newly.hideTags)) return true
             return channelRows.items.filter { it.enabled }.any { rowCfg ->
                 if (rowCfg.kind == RowKind.RECOMMENDED) recommendedIn(device, filtered).isNotEmpty()
                 else filtered.any { matchesConfiguredRow(it, rowCfg, heroIds, cascade) }
@@ -543,16 +553,12 @@ class HomeFeedService(
         // merge-mode injects a merged Newly Added row purely off the config.mergeNewlyAdded flag,
         // independent of whether any RowConfig of kind NEWLY_ADDED is even enabled — see the merge
         // block at the end of buildRows.
-        if (config.mergeNewlyAdded) return true
+        val newlyHide = newlyHideTagsOf(config)
+        if (config.mergeNewlyAdded && newlyRowNonEmpty(newlyHide)) return true
         return config.rows.filter { it.enabled }.any { rowCfg ->
             when (rowCfg.kind) {
                 RowKind.CONTINUE -> continueRowNonEmpty(rowCfg.hideTags)
-                RowKind.NEWLY_ADDED -> when (rowCfg.mediaKind) {
-                    "MOVIE" -> filtered.any { it.kind == MediaKind.MOVIE }
-                    "SERIES" -> filtered.any { it.kind == MediaKind.TV_SHOW }
-                    "MUSIC_VIDEO" -> filtered.any { it.kind == MediaKind.MUSIC_VIDEO }
-                    else -> true  // null mediaKind splits into Movies/Series; filtered non-empty ⇒ at least one exists
-                }
+                RowKind.NEWLY_ADDED -> newlyRowNonEmpty(newlyHide, rowCfg.mediaKind)  // null mediaKind splits into Movies/Series
                 RowKind.GENRE, RowKind.CUSTOM -> filtered.any { matchesConfiguredRow(it, rowCfg, heroIds, cascade) }
                 RowKind.RECOMMENDED -> recommendedIn(device, filtered).isNotEmpty()
             }
@@ -594,7 +600,7 @@ class HomeFeedService(
                         val cont = canonical.filter { it.mediaItem.matchesChannel(channelFilter!!, heroIds) && !it.mediaItem.hiddenBy(sys.cont.hideTags) }.capped()
                         if (cont.cards.isNotEmpty()) result.add(Row("continue", "Continue Watching", RowKind.CONTINUE, cont.cards, seedTotalCount = cont.total))
                     }
-                    CHANNEL_ORDER_NEWLY -> if (sys.newly.show) addNewlyAddedRows(result, all, merge = sys.newly.merge)
+                    CHANNEL_ORDER_NEWLY -> if (sys.newly.show) addNewlyAddedRows(result, all, merge = sys.newly.merge, hideTags = sys.newly.hideTags)  // DEB-5003 (FR-3)
                     else -> for (rowCfg in enabledItems.filter { it.id == token }) {
                         if (rowCfg.kind == RowKind.RECOMMENDED) buildRecommendedRow(rowCfg, device, all, channelFilter)?.let { result.add(it) }
                         else result.addAll(buildFilterRows(rowCfg, all, heroIds, channelFilter))
@@ -607,6 +613,8 @@ class HomeFeedService(
         // ── Home / inherit-mode channel — unchanged behaviour (config.rows drives system + filter rows).
         val enabledRows = config.rows.filter { it.enabled }.sortedBy { it.order }
         val mergeNewly = config.mergeNewlyAdded
+        // DEB-5003 (FR-3): one Newly Added list per layout, applied to every Newly Added row it produces.
+        val newlyHide = newlyHideTagsOf(config)
         for (rowCfg in enabledRows) {
             when (rowCfg.kind) {
                 RowKind.CONTINUE -> {
@@ -626,7 +634,7 @@ class HomeFeedService(
                     if (mergeNewly) continue  // merged → single row injected below
                     // mediaKind=null (the "newly-all" system row) → split into Movies then Series (R71).
                     if (rowCfg.mediaKind == null) {
-                        addNewlyAddedRows(result, all, merge = false, idPrefix = rowCfg.id, titlePrefix = rowCfg.title)
+                        addNewlyAddedRows(result, all, merge = false, idPrefix = rowCfg.id, titlePrefix = rowCfg.title, hideTags = newlyHide)
                         continue
                     }
                     val filtered = when (rowCfg.mediaKind) {
@@ -636,6 +644,7 @@ class HomeFeedService(
                         else     -> all
                     }
                     val cards = filtered
+                        .filter { !it.hiddenBy(newlyHide) }  // DEB-5003 (FR-4): before the cap
                         .let { orderRow(it, null) }
                         .mapNotNull { it.toMediaCardOrNull() }
                         .distinctBy { it.id }
@@ -650,6 +659,7 @@ class HomeFeedService(
         // Merge on → inject one merged NEWLY_ADDED row at the first configured NEWLY_ADDED position.
         if (mergeNewly) {
             val mergedCards = all
+                .filter { !it.hiddenBy(newlyHide) }  // DEB-5003 (FR-4): before the cap
                 .let { orderRow(it, null) }
                 .mapNotNull { it.toMediaCardOrNull() }
                 .distinctBy { it.id }
@@ -671,14 +681,21 @@ class HomeFeedService(
         return result
     }
 
-    /** R143: append the Newly Added section from [src] — one merged row, or split Movies + Series rows. */
+    /** DEB-5003 (FR-3): the layout's one Newly Added list — the `hide_tags` of its first NEWLY_ADDED row in `order`, switched on or not. */
+    private fun newlyHideTagsOf(config: RaviloConfig): List<String> =
+        config.rows.sortedBy { it.order }.firstOrNull { it.kind == RowKind.NEWLY_ADDED }?.hideTags.orEmpty()
+
+    /** R143: append the Newly Added section from [all] — one merged row, or split Movies + Series rows. */
     private fun addNewlyAddedRows(
         result: MutableList<Row>,
-        src: List<MediaItem>,
+        all: List<MediaItem>,
         merge: Boolean,
         idPrefix: String = "newly-added",
         titlePrefix: String? = null,
+        hideTags: List<String> = emptyList(),
     ) {
+        // DEB-5003 (FR-4): the tag filter runs before orderRow's cap, so a hidden title never takes a slot.
+        val src = all.filter { !it.hiddenBy(hideTags) }
         if (merge) {
             val cards = orderRow(src, null).mapNotNull { it.toMediaCardOrNull() }.distinctBy { it.id }
             if (cards.isNotEmpty()) result.add(Row(idPrefix, titlePrefix ?: "Newly Added", RowKind.NEWLY_ADDED, cards))
