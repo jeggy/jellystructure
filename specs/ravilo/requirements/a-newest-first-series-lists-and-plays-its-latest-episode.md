@@ -84,7 +84,9 @@ What changes, each FR carrying a pointer back here:
   - **The resume kicker, the primary button (FR-10) and the Continue tile (FR-15)** show the when, never the
     title: *Play newest · Mon 23 Nov · 21.00*, *Resume · Mon 23 Nov · 21.00*, *New · Mon 23 Nov · 21.00*. They
     already sit next to the title, or have no room for it.
-  - **The player's title line** follows the card: the title, then the when.
+  - **The player's title line** follows the card: the episode's title is the title line, and the when takes the
+    code's place in the kicker the player already draws above it. Which of the two is the main label is what
+    matters; the player's layout does not change (clarified 2026-11-25, DEB-5666).
   - An episode with no `air_date` keeps its code where the when would be, as before.
 - **FR-16a — Strings.** `time.hour_minute` in en (`{h}:{m}`), da and fo (`{h}.{m}`). Nothing else is new.
 - **FR-18.** The wire gains `Episode.air_time` and `MediaCard.episode_air_time`. Both are optional, and nothing is
