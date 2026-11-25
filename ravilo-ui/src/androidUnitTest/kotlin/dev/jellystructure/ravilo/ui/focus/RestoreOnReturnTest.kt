@@ -64,6 +64,13 @@ class RestoreOnReturnTest {
         }
     }
 
+    /** The list the grid is given changes. The write is announced to the composition at once: a restore that has already
+     *  landed leaves no frame awaiter to carry it, and the paused test clock would not apply it. */
+    private fun refetch(now: List<String>) {
+        keys = now
+        androidx.compose.runtime.snapshots.Snapshot.sendApplyNotifications()
+    }
+
     private fun frames(n: Int) = repeat(n) { rule.mainClock.advanceTimeByFrame() }
 
     private fun settle() = rule.mainClock.advanceTimeBy(500)
@@ -79,7 +86,7 @@ class RestoreOnReturnTest {
     private fun refetchDropsOpened(afterFrames: Int) {
         render("k3", 2)
         frames(afterFrames)
-        keys = all - "k3"
+        refetch(all - "k3")
         settle()
         rule.onNodeWithTag("k4").assertIsFocused()      // the tile now at index 2
         assertEquals(1, resolved)
@@ -92,7 +99,7 @@ class RestoreOnReturnTest {
     private fun refetchEmpties(afterFrames: Int) {
         render("k3", 2)
         frames(afterFrames)
-        keys = emptyList()
+        refetch(emptyList())
         settle()
         assertEquals(1, resolved)
         assertEquals(1, empties)                        // the empty target was asked for focus, once
@@ -104,9 +111,9 @@ class RestoreOnReturnTest {
     @Test fun `two refetches during one restore — the last list wins, counted from the last change`() {
         render("k3", 2)
         frames(1)
-        keys = all - "k3"
+        refetch(all - "k3")
         frames(1)
-        keys = all - "k3" - "k4"
+        refetch(all - "k3" - "k4")
         settle()
         rule.onNodeWithTag("k5").assertIsFocused()
         assertEquals(1, resolved)
@@ -115,7 +122,7 @@ class RestoreOnReturnTest {
     @Test fun `a refetch that keeps the opened tile at a new index still lands on it`() {
         render("k3", 2)
         frames(1)
-        keys = listOf("k0") + all
+        refetch(listOf("k0") + all)
         settle()
         rule.onNodeWithTag("k3").assertIsFocused()
         assertEquals(1, resolved)

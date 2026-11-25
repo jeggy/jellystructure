@@ -5,6 +5,7 @@ import dev.jellystructure.ravilo.ui.focus.chipFocusRing
 import dev.jellystructure.ravilo.ui.focus.focusRing
 import dev.jellystructure.ravilo.ui.components.PageTitle
 import dev.jellystructure.ravilo.ui.focus.GridFocus
+import dev.jellystructure.ravilo.ui.focus.browseLazyGridState
 import dev.jellystructure.ravilo.ui.focus.gridColumnKeys
 import dev.jellystructure.ravilo.ui.focus.scrollThenFocus
 import dev.jellystructure.ravilo.ui.focus.requestFocusAwaiting
@@ -204,7 +205,7 @@ class SeededBrowseStore(
     val state: StateFlow<SeededBrowseState> = _state.asStateFlow()
     private val _seerrOverflow = MutableStateFlow<List<dev.jellystructure.shared.tv.DiscoverEntry>>(emptyList())
     val seerrOverflow: StateFlow<List<dev.jellystructure.shared.tv.DiscoverEntry>> = _seerrOverflow.asStateFlow()
-    val gridState = LazyGridState()
+    val gridState = browseLazyGridState()
     val facetBarState = LazyListState()
     /** R362 (FR-R362-1) — the facet-bar chip last focused (a facet's name, `"reset"` or `"sort"`): Down from the app
      *  bar and Up from the grid return to it while it is fully on screen. Replaces the bar's `focusRestorer()`. */

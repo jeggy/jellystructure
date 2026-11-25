@@ -7,6 +7,7 @@ import dev.jellystructure.ravilo.ui.isTvPlatform
 import dev.jellystructure.ravilo.ui.focus.requestFocusRetryingOrMoveNative
 import dev.jellystructure.ravilo.ui.focus.requestFocusAwaiting
 import androidx.compose.ui.focus.FocusDirection
+import dev.jellystructure.ravilo.ui.focus.browseLazyGridState
 import dev.jellystructure.ravilo.ui.focus.gridColumnKeys
 import androidx.compose.ui.platform.LocalFocusManager
 import dev.jellystructure.ravilo.ui.focus.rememberGridFocus
@@ -113,7 +114,7 @@ class BrowseStore(private val apiClient: TvApiClient) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val _state = MutableStateFlow<BrowseState>(BrowseState.Loading)
     val state: StateFlow<BrowseState> = _state.asStateFlow()
-    val gridState = LazyGridState()   // R137: retained grid scroll survives navigate→back
+    val gridState = browseLazyGridState()   // R137: retained grid scroll survives navigate→back
     var focusItemKey: String? = null  // R139: the grid cell the user last navigated from
     var focusItemIndex: Int = 0       // R361 (FR-R361-4/5): where it sat in the list when opened
     private var loadJob: Job? = null

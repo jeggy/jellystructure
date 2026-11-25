@@ -1,8 +1,12 @@
 package dev.jellystructure.ravilo.ui.focus
 
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.lazy.grid.LazyGridState
+import androidx.compose.foundation.lazy.layout.LazyLayoutCacheWindow
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.getValue
@@ -37,8 +41,9 @@ import kotlinx.coroutines.launch
  */
 @Stable
 class GridFocus internal constructor(val gridState: LazyGridState) {
-    private val targetFR = FocusRequester()
-    private var targetKey by mutableStateOf<Any?>(null)
+    /** One requester per composed item, by key — a plain map, never snapshot state: a press must not invalidate the
+     *  composition of every tile (DEB-2448, FR-R362-5). Registered by [itemModifier] while the item is composed. */
+    private val requesters = HashMap<Any, FocusRequester>()
 
     /** R361 (FR-R361-7) — a Back-return restore that has not landed yet. A refresh that arrives while it is set is
      *  the restore's to resolve (it starts again on the new list), not [followRefresh]'s. */
@@ -54,31 +59,50 @@ class GridFocus internal constructor(val gridState: LazyGridState) {
     var gridFocused by mutableStateOf(false)
         internal set
 
-    /** Attach to each grid item's outermost node: tracks focus, and carries the target requester while the item is
-     *  the one a restore or a refresh aims at. */
-    fun itemModifier(key: Any, index: Int): Modifier = Modifier
-        .onFocusChanged {
-            if (it.hasFocus) { focusedKey = key; focusedIndex = index }
-            else if (focusedIndex == index && focusedKey == key) focusedIndex = -1
+    /** Attach to each grid item's outermost node: tracks focus, and carries the item's own requester, by which a
+     *  press, a restore or a refresh focuses it once it is composed. Nothing here changes on a press except the two
+     *  items whose focus changes. */
+    @Composable
+    fun itemModifier(key: Any, index: Int): Modifier {
+        val fr = remember(key) { FocusRequester() }
+        DisposableEffect(key, fr) {
+            requesters[key] = fr
+            onDispose { if (requesters[key] === fr) requesters.remove(key) }
         }
-        .then(if (key == targetKey) Modifier.focusRequester(targetFR) else Modifier)
-
-    /** Scroll [index] into composition if it is not (a few small steps first, so the page moves only as far as
-     *  needed; a jump for a far one), then focus it with the bounded retry. Says whether focus moved. */
-    suspend fun focusIndex(keys: List<Any>, index: Int): Boolean {
-        if (index !in keys.indices) return false
-        targetKey = keys[index]
-        // R361 (FR-R361-7.2) — a cancelled attempt (the list changed under it) leaves no requester armed.
-        try {
-            withFrameNanos { }
-            bringIndexIn(index)
-            return targetFR.requestFocusAwaiting()
-        } finally {
-            if (targetKey == keys[index]) targetKey = null
+        return remember(key, index, fr) {
+            Modifier
+                .onFocusChanged {
+                    if (it.hasFocus) { focusedKey = key; focusedIndex = index }
+                    else if (focusedIndex == index && focusedKey == key) focusedIndex = -1
+                }
+                .focusRequester(fr)
         }
     }
 
-    private suspend fun bringIndexIn(index: Int) {
+    /**
+     * Focus the tile at [index] of [keys]. A tile that is already composed (the grid keeps a row beyond each edge, see
+     * [browseLazyGridState]) is focused at once and the grid brings it into view with its own animation — the motion a
+     * native move gets. A tile that is not composed is scrolled in first: [animate] (a key press) scrolls it in with
+     * `animateScrollBy`, a restore or a refresh landing (not a press) may jump. Says whether focus moved.
+     */
+    suspend fun focusIndex(keys: List<Any>, index: Int, animate: Boolean = false): Boolean {
+        if (index !in keys.indices) return false
+        val key = keys[index]
+        if (requesters[key]?.tryRequestFocus() == true) return true
+        bringIndexIn(index, animate)
+        return focusKey(key)
+    }
+
+    private suspend fun focusKey(key: Any, maxFrames: Int = 30): Boolean {
+        if (requesters[key]?.tryRequestFocus() == true) return true
+        repeat(maxFrames) {
+            withFrameNanos { }
+            if (requesters[key]?.tryRequestFocus() == true) return true
+        }
+        return false
+    }
+
+    private suspend fun bringIndexIn(index: Int, animate: Boolean) {
         repeat(6) {
             val info = gridState.layoutInfo
             val visible = info.visibleItemsInfo
@@ -88,8 +112,9 @@ class GridFocus internal constructor(val gridState: LazyGridState) {
             if (first == null || last == null) { runCatching { gridState.scrollToItem(index) }; return }
             val perStep = (info.viewportSize.height / 3f).coerceAtLeast(1f)
             val far = index < first - 2 * (last - first + 1) || index > last + 2 * (last - first + 1)
-            if (far) { runCatching { gridState.scrollToItem(index) }; return }
-            runCatching { gridState.scrollBy(if (index < first) -perStep else perStep) }
+            if (far && !animate) { runCatching { gridState.scrollToItem(index) }; return }
+            val by = if (index < first) -perStep else perStep
+            runCatching { if (animate) gridState.animateScrollBy(by) else gridState.scrollBy(by) }
             withFrameNanos { }
         }
         if (gridState.layoutInfo.visibleItemsInfo.none { it.index == index }) runCatching { gridState.scrollToItem(index) }
@@ -118,6 +143,14 @@ class GridFocus internal constructor(val gridState: LazyGridState) {
         if (to == null) onEmpty() else focusIndex(now, to)
     }
 }
+
+/**
+ * DEB-2448 (FR-R362-5) — the state of a browse grid: one viewport of rows composed beyond each edge, so the tile a Down
+ * or Up needs exists when the key arrives (a row is under half a viewport on every grid we draw).
+ */
+@OptIn(ExperimentalFoundationApi::class)
+fun browseLazyGridState(): LazyGridState =
+    LazyGridState(cacheWindow = LazyLayoutCacheWindow(aheadFraction = 1f, behindFraction = 1f))
 
 @Composable
 fun rememberGridFocus(gridState: LazyGridState): GridFocus = remember(gridState) { GridFocus(gridState) }
@@ -151,7 +184,7 @@ fun Modifier.gridColumnKeys(
     val ks = keys()
     val t = gridVerticalTarget(idx, cols, ks.size, down) ?: return@onPreviewKeyEvent false
     scope.launch {
-        if (!gridFocus.focusIndex(ks, t)) focusManager.moveFocus(if (down) FocusDirection.Down else FocusDirection.Up)
+        if (!gridFocus.focusIndex(ks, t, animate = true)) focusManager.moveFocus(if (down) FocusDirection.Down else FocusDirection.Up)
     }
     true
 }
