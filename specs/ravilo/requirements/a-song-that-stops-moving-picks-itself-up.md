@@ -115,3 +115,39 @@ would cut the server off from everyone. On Linux, FR-5's rule is proved by the u
   `:ravilo-ui:desktopTest --tests '*FreezeWatch*'`.
 - FR-3 and FR-4 count per freeze point, not per song. A long song may freeze, recover and, minutes later, freeze once
   more somewhere else. That second freeze gets its own restart.
+
+## Amendment 2026-11-25 — a song that has not started is not frozen (DEB-5538)
+
+Task: DEB-5538. Found by the DEB-5531 log review. The owner, asked whether he was skipping, answered: *"No, songs would
+not start. Investigate."*
+
+**What happened.** On 2026-11-23 at 23:32–23:45Z, the Mac (1.70) played hi-res FLAC directly from Jellyfin, over a line
+from the office that AVPlayer measured at about 1.42 Mbps. The files ran at 1.34–1.80 Mbps. Every song followed the same
+pattern:
+- Its first 8 s went to loading, so FR-1 called it frozen.
+- FR-3 restarted it at position 0. A fresh load of a static file asks for `bytes=0-` again and throws away everything
+  already downloaded.
+- 8 s later FR-4 skipped it.
+
+14 songs in a row were skipped this way, about 18.5 s apart, and only 3 of the evening's songs played. Every request was
+answered 200 or 206 within 0.05 s, so nothing failed on the server. Each restart also sent Jellyfin a second start and a
+stop at 0 ms. Each skipped song posted a `playback_qoe` row (FR-6), 16 in all, which is 16 of the device's 20 newest rows.
+That contradicts `a-song-that-waits-says-so.md` (*"That table has no row for any song, and it must stay that way"*).
+
+- **FR-7 — A start is not a freeze.** Until a song's position has first moved 1 s past where it was loaded, FR-1's count
+  is 30 s, not 8 s. If those 30 s run out, FR-3's restart is not used, because a reload at the same place starts the
+  download again. FR-4's skip runs at once, and the log line says *skipped (never started)*. Once the song has moved
+  1 s, FR-1 to FR-4 apply unchanged, and a later freeze restarts at the frozen position as before.
+- **FR-8 — A song's trace is its `waiting` report, not a QoE row.** This replaces FR-6's second bullet. A song posts no
+  `PlaybackQoeReport`. The freeze, its outcome and AVPlayer's reason stay in `ravilo.log` (FR-6's first bullet). The
+  server already learns of a song that waits through `a-song-that-waits-says-so.md`. The rows already written for
+  songs are left alone: they count as no measurement, and they age out of the newest-20 window.
+
+**Acceptance (added).**
+- A unit test on `FreezeWatch` covers both cases:
+  - a song that loads for 25 s and then moves gets no verdict;
+  - one that has not moved after 30 s gets *skip* with no restart.
+- `closeSong` for a frozen song posts no QoE (`:ravilo-ui:desktopTest --tests '*FreezeWatch*'`, plus the engine's test).
+- On the Mac (QA), cap the Mac's line below the album's bitrate (`cap.sh` on the server side, with an uncapped control
+  leg). The first song may take up to 30 s to start, but no song is skipped before it has played, and the log shows no
+  *restarted* at 0.
