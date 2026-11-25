@@ -312,7 +312,7 @@ test.describe("DEB-5394 FR-36 — the next episode's encode starts before the ca
   type Seen = { prewarms: any[]; cancels: any[]; starts: any[]; stops: any[]; push: (message: object) => void };
 
   /** A two-episode series; the first plays from its page with the second as `nextId`. [segments]: the first episode's markers. */
-  async function playingFirst(page: Page, segments: object | null, autoplayNext = true): Promise<Seen> {
+  async function playingFirst(page: Page, segments: object | null, autoplayNext = true, turnOffInSettings = false): Promise<Seen> {
     const sockets: any[] = [];
     const seen: Seen = { prewarms: [], cancels: [], starts: [], stops: [], push: (message) => sockets.forEach((ws) => ws.send(JSON.stringify(message))) };
     const card = { id: "sr1", kind: "SERIES", title: "Paper Series", year: 2024, genre: null, rating: null, poster_url: "/api/tv/image/sr1-poster", backdrop_url: "/api/tv/image/sr1-backdrop" };
@@ -350,6 +350,23 @@ test.describe("DEB-5394 FR-36 — the next episode's encode starts before the ca
     });
     await page.goto(SCREEN_URL);
     await expect(page.locator("#home-row-0-tile-0")).toHaveClass(/focused/);
+    if (turnOffInSettings) {
+      // DEB-5632 (DEB-5621 FR-11): Settings ▸ Playback ▸ Autoplay next episode, OK, Back to Home.
+      await page.keyboard.press("ArrowUp");
+      for (let i = 0; i < 4; i++) await page.keyboard.press("ArrowRight");
+      await page.keyboard.press("Enter");
+      await page.keyboard.press("ArrowDown");
+      await page.keyboard.press("Enter");
+      await page.keyboard.press("ArrowDown");   // Show progress
+      await page.keyboard.press("ArrowDown");   // Autoplay next episode
+      await expect(page.locator("#set-autoplay-next")).toHaveClass(/focused/);
+      await page.keyboard.press("Enter");
+      await expect(page.locator("#set-autoplay-next")).toHaveAttribute("aria-checked", "false");
+      await page.keyboard.press("Escape");
+      await expect(page.locator("#nav-profile")).toHaveClass(/focused/);   // Back lands where Settings was opened from
+      await page.keyboard.press("ArrowDown");
+      await expect(page.locator("#home-row-0-tile-0")).toHaveClass(/focused/);
+    }
     await page.keyboard.press("Enter");
     await expect(page.locator("#detail-play")).toHaveClass(/focused/);
     await page.keyboard.press("Enter");
@@ -455,6 +472,18 @@ test.describe("DEB-5394 FR-36 — the next episode's encode starts before the ca
     await settle(page);
     expect(seen.cancels, "the start is the adoption; nothing is cancelled").toEqual([]);
     expect(seen.prewarms).toHaveLength(1);
+  });
+
+  test("DEB-5632: autoplay turned off from Settings leaves the card waiting, and nothing starts nextId", async ({ page }) => {
+    test.setTimeout(60_000);
+    const seen = await playingFirst(page, SEGMENTS, true, true);   // the server's config says on; Settings turns it off
+    await jump(page, 81_000);
+    await expect(page.locator("#nextup")).toHaveClass(/\bon\b/);
+    await expect(page.locator("#nu-c")).toHaveText("Next");
+    await page.waitForTimeout(12_000);                              // past the 10 s a running countdown takes
+    expect(seen.starts.map((s) => s.item_id)).toEqual(["e1"]);
+    await expect(page.locator("#nextup")).toHaveClass(/\bon\b/);
+    await expect(page.locator("#nu-c")).toHaveText("Next");
   });
 
   test("OK on the card and the controls' Next start nextId with no cancel", async ({ page }) => {

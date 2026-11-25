@@ -157,6 +157,13 @@
     .set-version b { font-weight: 600; margin-left: 18px; }
     .pulse i + i { margin-left: 14px; }
     #pk-tabs b + b { margin-left: 10px; }
+    /* DEB-5632 — a playback switch: its label, and a track whose knob sits right while it is on. */
+    .set-switch { display: flex; align-items: center; justify-content: space-between; width: 720px; font-size: 24px; padding: 14px 26px; margin: 0 0 12px; border-radius: 11px; background: rgba(255,255,255,.08); color: var(--ink); }
+    .set-switch.focused { box-shadow: 0 0 0 4px var(--ring); background: rgba(255,255,255,.16); }
+    .set-switch-track { position: relative; width: 64px; height: 32px; border-radius: 16px; background: rgba(255,255,255,.25); flex: none; }
+    .set-switch-track::after { content: ""; position: absolute; top: 4px; left: 4px; width: 24px; height: 24px; border-radius: 50%; background: #fff; }
+    .set-switch.on .set-switch-track { background: var(--accent); }
+    .set-switch.on .set-switch-track::after { left: 36px; }
     .pkr > * + * { margin-left: 14px; }
 
     /* DEB-4657 FR-2/FR-3 — DOM sign-in and profiles, inside the Chromium 63 CSS floor. */

@@ -111,6 +111,7 @@ private class Screen(private val serverUrl: String) {
     private val signIn = ScreenSignIn(api, deviceId, deviceName(), ::onPaired, onBack = { showPicker() }, onChangeServer = ::reopenServerSetup)
     private val profileUi = ScreenProfiles(profiles, ::selectProfile, ::showSignIn, ::showPicker, ::signOut,
         ::openSettings, ::openMyList)
+        playback = ScreenPlaybackSwitches(api, { config }, { config = it }),
     private var eventsJob: Job? = null
     private var config: RaviloConfig? = null
     private var itemId: String? = null
@@ -347,7 +348,9 @@ private class Screen(private val serverUrl: String) {
                     onHomeChanged = { shell.stateChanged() },
                     onPlaystateChanged = { shell.stateChanged() },
                     onPlayItem = { env -> onPlayItem(env) },
+        val showedProgress = config?.showContinueProgress ?: true
                     onPlaystateCommand = { env -> onPlaystateCommand(env) },
+        if (fresh.showContinueProgress != showedProgress) shell.redrawHome()
                     onPlayerCommand = { env -> onPlayerCommand(env) },
                     onNavigate = { env -> onNavigate(env) },
                     onSessionDirective = { type, text -> onSessionDirective(type, text) },

@@ -103,7 +103,7 @@ test("Change server opens setup prefilled; the same address keeps every profile 
   await boot(page, [viewer("one", "One"), viewer("two", "Two")]);
   await openSettings(page);
   await expect(page.locator("#set-server-note")).toHaveText("A new address signs every profile out.");
-  await page.keyboard.press("ArrowDown");
+  for (let i = 0; i < 3; i++) await page.keyboard.press("ArrowDown");   // past the two playback switches (DEB-5621 FR-11)
   await expect(page.locator("#shell .shell-target.focused")).toHaveAttribute("id", "set-change-server");
   await page.keyboard.press("Enter");
   await expect(page.locator("#setup")).toHaveClass(/\bon\b/);
@@ -123,7 +123,7 @@ test("a new address signs every profile out (DEB-4663 FR-11)", async ({ page }) 
     : route.abort());
   await boot(page, [viewer("one", "One"), viewer("two", "Two")]);
   await openSettings(page);
-  await page.keyboard.press("ArrowDown");
+  for (let i = 0; i < 3; i++) await page.keyboard.press("ArrowDown");   // past the two playback switches (DEB-5621 FR-11)
   await page.keyboard.press("Enter");
   await expect(page.locator("#setup")).toHaveClass(/\bon\b/);
   await page.locator("#setupHost").fill(other);
@@ -133,4 +133,76 @@ test("a new address signs every profile out (DEB-4663 FR-11)", async ({ page }) 
   expect(await page.evaluate(() => localStorage.getItem("ravilo.screen.serverUrl"))).toBe(other);
   expect(await page.evaluate(key => localStorage.getItem(key), PROFILES)).toBeNull();
   expect(await page.evaluate(() => localStorage.getItem("ravilo.screen.activeProfile"))).toBeNull();
+});
+
+// DEB-5632 (DEB-5621 FR-11): Settings ▸ Playback — Android TV's two switches, bound to the viewer's config.
+test.describe("Playback switches (DEB-5621 FR-11)", () => {
+  type Put = Record<string, unknown>;
+
+  /** The config as the server holds it; [puts] collects every `PUT /api/tv/settings`, [failWrites] makes them answer 500. */
+  async function withConfig(page: Page, config: object, failWrites = false) {
+    const puts: Put[] = [];
+    await page.route("**/api/tv/config", route => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(config) }));
+    await page.route("**/api/tv/settings", route => {
+      if (route.request().method() === "OPTIONS") return route.fulfill({ status: 204, headers: { "access-control-allow-origin": "*", "access-control-allow-headers": "*", "access-control-allow-methods": "*" } });
+      puts.push(JSON.parse(route.request().postData() ?? "{}"));
+      return route.fulfill({ status: failWrites ? 500 : 204, headers: { "access-control-allow-origin": "*" } });
+    });
+    return puts;
+  }
+
+  const focusedId = (page: Page) => expect(page.locator("#shell .shell-target.focused"));
+
+  test("sit between Language and Server and show the config's values", async ({ page }) => {
+    await withConfig(page, { show_continue_progress: false, autoplay_next: true });
+    await boot(page);
+    await openSettings(page);
+    await expect(page.locator("#shell-body h2")).toHaveText(["Language", "Playback", "Server", "About"]);
+    await expect(page.locator("#set-show-progress")).toContainText("Show progress on Continue Watching");
+    await expect(page.locator("#set-autoplay-next")).toContainText("Autoplay next episode");
+    await expect(page.locator("#set-show-progress")).toHaveAttribute("aria-checked", "false");
+    await expect(page.locator("#set-autoplay-next")).toHaveAttribute("aria-checked", "true");
+    await page.keyboard.press("ArrowDown");
+    await focusedId(page).toHaveAttribute("id", "set-show-progress");
+    await page.keyboard.press("ArrowDown");
+    await focusedId(page).toHaveAttribute("id", "set-autoplay-next");
+    await page.keyboard.press("ArrowDown");
+    await focusedId(page).toHaveAttribute("id", "set-change-server");
+  });
+
+  test("OK on each flips it at once and sends one PUT carrying only that field", async ({ page }) => {
+    const puts = await withConfig(page, { show_continue_progress: true, autoplay_next: true });
+    await boot(page);
+    await openSettings(page);
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("Enter");
+    await expect(page.locator("#set-show-progress")).toHaveAttribute("aria-checked", "false");
+    await expect.poll(() => puts).toEqual([{ show_continue_progress: false }]);
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("Enter");
+    await expect(page.locator("#set-autoplay-next")).toHaveAttribute("aria-checked", "false");
+    await expect.poll(() => puts).toEqual([{ show_continue_progress: false }, { autoplay_next: false }]);
+    await page.keyboard.press("Enter");
+    await expect(page.locator("#set-autoplay-next")).toHaveAttribute("aria-checked", "true");
+    await expect.poll(() => puts.at(-1)).toEqual({ autoplay_next: true });
+    // A language switch draws Settings again: the switches keep what they were set to.
+    await page.keyboard.press("ArrowUp");
+    await page.keyboard.press("ArrowUp");
+    await page.keyboard.press("ArrowRight");
+    await page.keyboard.press("Enter");
+    await expect(page.locator("#set-show-progress")).toHaveAttribute("aria-checked", "false");
+    await expect(page.locator("#set-autoplay-next")).toHaveAttribute("aria-checked", "true");
+  });
+
+  test("a refused write puts the switch back and shows nothing else", async ({ page }) => {
+    const puts = await withConfig(page, { show_continue_progress: true, autoplay_next: true }, true);
+    await boot(page);
+    await openSettings(page);
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("Enter");
+    await expect.poll(() => puts).toEqual([{ show_continue_progress: false }]);
+    await expect(page.locator("#set-show-progress")).toHaveAttribute("aria-checked", "true");
+    await expect(page.locator("#shell .load-failure, #shell .toast")).toHaveCount(0);
+    await focusedId(page).toHaveAttribute("id", "set-show-progress");
+  });
 });

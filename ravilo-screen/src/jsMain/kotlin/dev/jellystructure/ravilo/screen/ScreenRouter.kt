@@ -78,6 +78,7 @@ internal class ScreenShell(
     private val onChangeServer: () -> Unit = {},
     private val onProfileMenu: () -> Unit = {},
     private val onPlay: (ScreenPlayRequest) -> Unit = {},
+    private val playback: ScreenPlaybackSwitches = ScreenPlaybackSwitches(api, { null }, {}),
     prewarmCapabilities: () -> ClientCapabilities = { ClientCapabilities() },
     prewarmRemembered: (seriesId: String?) -> RememberedChoice? = { null },
 ) {
@@ -86,7 +87,7 @@ internal class ScreenShell(
     private val root get() = document.getElementById("shell") as HTMLElement
     private val body get() = document.getElementById("shell-body") as HTMLElement
     private val entries = mutableListOf(ScreenRouteEntry("home", "shell-page-target"))
-    private val home = ScreenHome(serverUrl)
+    private val home = ScreenHome(serverUrl) { playback.showProgress }
     private val focus = ScreenFocus({ root }, { entries.last() }) {
         home.updateImages(it.id)
         syncHero()
@@ -117,6 +118,11 @@ internal class ScreenShell(
     }
 
     fun isPlayer() = player
+
+    /** DEB-5632 (FR-5) — the viewer's config arrived after Home drew: a Home on screen is drawn again with it. */
+    fun redrawHome() {
+        if (visible && !player && entries.last().name == "home" && entries.last().feed != null) render()
+    }
 
     /** DEB-4925 (FR-22) — back from a long absence: a fresh Home, abandoning the stack and every load in flight. Nothing while another screen (sign-in, picker, setup) is up. */
     fun refreshAfterAway() {
@@ -211,7 +217,7 @@ internal class ScreenShell(
     private fun render() {
         val current = entries.last()
         if (current.name == ScreenSettings.ROUTE) {
-            ScreenSettings.render(body, serverUrl, onLanguage = { render() }, onChangeServer = onChangeServer)
+            ScreenSettings.render(body, serverUrl, playback, onLanguage = { render() }, onChangeServer = onChangeServer)
         } else if (current.detail != null) {
             // DEB-4660 — focus lands on the primary action once the page has drawn, not on the loading skeleton.
             if (current.detail.ready && current.focusId == "shell-page-target") current.focusId = current.detail.primaryFocusId

@@ -10,7 +10,7 @@ import kotlinx.browser.window
 import org.w3c.dom.HTMLElement
 
 /** DEB-4658 FR-5/FR-14: the server owns every Home section and its order. */
-internal class ScreenHome(private val serverUrl: String) {
+internal class ScreenHome(private val serverUrl: String, private val showProgress: () -> Boolean = { true }) {
     private var body: HTMLElement? = null
     private val hero = ScreenHero(::absoluteUrl)
 
@@ -49,7 +49,7 @@ internal class ScreenHome(private val serverUrl: String) {
             val shape = if (row.kind == RowKind.CONTINUE) TileShape.LANDSCAPE else feed.tileShape
             row.items.forEachIndexed { tileIndex, card ->
                 track.appendChild(tile(card, "home-row-$rowIndex-tile-$tileIndex", "row-$rowIndex", shape,
-                    row.kind == RowKind.CONTINUE))
+                    row.kind == RowKind.CONTINUE && showProgress()))
             }
             section.appendChild(rail)
             home.appendChild(section)

@@ -32,6 +32,42 @@ async function boot(page: Page, feed: object = homeFeed, fakeClock = false) {
   await expect(page.locator("#shell-body .home-feed")).toBeVisible();
 }
 
+// DEB-5632 (DEB-5621 FR-5): a Continue Watching tile draws its progress bar only while show_continue_progress is true.
+test.describe("Continue Watching progress follows show_continue_progress (DEB-5621 FR-5)", () => {
+  const withProgress = { ...homeFeed, rows: [
+    { id: "new", title: "New Arrivals", kind: "NEWLY_ADDED", items: [{ ...card("new-a", "Paper Moon"), progress_pct: 0.25 }] },
+    { id: "continue", title: "Keep Watching", kind: "CONTINUE", items: [
+      { ...card("continue-a", "Blue Orchard"), progress_pct: 0.4 }, { ...card("continue-b", "Red Meadow"), progress_pct: 0.7 }] },
+  ] };
+  const config = (page: Page, body: object, delayMs = 0) => page.route("**/api/tv/config", async route => {
+    if (delayMs) await new Promise(resolve => setTimeout(resolve, delayMs));
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(body) });
+  });
+
+  test("true: every Continue Watching tile has its bar, and only those", async ({ page }) => {
+    await config(page, { show_continue_progress: true });
+    await boot(page, withProgress);
+    await expect(page.locator("#home-row-1-tile-0 .tile-progress, #home-row-1-tile-1 .tile-progress")).toHaveCount(2);
+    await expect(page.locator("#shell-body .tile-progress")).toHaveCount(2);
+    await expect(page.locator("#home-row-1-tile-1 .tile-progress-fill")).toHaveAttribute("style", /width: 70%/);
+  });
+
+  test("false: no tile has a bar", async ({ page }) => {
+    await config(page, { show_continue_progress: false });
+    await boot(page, withProgress);
+    await expect(page.locator("#shell-body .home-heading")).toHaveText(["Collections", "New Arrivals", "Keep Watching"]);
+    await expect(page.locator("#home-row-1-tile-1")).toContainText("Red Meadow");
+    await expect(page.locator("#shell-body .tile-progress")).toHaveCount(0);
+  });
+
+  test("false arriving after Home drew takes the bars off without a reload", async ({ page }) => {
+    await config(page, { show_continue_progress: false }, 1_500);
+    await boot(page, withProgress);
+    await expect(page.locator("#shell-body .home-feed")).toBeVisible();
+    await expect(page.locator("#shell-body .tile-progress")).toHaveCount(0, { timeout: 5_000 });
+  });
+});
+
 test("Tizen Home draws server order, unknown kind as CUSTOM, and opens a channel feed (DEB-4658 FR-5)", async ({ page }) => {
   await page.route("**/api/tv/channel/forest", route => route.fulfill({
     status: 200, contentType: "application/json",
