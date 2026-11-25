@@ -21,9 +21,10 @@ checks of long queue jobs. No route, DTO, schema or client change. The household
 | 16:31:30 | `ended` (stopped) | |
 | 16:32:30 | `ps-abe368e8…` started; first frame only after 48.6 s, then 5 stalls, 83 s in total | |
 | 16:32:43 → 16:33:50 | | three more `segments_season` claimed (the last correlating 56 pairs), then `verify_file` and `check_track_lengths` |
-| 16:36:45 | ended; one more 50 s try at 16:37:40, then she gave up | |
+| 16:36:45 | ended; one more 50 s try at 16:37:40, then the viewer gave up | |
 
-Every job had `defer_while_playing = 1` and the switch was on. The play's `encoder_summary` reads speed median 0.78×
+Every job had `defer_while_playing = 1`. The household switch was **off**, not on; the amendment below corrects
+this. The play's `encoder_summary` reads speed median 0.78×
 and minimum 0.505×, so our encoder could not keep real time while the jobs ran. `anyActive()` is true while the
 tracker holds an entry, and for 120 s (`PLAYBACK_DEFER_GRACE_MS`) after the last start, heartbeat or stop. Both
 windows were missed in this run. At 16:30:58 the stalled play had gone quiet long enough to be reaped or to leave the
@@ -32,6 +33,35 @@ grace, although its session was still open. At 16:32:43 a fresh start, 13 s old,
 Which of the two causes held on each claim is the first thing the build pins down from the code. Candidates: the
 watchdog's reap on a silent `screen`, and a Samsung start registering with the tracker later than its session
 starts. The requirements below say what must hold whichever it was.
+
+### Amendment 2026-11-25 — neither candidate: the household switch was off (Sjúrður, DEB-5535)
+
+The build's first step answered the question above from prod's config, its container log and a DB copy, before any
+Kotlin was written. **Neither candidate let the claims through.**
+
+- Prod's `config.toml` has `[scan] defer_while_playing = false`, and has had it since between 2026-09-27 (the
+  `pre-270` backup reads `true`) and 2026-10-13 (the `pre-DEB925` backup reads `false`). The code default is `true`
+  (`AppConfig.kt`), so it was switched off in Settings. FR-262-1 is `row && household && playing`, so with the switch
+  off `claimNext` holds nothing, whatever the row's flag says. The review read the row flag and took the household
+  half to be on.
+- With the switch on, the shipped tracker would have held every claim in the window:
+  - The watchdog reaped the TV's silent play at 16:29:46, after its events socket closed abruptly at 16:29:31. That
+    stop runs through `PlaybackTracker.stopped`, which refreshes the 120 s grace, so the reap itself covers the claims
+    to 16:31:46.
+  - A new start at 16:30:18 called `started()` in the same second as its negotiation, and that play was active until
+    the viewer's stop at 16:31:14. That stop's grace runs to 16:33:14.
+  - The start at 16:32:30 was in the tracker 13 s before the 16:32:43 claim. The 16:33:50 `verify_file` and
+    `check_track_lengths` claims fell inside the next play, which started at 16:33:16.
+- Therefore **FR-1 already holds on the shipped code**: every start path calls `started()` before it answers.
+  **FR-2 would have changed nothing on 11-24.** **FR-3 is the one confirmed gap:** a deferrable job that is already
+  running does not yield. Of the queue's jobs, only the subtitles pre-warm stops between units today (FR-295-1).
+  `segments_season`,
+  `verify_file` and `check_track_lengths` run to the end.
+- **Acceptance 3 cannot pass while the switch is off**, whatever is built, because with it off no job ever waits for
+  playback.
+
+Whether the switch goes back on, and which of FR-2 to FR-4 are still wanted, is the owner's decision on DEB-5535. Its
+answer is written here when it comes.
 
 ## Requirements
 
