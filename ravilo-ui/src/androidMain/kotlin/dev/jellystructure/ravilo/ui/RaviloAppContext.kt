@@ -28,8 +28,23 @@ object RaviloAppContext {
      */
     val okHttp: OkHttpClient by lazy { OkHttpClient() }
 
+    /** DEB-4396 (FR-2) — Coil's own client: [okHttp]'s pool, its own dispatcher and call timeout. */
+    private val artworkHttp: OkHttpClient by lazy { artworkClient(okHttp) }
+
+    /** DEB-4396 (FR-3) — drop the shared pool's idle sockets, off the main thread (closing one may touch the TLS layer). */
+    fun evictIdleConnections() {
+        Thread { runCatching { okHttp.connectionPool.evictAll() } }.apply { isDaemon = true; name = "ravilo-pool-evict" }.start()
+    }
+
     fun init(context: Context) {
         ctx = context.applicationContext
+        // DEB-4396 (FR-1) — a network coming back retries every artwork tile that failed while it was gone.
+        runCatching {
+            val cm = context.applicationContext.getSystemService(Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
+            cm.registerDefaultNetworkCallback(object : android.net.ConnectivityManager.NetworkCallback() {
+                override fun onAvailable(network: android.net.Network) { dev.jellystructure.ravilo.ui.seams.ArtworkRetrySignal.nudge() }
+            })
+        }
         // DEB-2185 (FR-12.2) — a television reports and sets its media stream as the session's volume; a phone never does.
         runCatching { dev.jellystructure.ravilo.ui.seams.installTvStreamVolume(context.applicationContext, isTelevision) }
         // R63: memory + disk cache, crossfade, SVG decoder.
@@ -45,12 +60,15 @@ object RaviloAppContext {
                 .diskCache {
                     DiskCache.Builder()
                         .directory(c.cacheDir.resolve("ravilo_image_cache").toOkioPath())
-                        .maxSizeBytes(150L * 1024 * 1024) // 150 MB
+                        // DEB-4396 (FR-4.1) — 150 MB in cacheDir, deliberately: the OS reclaims cacheDir when storage runs
+                        // low, so Ravilo can never fill a TV; and 150 MB holds several thousand 320 px posters.
+                        .maxSizeBytes(150L * 1024 * 1024)
                         .build()
                 }
                 .crossfade(true)
                 .components {
-                    add(OkHttpNetworkFetcherFactory(callFactory = { okHttp }))  // R316
+                    // R316; DEB-4396 — the artwork lane (FR-2), and a disk hit never revalidates (FR-4.2).
+                    add(OkHttpNetworkFetcherFactory(callFactory = { artworkHttp }, cacheStrategy = { NeverRevalidateCacheStrategy }))
                     add(SvgDecoder.Factory())
                 }
                 .build()

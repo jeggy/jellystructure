@@ -4,7 +4,12 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -21,6 +26,7 @@ import coil3.request.crossfade
 import dev.jellystructure.ravilo.ui.LocalServerBaseUrl
 import dev.jellystructure.ravilo.ui.theme.RaviloMotion
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.distinctUntilChanged
 
 @Composable
@@ -65,6 +71,20 @@ fun RemoteImage(
             .build()
     }
 
+    // DEB-4396 (FR-1) — a failed load is tried again: 1, 2, 4, 8, 16 s, then every 30 s while this tile is
+    // composed, and at once when the network comes back or the app returns to the foreground. [attempt] keys the
+    // AsyncImage so a retry is a fresh load; the tile looks the same while it waits (the placeholder below).
+    var attempt by remember(resolved) { mutableIntStateOf(0) }
+    var failures by remember(resolved) { mutableIntStateOf(0) }
+    var failed by remember(resolved) { mutableStateOf(false) }
+    if (failed) {
+        LaunchedEffect(resolved, failures) {
+            ArtworkRetry.waitForRetry(failures)
+            failed = false
+            attempt++
+        }
+    }
+
     // A colored placeholder paints synchronously in the same frame; the image crossfades over it —
     // the R84 "paint first, hydrate over a fixed-size element" pattern, so no blank→pop while scrolling.
     // Logos (Fit) stay transparent unless a caller explicitly asks for a placeholder color.
@@ -72,17 +92,22 @@ fun RemoteImage(
     val solid = remember(fill) { ColorPainter(fill) }
     val placeholder = if (placeholderColor != null || contentScale != ContentScale.Fit) solid else null
 
-    AsyncImage(
-        model = request,
-        contentDescription = contentDescription,
-        modifier = modifier,
-        contentScale = contentScale,
-        alignment = alignment,
-        placeholder = placeholder,
-        error = placeholder,
-        fallback = placeholder,
-        colorFilter = colorFilter,
-    )
+    key(attempt) {
+        AsyncImage(
+            model = request,
+            contentDescription = contentDescription,
+            modifier = modifier,
+            contentScale = contentScale,
+            alignment = alignment,
+            placeholder = placeholder,
+            error = placeholder,
+            fallback = placeholder,
+            colorFilter = colorFilter,
+            // A request cancelled because the tile left the screen is not a failure (and its effect is gone anyway).
+            onError = { e -> if (e.result.throwable !is CancellationException) { failures++; failed = true } },
+            onSuccess = { failures = 0 },
+        )
+    }
 }
 
 // ─── R88: scroll-ahead prefetch helpers ──────────────────────────────────────
@@ -113,6 +138,15 @@ fun sizedProxyUrl(url: String, width: Int?): String {
 fun prefetchImage(ctx: PlatformContext, baseUrl: String, url: String?) {
     if (url.isNullOrBlank()) return
     SingletonImageLoader.get(ctx).enqueue(ImageRequest.Builder(ctx).data(resolveUrl(url, baseUrl)).build())
+}
+
+/**
+ * DEB-4396 (FR-4.3) — enqueue [urls] (proxy paths or absolute) on the singleton loader now, from a non-composable
+ * point such as the first composition of the app. The URLs must be the ones the tiles request, `?w=` included.
+ */
+fun prefetchImages(ctx: PlatformContext, baseUrl: String, urls: List<String>) {
+    val loader = SingletonImageLoader.get(ctx)
+    urls.forEach { u -> if (u.isNotBlank()) loader.enqueue(ImageRequest.Builder(ctx).data(resolveUrl(u, baseUrl)).build()) }
 }
 
 private const val PREFETCH_LOOKAHEAD = 4

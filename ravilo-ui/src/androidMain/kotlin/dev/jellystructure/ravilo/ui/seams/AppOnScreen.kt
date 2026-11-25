@@ -8,6 +8,7 @@ import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.os.Build
 import android.os.PowerManager
+import android.os.SystemClock
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -18,6 +19,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import dev.jellystructure.ravilo.ui.RaviloAppContext
 
 /**
  * R293 (FR-R293-1) — Android: the activity's `ON_START`/`ON_STOP` plus the screen broadcasts, exactly the
@@ -33,25 +35,39 @@ actual fun rememberAppOnScreen(): Boolean {
     // ON_START behind the keyguard is therefore not "on screen"; the unlock brings its own ON_START. A TV
     // has no keyguard, so its wake is unchanged.
     fun visible(): Boolean = lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED) && isInteractive(context) && !keyguardLocked(context)
-    var onScreen by remember(lifecycle) { mutableStateOf(visible()) }
+    var onScreenState by remember(lifecycle) { mutableStateOf(visible()) }
+    val evictGate = remember(lifecycle) { ForegroundEvictGate() }
+    // DEB-4396 — every change of "on screen" goes through here: (FR-3) a return after 60 s or more drops the shared
+    // pool's idle sockets before anything refreshes; (FR-1) a return tells every failed artwork tile to retry now.
+    fun setOnScreen(v: Boolean) {
+        if (v == onScreenState) return
+        val now = SystemClock.elapsedRealtime()
+        if (!v) evictGate.onBackground(now)
+        else {
+            if (evictGate.shouldEvict(now)) RaviloAppContext.evictIdleConnections()
+            ArtworkRetrySignal.nudge()
+        }
+        onScreenState = v
+    }
+    val onScreen = onScreenState
     DisposableEffect(lifecycle) {
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
-                Lifecycle.Event.ON_START -> { val v = !keyguardLocked(context); android.util.Log.d("R293", "lifecycle ON_START → ${if (v) "on screen" else "behind the keyguard, waiting"}"); if (v) onScreen = true }
+                Lifecycle.Event.ON_START -> { val v = !keyguardLocked(context); android.util.Log.d("R293", "lifecycle ON_START → ${if (v) "on screen" else "behind the keyguard, waiting"}"); if (v) setOnScreen(true) }
                 // The unlock's own ON_START still sees the keyguard as locked; the RESUME that follows it does
                 // not lie — a resumed activity is on screen — and ACTION_USER_PRESENT below covers a device
                 // that resumes nothing on unlock.
-                Lifecycle.Event.ON_RESUME -> { android.util.Log.d("R293", "lifecycle ON_RESUME → on screen"); onScreen = true }
-                Lifecycle.Event.ON_STOP -> { android.util.Log.d("R293", "lifecycle ON_STOP → off screen"); onScreen = false }
+                Lifecycle.Event.ON_RESUME -> { android.util.Log.d("R293", "lifecycle ON_RESUME → on screen"); setOnScreen(true) }
+                Lifecycle.Event.ON_STOP -> { android.util.Log.d("R293", "lifecycle ON_STOP → off screen"); setOnScreen(false) }
                 else -> {}
             }
         }
         val receiver = object : BroadcastReceiver() {
             override fun onReceive(ctx: Context?, intent: Intent?) {
                 when (intent?.action) {
-                    Intent.ACTION_SCREEN_OFF -> { android.util.Log.d("R293", "SCREEN_OFF (${lifecycle.currentState}) → off screen"); onScreen = false }
-                    Intent.ACTION_SCREEN_ON -> { val v = visible(); android.util.Log.d("R293", "SCREEN_ON (${lifecycle.currentState}) → ${if (v) "on screen" else "not yet"}"); if (v) onScreen = true }
-                    Intent.ACTION_USER_PRESENT -> { val v = lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED) && isInteractive(context); android.util.Log.d("R293", "USER_PRESENT (${lifecycle.currentState}) → ${if (v) "on screen" else "not started"}"); if (v) onScreen = true }
+                    Intent.ACTION_SCREEN_OFF -> { android.util.Log.d("R293", "SCREEN_OFF (${lifecycle.currentState}) → off screen"); setOnScreen(false) }
+                    Intent.ACTION_SCREEN_ON -> { val v = visible(); android.util.Log.d("R293", "SCREEN_ON (${lifecycle.currentState}) → ${if (v) "on screen" else "not yet"}"); if (v) setOnScreen(true) }
+                    Intent.ACTION_USER_PRESENT -> { val v = lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED) && isInteractive(context); android.util.Log.d("R293", "USER_PRESENT (${lifecycle.currentState}) → ${if (v) "on screen" else "not started"}"); if (v) setOnScreen(true) }
                 }
             }
         }

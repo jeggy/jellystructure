@@ -93,6 +93,7 @@ import dev.jellystructure.ravilo.ui.focus.backToTopOnBack
 import dev.jellystructure.ravilo.ui.focus.requestFocusRetryingOrMoveNative
 import dev.jellystructure.ravilo.ui.components.TileVariant
 import dev.jellystructure.ravilo.ui.seams.PrefetchLazyColumnRowsEffect
+import dev.jellystructure.ravilo.ui.seams.ROW_PREFETCH_TILES_PER_ROW
 import dev.jellystructure.ravilo.ui.seams.systemPrefersReducedMotion
 import dev.jellystructure.ravilo.ui.components.tileRequestedWidth
 import dev.jellystructure.ravilo.ui.components.toTileVariant
@@ -661,6 +662,20 @@ private fun homeTileImageUrl(card: MediaCard, variant: TileVariant): String? {
     // full-size image and the tile cache-misses → double download).
     return u?.let { sizedProxyUrl(it, tileRequestedWidth(variant)) }
 }
+
+/**
+ * DEB-4396 (DEB-4390, FR-4.3) — what the first Home screen draws, from a feed seeded off the R212 snapshot: the
+ * hero's first backdrop and logo (requested as the hero requests them, with no `?w=`) and the first
+ * [ROW_PREFETCH_TILES_PER_ROW] tiles of the first two rows at the tile sizes ([homeTileImageUrl]). Enqueued at once,
+ * so a viewer who opens the app and scrolls straight down meets cached posters rather than placeholders.
+ */
+fun homeSeedWarmUrls(feed: dev.jellystructure.shared.tv.HomeFeed): List<String> = buildList {
+    feed.heroes.firstOrNull()?.let { h -> add(h.backdropUrl); h.logoUrl?.let(::add) }
+    feed.rows.take(2).forEach { r ->
+        val variant = if (r.kind == RowKind.CONTINUE) TileVariant.LANDSCAPE else feed.tileShape.toTileVariant()
+        r.items.take(ROW_PREFETCH_TILES_PER_ROW).mapNotNullTo(this) { homeTileImageUrl(it, variant) }
+    }
+}.filter { it.isNotBlank() }
 
 @Composable
 private fun ContentRowItem(

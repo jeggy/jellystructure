@@ -104,6 +104,7 @@ import dev.jellystructure.ravilo.ui.seams.rememberDeviceStateProbe
 import dev.jellystructure.ravilo.ui.seams.rememberCastSender
 import dev.jellystructure.ravilo.ui.screens.TaxonomyStore
 import dev.jellystructure.ravilo.ui.screens.HomeScreen
+import dev.jellystructure.ravilo.ui.screens.homeSeedWarmUrls
 import dev.jellystructure.ravilo.ui.screens.HomeSnapshot
 import dev.jellystructure.ravilo.ui.screens.HomeSnapshotCache
 import dev.jellystructure.ravilo.ui.screens.HomeState
@@ -542,6 +543,13 @@ fun RaviloApp(
     // ever matters for the single-session fast path — a profile switch mid-session is already
     // handled live by refreshConfig(), independent of this seed.
     val initialSnapshot = remember { MultiTokenStore.getActive()?.userId?.let { HomeSnapshotCache.load(it) } }
+    // DEB-4396 (DEB-4390, FR-4.3) — Home draws from this snapshot on its first frame; its first screen's artwork is
+    // asked for now, at the tile sizes, so it is a disk-cache hit by the time the tiles compose.
+    val seedWarmCtx = coil3.compose.LocalPlatformContext.current
+    LaunchedEffect(Unit) {
+        val feed = initialSnapshot?.feed ?: return@LaunchedEffect
+        dev.jellystructure.ravilo.ui.seams.prefetchImages(seedWarmCtx, apiClient.baseUrl, homeSeedWarmUrls(feed))
+    }
 
     // R279 — the language ladder: the signed-in user's own setting (carried on the cached snapshot
     // at cold start, refreshed by refreshConfig() below), else whatever this device last drew in,
