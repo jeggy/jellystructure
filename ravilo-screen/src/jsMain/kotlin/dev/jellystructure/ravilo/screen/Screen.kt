@@ -84,6 +84,8 @@ private const val NEXT_UP_SECS = 10
 private enum class CreditsMode { STINGER, NEXT, SKIP }
 /** DEB-5396 (FR-36) — with no trusted credits marker the next episode's encode starts this long before the end (R381's own lead). */
 private const val NEXT_WARM_LEAD_MS = 60_000L
+/** DEB-5652 (FR-54) — one rail card and its gap (400 px + 32 px). */
+private const val RAIL_CARD_STEP = 432
 /** R264 — rows the TV picker shows at once; the window follows the focus. */
 private const val PICKER_ROWS = 9
 
@@ -198,6 +200,12 @@ private class Screen(private val serverUrl: String) {
     private var startedFromTv = false
     // DEB-4865 — the episodes the title's page said follow the one playing (the first is [nextId]); empty for a phone's push.
     private var following: List<ScreenFollowing> = emptyList()
+    // DEB-5652 (DEB-5640, FR-54) — the series' seasons the page handed over (empty = no rail: a film, or a phone's push), whether nothing follows
+    // an episode, and the rail: open, with the card that has the focus.
+    private var railSeasons: List<ScreenRailSeason> = emptyList()
+    private var railNewestFirst = false
+    private var railOpen = false
+    private var railFocus = 0
 
     // ── screens ──
     private fun el(id: String) = document.getElementById(id) as HTMLElement
@@ -258,7 +266,8 @@ private class Screen(private val serverUrl: String) {
         startedFromTv = false
         seriesName = null; logoUrl = null; logoInk = null   // R303
         segments = null; nextId = null; nextTitle = null; nextKicker = null; following = emptyList()   // R264
-        hideSkip(); hideNextUp(); closePicker(); hideChrome(); chromeFocus = ChromeFocus.PLAY
+        railSeasons = emptyList(); railNewestFirst = false   // FR-54
+        hideSkip(); hideNextUp(); closePicker(); closeRail(); hideChrome(); chromeFocus = ChromeFocus.PLAY
         showSubtitle(-1)
         el("idle-sentence").textContent = ScreenLanguage.t("cast.ready")
         // R269 (FR-R269-6) — a quiet line naming the configured server; the only way a household can see
@@ -426,6 +435,7 @@ private class Screen(private val serverUrl: String) {
         // answers 204 when this TV was measured within 24 h; nothing waits on it).
         if (!fromTv) GlobalScope.launch { api.probe() }
         following = emptyList()
+        if (!fromTv) railSeasons = emptyList()   // FR-54 — a phone's push has no rail
         // The next-up card's round trip (a start this TV asked for) stays in the series it left; a phone's push has no series id.
         beginPlay(env, fromTv, series = if (fromTv) seriesId else null)
     }
@@ -451,7 +461,7 @@ private class Screen(private val serverUrl: String) {
         nextId = env.nextId; nextTitle = env.nextTitle; nextKicker = env.nextKicker
         nextUpCancelled = false; finishedUnderNextUp = false
         skipIntroCancelled = false; skipIntroDone = false; stingerSkipped = false   // FR-47, FR-48 — a latch lasts one item
-        hideSkip(); hideNextUp(); closePicker(); hideChrome(); chromeFocus = ChromeFocus.PLAY   // FR-29 — a start focuses Play
+        hideSkip(); hideNextUp(); closePicker(); closeRail(); hideChrome(); chromeFocus = ChromeFocus.PLAY   // FR-29 — a start focuses Play
         loaded = false
         el("loading-title").textContent = env.title.orEmpty()
         el("loading-kicker").textContent = env.kicker.orEmpty()
@@ -663,7 +673,7 @@ private class Screen(private val serverUrl: String) {
         }
         backend.close()
         nextWarm.cancel()
-        hideSkip(); hideNextUp(); closePicker(); hideChrome()
+        hideSkip(); hideNextUp(); closePicker(); closeRail(); hideChrome()
         el("failed-t").textContent = ScreenLanguage.t(title)
         el("failed-s").textContent = ScreenLanguage.t(body)
         show("failed")
@@ -693,6 +703,7 @@ private class Screen(private val serverUrl: String) {
             // line and the episode after it), so nothing is fetched twice and nothing is missing from the start.
             request.context?.let { c ->
                 following = c.following
+                railSeasons = c.seasons; railNewestFirst = c.newestFirst
                 beginPlay(PlayItemEnvelope(type = "play_item", jellyfinId = request.id, kind = c.kind, title = request.title, kicker = c.kicker,
                     seriesName = c.seriesName, logoUrl = c.logoUrl, logoInk = c.logoInk, segments = c.segments,
                     nextId = c.nextId, nextTitle = c.nextTitle, nextKicker = c.nextKicker), fromTv = true, startOver = request.startOver, series = c.seriesId)
@@ -700,7 +711,7 @@ private class Screen(private val serverUrl: String) {
             }
             // A request with no page behind it reads what a phone's push would have carried. A detail that does not come is a
             // play without Skip Intro and a logo.
-            following = emptyList()
+            following = emptyList(); railSeasons = emptyList()
             val detail = if (request.kind == MediaKind.MOVIE) withTimeoutOrNull(3_000) { runCatching { api.getMovie(request.id) }.getOrNull() } else null
             if (generation != loadGeneration) return@launch
             beginPlay(PlayItemEnvelope(type = "play_item", jellyfinId = request.id, kind = request.kind.name.lowercase(), title = request.title,
@@ -921,6 +932,7 @@ private class Screen(private val serverUrl: String) {
     }
 
     private fun showSkip() {
+        closeRail()
         skipShown = true
         skipDeadline = nowMs() + skipSecs() * 1000L
         el("skip").textContent = skipLabel()
@@ -951,6 +963,7 @@ private class Screen(private val serverUrl: String) {
 
     /** The credits card (FR-48) in [mode]: *Next Episode* is today's card with its countdown; the other two wait for the viewer. */
     private fun showNextUp(mode: CreditsMode) {
+        closeRail()
         creditsMode = mode; cardOnStay = false
         nextUpShown = true
         nextUpDeadline = nowMs() + NEXT_UP_SECS * 1000L
@@ -1041,15 +1054,7 @@ private class Screen(private val serverUrl: String) {
         val known = queue.firstOrNull()?.takeIf { it.id == id }
         hideNextUp(); hideSkip(); nextId = null
         if (known != null) {
-            val series = seriesName; val logo = logoUrl; val ink = logoInk; val seriesKey = seriesId
-            GlobalScope.launch {
-                if (current != null) runCatching { api.stopPlayback(current, pos) }
-                val after = queue.getOrNull(1)
-                following = queue.drop(1)
-                beginPlay(PlayItemEnvelope(type = "play_item", jellyfinId = known.id, kind = "episode", title = known.title, kicker = known.kicker,
-                    seriesName = series, logoUrl = logo, logoInk = ink, segments = known.segments,
-                    nextId = after?.id, nextTitle = after?.title, nextKicker = after?.kicker), fromTv = true, series = seriesKey)
-            }
+            startEpisode(current, pos, known, queue.drop(1))
             return
         }
         tvNextItem = id
@@ -1057,6 +1062,129 @@ private class Screen(private val serverUrl: String) {
             if (current != null) runCatching { api.stopPlayback(current, pos) }
             runCatching { api.remotePlay(deviceId, id, 0) }.onFailure { tvNextItem = null; startedFromTv = true; failPlay(0) }
         }
+    }
+
+    /** The TV starts [episode] itself the way [playNext] starts `nextId`: the item it leaves is stopped at [pos], and the start carries [after] as what follows. */
+    private fun startEpisode(current: String?, pos: Long, episode: ScreenFollowing, after: List<ScreenFollowing>) {
+        val series = seriesName; val logo = logoUrl; val ink = logoInk; val seriesKey = seriesId
+        GlobalScope.launch {
+            if (current != null) runCatching { api.stopPlayback(current, pos) }
+            val next = after.firstOrNull()
+            following = after
+            beginPlay(PlayItemEnvelope(type = "play_item", jellyfinId = episode.id, kind = "episode", title = episode.title, kicker = episode.kicker,
+                seriesName = series, logoUrl = logo, logoInk = ink, segments = episode.segments,
+                nextId = next?.id, nextTitle = next?.title, nextKicker = next?.kicker), fromTv = true, series = seriesKey)
+        }
+    }
+
+    // ── DEB-5652 (DEB-5640, FR-54): Android TV's episode chip and rail ──
+
+    /** The season the playing episode is in, with its cards; null when this play has no rail. */
+    private fun railSeason(): ScreenRailSeason? = railSeasons.firstOrNull { sn -> sn.entries.any { it.id == itemId } }
+
+    /** FR-54 — ↓ may open the rail: this play has one, and no picker, card or skip pill is up. The chip is drawn under the same rule. */
+    private fun railAllowed() = railSeason() != null && !pickerOpen && !nextUpShown && !skipShown
+
+    private fun openRail() {
+        val sn = railSeason() ?: return
+        railFocus = sn.entries.indexOfFirst { it.id == itemId }.coerceAtLeast(0)
+        railOpen = true
+        renderRail(sn)
+        el("rail").classList.add("on")
+        paintChip()
+    }
+
+    private fun closeRail() {
+        if (!railOpen) return
+        railOpen = false
+        el("rail").classList.remove("on")
+        paintChip()
+    }
+
+    /** FR-54 — ←/→ along the cards, OK on the playing one closes, OK on another starts it, Back or ↑ closes onto the transport row. */
+    private fun onRailKey(e: KeyboardEvent): Boolean {
+        val sn = railSeason() ?: run { closeRail(); return false }
+        when {
+            e.key == "ArrowLeft" || e.key == "ArrowRight" -> {
+                railFocus = (railFocus + if (e.key == "ArrowLeft") -1 else 1).coerceIn(0, sn.entries.lastIndex)
+                renderRail(sn)
+            }
+            e.key == "Enter" -> {
+                val pick = sn.entries.getOrNull(railFocus)
+                if (pick == null || pick.id == itemId) closeRail() else chooseEpisode(pick)
+            }
+            isBack(e) || e.key == "ArrowUp" -> closeRail()
+            e.key == "ArrowDown" -> {}   // nothing is below the rail
+            else -> return false   // the media keys are the transport's
+        }
+        showChrome()
+        return true
+    }
+
+    /**
+     * FR-54 — OK on a card that is not the playing one: the current play stops at its position and [pick] starts with the episodes after it
+     * in the series' order as what follows (none in a newest-first series or in Specials). FR-36's warm job is dropped by [beginPlay]
+     * unless the pick is the warmed `nextId`; FR-23's remembered tracks apply as for any start.
+     */
+    private fun chooseEpisode(pick: ScreenRailEntry) {
+        val current = itemId
+        val pos = if (loaded) backend.positionMs() else 0L
+        val order = railSeasons.filter { it.index >= 1 }.flatMap { it.entries }
+        val at = order.indexOfFirst { it.id == pick.id }
+        val after = if (railNewestFirst || at < 0) emptyList() else order.drop(at + 1).map { ScreenFollowing(it.id, it.title, it.kicker, it.segments) }
+        closeRail(); hideSkip(); hideNextUp(); nextId = null
+        startEpisode(current, pos, ScreenFollowing(pick.id, pick.title, pick.kicker, pick.segments), after)
+    }
+
+    private fun renderRail(sn: ScreenRailSeason) {
+        el("rl-season").textContent = sn.label
+        el("rl-hint").textContent = ScreenLanguage.t("player.rail_hint")
+        val track = el("rl-track")
+        track.textContent = ""
+        sn.entries.forEachIndexed { i, ep ->
+            val card = document.createElement("div") as HTMLElement
+            card.className = "rl-card" + (if (ep.id == itemId) " cur" else "") + (if (i == railFocus) " foc" else "")
+            val art = document.createElement("div") as HTMLElement
+            art.className = "rl-art"
+            ep.stillUrl?.takeIf { it.isNotBlank() }?.let { url ->
+                val img = document.createElement("img") as HTMLImageElement
+                img.src = if (url.startsWith("/")) serverUrl.trimEnd('/') + url else url
+                art.appendChild(img)
+                art.appendChild(railNode("div", "rl-scrim"))
+            }
+            ep.number?.let { art.appendChild(railNode("div", "rl-num", it.toString())) }
+            if (ep.id == itemId) art.appendChild(railNode("div", "rl-now", ScreenLanguage.t("player.now_playing")))
+            if (ep.watched) art.appendChild(railNode("div", "rl-check", "✓"))
+            if (ep.progress > 0f || ep.watched) {
+                val bar = railNode("div", "rl-bar" + if (ep.watched) " done" else "")
+                val fill = document.createElement("i") as HTMLElement
+                fill.style.width = "${if (ep.watched) 100f else ep.progress * 100f}%"
+                bar.appendChild(fill)
+                art.appendChild(bar)
+            }
+            card.appendChild(art)
+            card.appendChild(railNode("div", "rl-t", ep.number?.let { "$it. ${ep.title}" } ?: ep.title))
+            if (ep.runtimeMin > 0) card.appendChild(railNode("div", "rl-d", "${ep.runtimeMin}m"))
+            track.appendChild(card)
+        }
+        // The focused card is kept in view: the track slides so it sits no further right than the third column.
+        val offset = (railFocus - 2).coerceAtLeast(0) * RAIL_CARD_STEP
+        track.style.transform = "translateX(-${offset}px)"
+    }
+
+    private fun railNode(tag: String, className: String, text: String? = null): HTMLElement {
+        val n = document.createElement(tag) as HTMLElement
+        n.className = className
+        if (text != null) n.textContent = text
+        return n
+    }
+
+    /** The Episodes chip under the transport row: drawn while the play has a rail, hidden (never removed) while anything else is up. */
+    private fun paintChip() {
+        val has = railSeason() != null
+        el("ov-bottom").classList.toggle("has-rail", has)
+        el("ov-chip").classList.toggle("hid", !has || !railAllowed() || railOpen)
+        if (has) setText("ov-chip-t", ScreenLanguage.t("detail.episodes"))
     }
 
     // ── R264 (FR-R264-3): the picker, on the TV ──
@@ -1252,6 +1380,7 @@ private class Screen(private val serverUrl: String) {
         // R264 (FR-R264-3/4) — the TV remote drives the whole player; every action ends in a status report,
         // so the phone's remote shows a TV-remote pause within one push. Precedence: the picker, then the
         // next-up card, then Skip Intro, then the transport.
+        if (railOpen && onRailKey(e)) { sendStatus(); return }   // FR-54 — the rail owns its keys; the card and the pill close it when they rise, and a media key falls through to the transport
         if (pickerOpen) { onPickerKey(e); if (!pickerOpen) showChrome(); return }   // FR-29 — closing it leaves the controls up, on Audio & subtitles
         if (nextUpShown && onCardKey(e)) { sendStatus(); return }
         // FR-47 — Auto: Back on the pill cancels the skip for this item (before any other Back, so it does not also hide the controls).
@@ -1298,10 +1427,10 @@ private class Screen(private val serverUrl: String) {
                 showChrome()
             }
             e.key == "ArrowDown" -> {
-                if (!hidden) when (chromeFocus) {   // ↓ from the row does nothing: this app has no episode rail
+                if (!hidden) when (chromeFocus) {   // FR-54 — ↓ from the row opens the episode rail when this play has one
                     ChromeFocus.BAR -> { commitScrub(); chromeFocus = ChromeFocus.PLAY }
                     ChromeFocus.SKIP -> chromeFocus = skipReturn ?: ChromeFocus.PLAY
-                    else -> {}
+                    else -> if (railAllowed()) openRail()
                 }
                 showChrome()
             }
@@ -1380,7 +1509,7 @@ private class Screen(private val serverUrl: String) {
             while (chromeUp) {
                 delay(200)
                 // Playing, with no picker and no scrub: hide 3.6 s after the last key. Otherwise hold, and count from the release.
-                if (!playing || pickerOpen || scrubMs != null) chromeWakeAt = nowMs()
+                if (!playing || pickerOpen || railOpen || scrubMs != null) chromeWakeAt = nowMs()
                 else if (nowMs() - chromeWakeAt >= CHROME_HIDE_MS) { hideChrome(); return@launch }
                 paintChrome(full = false)
             }
@@ -1401,6 +1530,7 @@ private class Screen(private val serverUrl: String) {
     /** [full] is a key's repaint (the lines and every label); a tick only moves the bar and the glyph. */
     private fun paintChrome(full: Boolean) {
         val pos = backend.positionMs(); val dur = backend.durationMs()
+        paintChip()
         if (full) {
             setText("ov-kicker", kicker.orEmpty())
             setText("ov-title", title.orEmpty())

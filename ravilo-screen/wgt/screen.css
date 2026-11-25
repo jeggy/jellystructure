@@ -110,6 +110,38 @@
     #nextup .nb { display: inline-block; margin-right: 14px; padding: 12px 24px; border-radius: 999px; font-size: 22px; font-weight: 700; background: rgba(255,255,255,.14); color: var(--ink); }
     #nextup .nb:last-child { margin-right: 0; }
     #nextup .nb.foc { background: var(--ink); color: #0a0c13; box-shadow: 0 0 0 4px var(--ring); }
+    /* DEB-5652 (DEB-5640, FR-54) — Android TV's Episodes chip and episode rail at FR-28's factor (x2). The chip is a hint under the
+       transport row (36 dp pill, 24 dp accent circle, 13 sp label); it is hidden, not removed, while a picker, card, pill or the rail is
+       up, so the bar does not jump. The rail is a bottom sheet over the controls; its cards are 200 dp wide, 16:9 stills. */
+    #ov-bottom.has-rail { padding-bottom: 116px; }
+    #ov-chip { display: none; position: absolute; left: 96px; bottom: 32px; height: 72px; box-sizing: border-box; align-items: center; padding: 0 32px 0 16px; border-radius: 60px; background: rgba(255,255,255,.06); border: 2px solid rgba(255,255,255,.15); font-size: 26px; font-weight: 600; color: rgba(255,255,255,.7); }
+    #ov-bottom.has-rail #ov-chip { display: flex; }
+    #ov-chip.hid { visibility: hidden; }
+    #ov-chip-dot { width: 48px; height: 48px; margin-right: 20px; border-radius: 50%; background: linear-gradient(120deg, var(--accent), var(--accent2)); color: #fff; text-align: center; font-size: 28px; line-height: 48px; }
+    #rail { position: fixed; left: 0; right: 0; bottom: 0; z-index: 3; display: none; padding: 64px 0 80px; background: linear-gradient(rgba(0,0,0,0), rgba(0,0,0,.72) 28%, rgba(0,0,0,.97)); }
+    #rail.on { display: block; }
+    #rl-head { padding: 0 96px 28px; white-space: nowrap; }
+    #rl-season { font-size: 40px; font-weight: 700; color: #fff; margin-right: 32px; }
+    #rl-hint { font-size: 24px; color: rgba(255,255,255,.45); }
+    #rl-view { overflow: hidden; padding: 20px 0 24px; }
+    #rl-track { white-space: nowrap; padding: 0 96px; transition: transform .2s ease-out; }
+    .rl-card { display: inline-block; vertical-align: top; width: 400px; margin-right: 32px; white-space: normal; transition: transform .2s ease-out; }
+    .rl-card.foc { transform: scale(1.05); }
+    .rl-art { position: relative; width: 100%; height: 0; padding-bottom: 56.25%; border-radius: 18px; background: #1a1d28; overflow: hidden; box-sizing: border-box; }
+    .rl-card.cur .rl-art { box-shadow: 0 0 0 4px var(--accent); }
+    .rl-card.foc .rl-art { box-shadow: 0 0 0 4px var(--ring); }
+    .rl-art img { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; }
+    .rl-scrim { position: absolute; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,.28); }
+    .rl-num { position: absolute; top: 16px; left: 16px; font-size: 44px; font-weight: 700; color: #fff; }
+    .rl-now { position: absolute; top: 14px; right: 14px; padding: 6px 14px; border-radius: 10px; background: linear-gradient(120deg, var(--accent), var(--accent2)); font-size: 18px; font-weight: 700; letter-spacing: 1px; color: #fff; }
+    .rl-check { position: absolute; top: 14px; right: 14px; font-size: 36px; font-weight: 700; color: #2dd49a; }
+    .rl-card.cur .rl-check { top: 56px; }
+    .rl-bar { position: absolute; left: 16px; right: 16px; bottom: 16px; height: 8px; border-radius: 6px; background: rgba(255,255,255,.3); overflow: hidden; }
+    .rl-bar i { display: block; height: 100%; background: var(--accent); }
+    .rl-bar.done i { background: #2dd49a; }
+    .rl-t { margin-top: 16px; font-size: 28px; font-weight: 600; color: rgba(255,255,255,.65); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .rl-card.cur .rl-t, .rl-card.foc .rl-t { color: #fff; }
+    .rl-d { font-size: 22px; color: rgba(255,255,255,.4); }
     #picker { position: fixed; right: 64px; top: 64px; bottom: 64px; width: 560px; z-index: 4; display: none; flex-direction: column; border-radius: 20px; background: rgba(10,12,19,.95); border: 1px solid rgba(255,255,255,.16); overflow: hidden; }
     #picker.on { display: flex; }
     #pk-head { padding: 26px 28px 8px; font-size: 30px; font-weight: 700; }

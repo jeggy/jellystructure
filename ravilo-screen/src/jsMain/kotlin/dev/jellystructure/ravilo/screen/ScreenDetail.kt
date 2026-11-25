@@ -221,7 +221,24 @@ internal class ScreenDetail(
             context = ScreenPlayContext("episode", kicker = episodeCode(seasonIndex, episode.episodeNumber, lastPart), seriesId = id, seriesName = s.card.title,
                 logoUrl = s.logoUrl, logoInk = s.logoInk, segments = episode.segments,
                 nextId = next?.second?.id, nextTitle = next?.second?.title, nextKicker = next?.let { episodeCode(it.first, it.second.episodeNumber) },
-                following = after.map { ScreenFollowing(it.second.id, it.second.title, episodeCode(it.first, it.second.episodeNumber), it.second.segments) })))
+                following = after.map { ScreenFollowing(it.second.id, it.second.title, episodeCode(it.first, it.second.episodeNumber), it.second.segments) },
+                seasons = railSeasons(s), newestFirst = s.newestFirst)))
+    }
+
+    /**
+     * DEB-5652 (FR-54) — ravilo-ui's `playerEntriesForSeason` for the player's rail: each season's episodes one card per file, with the
+     * page's overlay as it is now. Specials (index 0) are a season of their own and nothing follows them.
+     */
+    private fun railSeasons(s: SeriesDetail): List<ScreenRailSeason> = s.seasons.sortedBy { it.index }.mapNotNull { sn ->
+        val playable = sn.episodes.filter { it.playable() }.sortedBy { it.episodeNumber }
+        if (playable.isEmpty()) return@mapNotNull null
+        val entries = playable.distinctBy { it.id }.map { ep ->
+            val group = playable.filter { it.id == ep.id }
+            val state = overlay[ep.id]
+            ScreenRailEntry(ep.id, ep.episodeNumber.takeIf { group.size == 1 }, ep.title, episodeCode(sn.index, ep.episodeNumber, group.maxOf { it.episodeNumber }),
+                group.sumOf { it.runtime }, ep.stillUrl, state?.playedPct?.coerceIn(0f, 1f) ?: 0f, state?.played == true, ep.segments)
+        }
+        ScreenRailSeason(sn.index, if (sn.index == 0) sn.name.ifBlank { "${t("detail.season", ScreenLanguage.lang)} 0" } else "${t("detail.season", ScreenLanguage.lang)} ${sn.index}", entries)
     }
 
     private fun countedEpisodes(s: SeriesDetail) = s.seasons.filter { it.index >= 1 }.sortedBy { it.index }

@@ -653,3 +653,119 @@ test.describe("DEB-4932 — the TV starts an episode in the audio and subtitle t
     await expect.poll(() => page.evaluate(() => localStorage.getItem("ravilo.screen.tracks.viewer"))).toBeNull();
   });
 });
+
+// DEB-5652 (DEB-5640 FR-54) — the player's episode rail, Android TV's: an Episodes chip under the transport row, ↓ opens the season's
+// cards on the playing one, OK on another starts it as playNext() starts nextId. Same harness as above (the mock harness lives in this file;
+// the real-backend ravilo-screen-player.spec.ts has no series page to start an episode from). The look on the set is the QA ticket's.
+test.describe("DEB-5652 — the Samsung player's episode rail (FR-54)", () => {
+  const season = {
+    ...seriesDetail,
+    seasons: [{ index: 1, name: "Season 1", episodes: [
+      episode("s1e1", 1, "Opening Reel"), episode("s1e2", 2, "Second Reel"), episode("s1e3", 3, "Third Reel"),
+    ] }],
+  };
+  const server = { series: season, refuseRemotePlay: true, start: async (itemId: string) => ({ status: 200, body: ticket(itemId, 0) }) };
+  const cards = (page: Page) => page.locator("#rl-track .rl-card");
+  const focusedCard = (page: Page) => page.locator("#rl-track .rl-card.foc");
+
+  /** The series' page, Play (s1e1, with s1e2 and s1e3 after it), then ↓ to put the controls up. */
+  async function playAndRaiseControls(page: Page) {
+    await page.keyboard.press("Enter");
+    await expect(page.locator("#detail-play")).toBeVisible();
+    await page.keyboard.press("Enter");
+    await waitForAvplayCall(page, "play");
+    await page.keyboard.press("ArrowDown");
+    await expect(page.locator("#overlay")).toHaveClass(/\bon\b/);
+  }
+
+  test("an episode started from its page shows the chip 12 px under the transport row; ↓ opens the rail on the playing card", async ({ page }) => {
+    test.setTimeout(90_000);
+    await boot(page, server);
+    await playAndRaiseControls(page);
+    const chip = page.locator("#ov-chip");
+    await expect(chip).toBeVisible();
+    await expect(page.locator("#ov-chip-t")).toHaveText("Episodes");
+    const row = (await page.locator("#ov-row").boundingBox())!;
+    const box = (await chip.boundingBox())!;
+    expect(box.y - (row.y + row.height), "the chip sits 12 px under the row").toBeCloseTo(12, 0);
+    expect(box.height, "a 36 dp pill at FR-28's factor").toBeCloseTo(72, 0);
+
+    await page.keyboard.press("ArrowDown");                  // ↓ from the transport row (Play is focused)
+    await expect(page.locator("#rail")).toHaveClass(/\bon\b/);
+    await expect(page.locator("#rl-season")).toHaveText("Season 1");
+    await expect(page.locator("#rl-hint")).toContainText("↵");
+    await expect(cards(page)).toHaveCount(3);
+    await expect(focusedCard(page).locator(".rl-t")).toContainText("Opening Reel");
+    await expect(focusedCard(page)).toHaveClass(/\bcur\b/);
+    await expect(focusedCard(page).locator(".rl-now")).toHaveText("NOW PLAYING");
+    await expect(focusedCard(page).locator(".rl-d")).toHaveText("40m");
+    await expect(page.locator("#overlay"), "the controls stay up while the rail is open").toHaveClass(/\bon\b/);
+    await expect(chip, "the chip gives way to the rail").toBeHidden();
+    // The rail is not a seek, and nothing plays while it opens.
+    expect((await avplayCalls(page)).some((c) => c[0] === "seekTo" || c[0] === "pause")).toBe(false);
+  });
+
+  test("→ then OK stops the current item and starts the chosen one, with the episode after it as next", async ({ page }) => {
+    test.setTimeout(90_000);
+    const seen = await boot(page, server);
+    await playAndRaiseControls(page);
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("ArrowRight");
+    await expect(focusedCard(page).locator(".rl-t")).toContainText("Second Reel");
+    await expect(focusedCard(page)).not.toHaveClass(/\bcur\b/);
+    await page.keyboard.press("Enter");
+    await expect.poll(() => seen.starts.map((s) => s.item_id), { timeout: 10_000 }).toEqual(["s1e1", "s1e2"]);
+    expect(seen.stops[0]).toMatchObject({ item_id: "s1e1" });
+    expect(seen.remotePlays).toHaveLength(0);
+    await expect(page.locator("#rail")).not.toHaveClass(/\bon\b/);
+    await waitForAvplayCall(page, "play", (await avplayCalls(page)).filter((c) => c[0] === "open").length);
+    // s1e2 carries s1e3 as its next, and the rail follows the playing episode.
+    await page.keyboard.press("ArrowDown");
+    await expect(page.locator("#ov-next")).toContainText(">>");
+    await page.keyboard.press("ArrowDown");
+    await expect(focusedCard(page).locator(".rl-t")).toContainText("Second Reel");
+    await expect(focusedCard(page)).toHaveClass(/\bcur\b/);
+  });
+
+  test("OK on the playing card, Back and ↑ close the rail onto the transport row and stop nothing", async ({ page }) => {
+    test.setTimeout(90_000);
+    const seen = await boot(page, server);
+    await playAndRaiseControls(page);
+    for (const close of ["Enter", "Escape", "ArrowUp"]) {
+      await page.keyboard.press("ArrowDown");
+      await expect(page.locator("#rail")).toHaveClass(/\bon\b/);
+      await page.keyboard.press(close);
+      await expect(page.locator("#rail")).not.toHaveClass(/\bon\b/);
+      await expect(page.locator("#overlay")).toHaveClass(/\bon\b/);
+      await expect(page.locator("#ov-play"), "focus is on the transport row").toHaveClass(/\bfoc\b/);
+      await expect(page.locator("#ov-chip")).toBeVisible();
+    }
+    expect(seen.starts.map((s) => s.item_id)).toEqual(["s1e1"]);
+    expect(seen.stops).toHaveLength(0);
+  });
+
+  test("a play from a phone's push has no chip and ↓ opens nothing", async ({ page }) => {
+    test.setTimeout(60_000);
+    await boot(page, server);
+    await page.evaluate((frame) => (window as any).__pushEvent(frame), playItem("ep-1"));
+    await waitForAvplayCall(page, "play");
+    await page.keyboard.press("ArrowDown");
+    await expect(page.locator("#overlay")).toHaveClass(/\bon\b/);
+    await expect(page.locator("#ov-chip")).toBeHidden();
+    await page.keyboard.press("ArrowDown");
+    await expect(page.locator("#rail")).not.toHaveClass(/\bon\b/);
+    await expect(page.locator("#ov-play")).toHaveClass(/\bfoc\b/);
+  });
+
+  test("with the picker open the chip is hidden and ↓ does not open the rail", async ({ page }) => {
+    test.setTimeout(90_000);
+    await boot(page, server);
+    await playAndRaiseControls(page);
+    await expect(page.locator("#ov-chip")).toBeVisible();
+    await openPickerFromChrome(page);
+    await expect(page.locator("#picker")).toHaveClass(/\bon\b/);
+    await expect(page.locator("#ov-chip")).toBeHidden();
+    await page.keyboard.press("ArrowDown");
+    await expect(page.locator("#rail")).not.toHaveClass(/\bon\b/);
+  });
+});

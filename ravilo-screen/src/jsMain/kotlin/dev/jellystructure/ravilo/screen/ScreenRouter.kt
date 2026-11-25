@@ -54,6 +54,29 @@ internal data class ScreenPlayContext(
     val nextKicker: String? = null,
     /** DEB-4865 — the counted episodes after [nextId], in order, so the next-up card can start the next one on the TV itself. */
     val following: List<ScreenFollowing> = emptyList(),
+    /** DEB-5652 (DEB-5640, FR-54) — every season of the series with its counted episodes, for the player's episode rail; empty (no rail) for a film. */
+    val seasons: List<ScreenRailSeason> = emptyList(),
+    /** FR-54 — a newest-first series has no episode after any other: a rail pick starts alone. */
+    val newestFirst: Boolean = false,
+)
+
+/** DEB-5652 (FR-54) — one season of the rail: [index] 0 is Specials, [label] the heading (`playerRailSeasonLabel`: *Season 1*, a Specials season's own name). */
+internal data class ScreenRailSeason(val index: Int, val label: String, val entries: List<ScreenRailEntry>)
+
+/**
+ * DEB-5652 (FR-54) — one rail card, Android TV's `PlayerEpisodeEntry`: what the card draws, and what starting it needs.
+ * [number] is null for a multi-episode file (its title already says which), [progress] is 0–1 and [watched] the page's overlay.
+ */
+internal data class ScreenRailEntry(
+    val id: String,
+    val number: Int?,
+    val title: String,
+    val kicker: String,
+    val runtimeMin: Int,
+    val stillUrl: String?,
+    val progress: Float,
+    val watched: Boolean,
+    val segments: TvSegmentMarkers? = null,
 )
 
 /** One episode the TV can play next without asking the backend to push it: what a phone's `play_item` would have carried. */
