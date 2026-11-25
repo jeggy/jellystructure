@@ -21,10 +21,16 @@ import io.ktor.http.encodeURLParameter
 import io.ktor.http.encodeURLPathPart
 import io.ktor.http.isSuccess
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.sync.withPermit
 
 // R219 (FR-R219-2) — page size for the "page to completion" fetches Continue Watching's canonical list
 // needs. Not a cap: every paged fetch below loops until TotalRecordCount is reached.
 private const val JF_PAGE_SIZE = 200
+
+// DEB-5541 — how many pages of the finished history are in flight at once (page 1 first, then the rest).
+private const val JF_PARALLEL_PAGES = 4
 
 // FR-314-21 (DEB-1009) — how many item ids go into one `?Ids=` read. A bound on the URL, not on the answer: the
 // caller chunks and merges, so a library with more kind C versions than this costs another request and nothing else.
@@ -1174,20 +1180,53 @@ class JellyfinClient {
     suspend fun getRecentlyPlayedAllRead(baseUrl: String, userToken: String, userId: String): JellyfinRead<List<JellyfinPlayItem>> {
         var status: Int? = null
         return runCatching {
-            val acc = mutableListOf<JellyfinPlayItem>()
-            var startIndex = 0
-            while (true) {
+            // DEB-5541 (FR-R219-2, R231) — page 1 names TotalRecordCount, the rest are read at most
+            // [JF_PARALLEL_PAGES] at a time and joined in StartIndex order. One viewer's 1,944 finished items took
+            // ten sequential 0.6–0.9 s pages and blew CONTINUE_TIMEOUT_MS's 6 s every refresh.
+            suspend fun page(startIndex: Int): Pair<JellyfinPlayItemsResponse?, Int?> {
+                var pageStatus: Int? = null
                 // Phase 208 — migrated off /Users/{userId}/Items; see getResumeItems' comment.
                 val url = baseUrl.trimEnd('/') +
                     "/Items?userId=$userId&Filters=IsPlayed&Recursive=true" +
                     "&IncludeItemTypes=Movie,Episode&Limit=$JF_PAGE_SIZE&StartIndex=$startIndex" +
                     "&SortBy=DatePlayed&SortOrder=Descending&EnableImages=false" +
                     "&Fields=UserData,SeriesId,SeriesName,SeasonId,IndexNumber,ParentIndexNumber"
-                val resp = httpGet(url) { jellyfinAuth(userToken) }.bodyOrNull<JellyfinPlayItemsResponse>("getRecentlyPlayedAll") { status = it } ?: break
-                if (resp.items.isEmpty()) break
+                val resp = httpGet(url) { jellyfinAuth(userToken) }.bodyOrNull<JellyfinPlayItemsResponse>("getRecentlyPlayedAll") { pageStatus = it }
+                return resp to pageStatus
+            }
+            val (first, firstStatus) = page(0)
+            if (first == null) {
+                status = firstStatus
+                return@runCatching emptyList<JellyfinPlayItem>()
+            }
+            val acc = first.items.toMutableList()
+            if (first.items.isEmpty() || first.items.size >= first.totalRecordCount) return@runCatching acc
+            // A short page that is not the last would leave a hole at the next fixed StartIndex: fail, never skip.
+            check(first.items.size == JF_PAGE_SIZE) { "getRecentlyPlayedAll page 1 returned ${first.items.size} of $JF_PAGE_SIZE" }
+            val gate = kotlinx.coroutines.sync.Semaphore(JF_PARALLEL_PAGES)
+            val failed = kotlin.concurrent.AtomicInt(0)
+            val rest = kotlinx.coroutines.coroutineScope {
+                (JF_PAGE_SIZE until first.totalRecordCount step JF_PAGE_SIZE).map { start ->
+                    async {
+                        gate.withPermit {
+                            if (failed.value != 0) return@withPermit null
+                            page(start).also { if (it.first == null) failed.value = 1 }
+                        }
+                    }
+                }.awaitAll()
+            }
+            for ((i, r) in rest.withIndex()) {
+                val resp = r?.first
+                if (resp == null) {
+                    status = r?.second
+                    break
+                }
+                val start = JF_PAGE_SIZE * (i + 1)
+                val last = start + JF_PAGE_SIZE >= first.totalRecordCount
+                check(resp.items.size == JF_PAGE_SIZE || (last && resp.items.isNotEmpty())) {
+                    "getRecentlyPlayedAll page at $start returned ${resp.items.size} of $JF_PAGE_SIZE"
+                }
                 acc += resp.items
-                startIndex += resp.items.size
-                if (startIndex >= resp.totalRecordCount) break
             }
             acc
         }.toRead("getRecentlyPlayedAll", emptyList(), status)
