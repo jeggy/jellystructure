@@ -48,8 +48,11 @@ internal class ScreenHome(private val serverUrl: String, private val showProgres
             rail.appendChild(track)
             val shape = if (row.kind == RowKind.CONTINUE) TileShape.LANDSCAPE else feed.tileShape
             row.items.forEachIndexed { tileIndex, card ->
-                track.appendChild(tile(card, "home-row-$rowIndex-tile-$tileIndex", "row-$rowIndex", shape,
-                    row.kind == RowKind.CONTINUE && showProgress()))
+                val tile = tile(card, "home-row-$rowIndex-tile-$tileIndex", "row-$rowIndex", shape,
+                    row.kind == RowKind.CONTINUE && showProgress())
+                // DEB-5648 (FR-50) — the router warms what a Continue Watching tile's page would play.
+                if (row.kind == RowKind.CONTINUE) tile.setAttribute("data-row-kind", CONTINUE_ROW)
+                track.appendChild(tile)
             }
             section.appendChild(rail)
             home.appendChild(section)
@@ -159,6 +162,7 @@ internal class ScreenHome(private val serverUrl: String, private val showProgres
 
     companion object {
         const val HERO_ID = ScreenHero.ID
+        const val CONTINUE_ROW = "continue"
         private const val IMAGE_CAP = 60
     }
 }

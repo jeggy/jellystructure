@@ -10,6 +10,7 @@ import kotlinx.browser.document
 import kotlinx.browser.window
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import org.w3c.dom.HTMLElement
 import org.w3c.dom.events.KeyboardEvent
 
@@ -93,6 +94,7 @@ internal class ScreenShell(
         syncHero()
         val entry = entries.last()
         if (entry.browse?.nearEnd(it.id) == true) loadBrowse(entry)
+        syncPrewarm()   // DEB-5648 (FR-50) — a Continue Watching tile that holds focus warms its page's Play
     }
     private var visible = false
     private var player = false
@@ -256,11 +258,46 @@ internal class ScreenShell(
      * DEB-5396 (FR-35) — the page that shows holds the encode of what Play would play, after 2 s. Anything else showing — Back, another
      * page, Home, the app hidden, a phone's push — cancels it at once; a target that moves cancels the old item and starts the 2 s
      * again for the new one. [playFromPage] lets go of it first, so leaving by Play does not.
+     * DEB-5648 (FR-50) — Home holds the same for the Continue Watching tile in focus, and the page that tile opens keeps that hold
+     * while it loads and carries on from it once it is ready ([ScreenPrewarm.settle]).
      */
     private fun syncPrewarm() {
-        val page = entries.lastOrNull()?.detail?.takeIf { visible && !player && !away && it.ready }
-        val target = page?.prewarmTarget()
-        if (target == null) pageWarm.cancel() else pageWarm.warm(target, page.prewarmSeriesId, ScreenPrewarm.DWELL_MS)
+        val entry = entries.lastOrNull()
+        if (!visible || player || away || entry == null) { pageWarm.cancel(); return }
+        val page = entry.detail
+        if (page != null) {
+            if (!page.ready) {
+                if (page.failed || pageWarm.holdFor != entry.mediaId) pageWarm.cancel()
+                return
+            }
+            val target = page.prewarmTarget()
+            when {
+                target == null -> pageWarm.cancel()
+                pageWarm.holdFor == entry.mediaId -> pageWarm.settle(target, page.prewarmSeriesId)
+                else -> pageWarm.warm(target, page.prewarmSeriesId, ScreenPrewarm.DWELL_MS)
+            }
+            return
+        }
+        val tile = (document.getElementById(entry.focusId) as? HTMLElement)
+            ?.takeIf { entry.name == "home" && entry.feed != null && it.getAttribute("data-row-kind") == ScreenHome.CONTINUE_ROW }
+        val mediaId = tile?.getAttribute("data-media-id")
+        when (tile?.getAttribute("data-media-kind")) {
+            "movie" -> pageWarm.warmTile(mediaId!!, null, ScreenPrewarm.DWELL_MS)
+            "series" -> pageWarm.warmTile(mediaId!!, mediaId, ScreenPrewarm.DWELL_MS) { seriesPlayTarget(mediaId) }
+            else -> pageWarm.cancel()
+        }
+    }
+
+    /**
+     * DEB-5648 (FR-50) — what a series' page would play, read the way the page reads it: the series, then its playstate. A failed or late
+     * (5 s) read answers null, so nothing is warmed.
+     */
+    private suspend fun seriesPlayTarget(id: String): String? = withTimeoutOrNull(PREWARM_READ_MS) {
+        runCatching {
+            val detail = api.getSeries(id)
+            val ids = (listOf(id) + detail.seasons.flatMap { s -> s.episodes.map { it.id } }).distinct()
+            seriesPrimary(detail, id, api.getPlaystateStrict(ids))?.episode?.id
+        }.getOrNull()
     }
 
     /** Play on a title's page: the server adopts the warm job when the plan matches, or stops it for its own, so nothing is cancelled here. */
@@ -381,5 +418,10 @@ internal class ScreenShell(
         }
         runCatching { TizenGlobal.application.getCurrentApplication().exit() }
             .onFailure { window.close() }
+    }
+
+    private companion object {
+        /** DEB-5648 (FR-50) — how long the reads for a series tile's target may take before nothing is warmed. */
+        const val PREWARM_READ_MS = 5_000L
     }
 }

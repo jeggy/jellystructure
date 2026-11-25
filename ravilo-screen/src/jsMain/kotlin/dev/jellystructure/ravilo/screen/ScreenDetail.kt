@@ -94,6 +94,9 @@ internal class ScreenDetail(
 
     val ready get() = movie != null || series != null
 
+    /** DEB-5648 (FR-50) — the page's own reads failed, so nothing on it will ever be ready. */
+    val failed get() = failure != null
+
     /** The primary button: where focus lands when the page has drawn. */
     val primaryFocusId = "detail-play"
 
