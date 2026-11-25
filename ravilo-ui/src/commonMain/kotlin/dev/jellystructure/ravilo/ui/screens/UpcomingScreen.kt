@@ -1,5 +1,7 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.shared.tv.weekdayKey
+import dev.jellystructure.shared.tv.monthKey
 import dev.jellystructure.ravilo.ui.focus.chipFocusRing
 import androidx.compose.foundation.focusGroup
 import androidx.compose.ui.focus.focusProperties
@@ -596,23 +598,9 @@ internal fun relativeDayKey(date: LocalDate, today: LocalDate): String? = when (
 @Composable
 internal fun weekdayAbbrev(d: DayOfWeek): String = str(weekdayKey(d))
 
-// DEB-2938 — the key alone, so the newest-first air date (NewestFirst.kt) spells a weekday the same way.
-internal fun weekdayKey(d: DayOfWeek): String = when (d) {
-    DayOfWeek.MONDAY -> "wd.abbr.mon"; DayOfWeek.TUESDAY -> "wd.abbr.tue"; DayOfWeek.WEDNESDAY -> "wd.abbr.wed"
-    DayOfWeek.THURSDAY -> "wd.abbr.thu"; DayOfWeek.FRIDAY -> "wd.abbr.fri"; DayOfWeek.SATURDAY -> "wd.abbr.sat"
-    else -> "wd.abbr.sun"
-}
-
 /** R279 — see [weekdayAbbrev]; `month.*` is shared with the episode card's air date. */
 @Composable
 internal fun monthAbbrev(m: Month): String = str(monthKey(m))
-
-internal fun monthKey(m: Month): String = when (m) {
-    Month.JANUARY -> "month.jan"; Month.FEBRUARY -> "month.feb"; Month.MARCH -> "month.mar"
-    Month.APRIL -> "month.apr"; Month.MAY -> "month.may"; Month.JUNE -> "month.jun"
-    Month.JULY -> "month.jul"; Month.AUGUST -> "month.aug"; Month.SEPTEMBER -> "month.sep"
-    Month.OCTOBER -> "month.oct"; Month.NOVEMBER -> "month.nov"; else -> "month.dec"
-}
 
 // internal, not private: UpcomingDetailScreen.kt (a different file, same package) reuses this too.
 internal val UPCOMING_GRADIENTS = listOf(

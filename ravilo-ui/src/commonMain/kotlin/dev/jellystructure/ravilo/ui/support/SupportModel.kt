@@ -2,7 +2,7 @@ package dev.jellystructure.ravilo.ui.support
 
 import dev.jellystructure.ravilo.i18n.t
 import dev.jellystructure.ravilo.ui.components.weekdayAbbrKey
-import dev.jellystructure.ravilo.ui.screens.monthKey
+import dev.jellystructure.shared.tv.monthKey
 import dev.jellystructure.shared.tv.EVENTS_FEATURE_SUPPORT
 import dev.jellystructure.shared.tv.SupportMessageView
 import dev.jellystructure.shared.tv.SupportTicketRow

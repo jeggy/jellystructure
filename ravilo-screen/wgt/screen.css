@@ -265,6 +265,7 @@
     .detail { position: relative; min-height: 100%; }
     .detail-backdrop { position: absolute; top: -18px; right: -72px; left: -72px; height: 62vh; overflow: hidden; background: #161922; }
     .detail-backdrop img { width: 100%; height: 100%; object-fit: cover; }
+    .home-heading-count { margin-left: 12px; font-size: 20px; font-weight: 500; color: var(--ink-dim); }
     .detail-backdrop:after { content: ""; position: absolute; top: 0; right: 0; bottom: 0; left: 0; background: linear-gradient(0deg, var(--bg) 4%, rgba(10,12,19,.55) 60%, rgba(10,12,19,.85)); }
     .detail-head { position: relative; z-index: 1; padding-top: 7vh; text-shadow: 0 2px 8px #000; }
     .detail-head > .detail-overview, .detail-head > .detail-meta { max-width: 62%; }
@@ -282,6 +283,16 @@
     .detail-badge-code[data-tier="4"] { background: #c23a3a; }
     .detail-overview { font-size: 21px; line-height: 1.45; color: var(--ink-soft); margin: 18px 0 0; max-height: 6.1em; overflow: hidden; }
     .detail-actions { display: flex; margin-top: 28px; }   /* one row: Left and Right only move within a row */
+    /* DEB-5640 FR-52 — Android TV's corner badges (Tile.kt): episode/upcoming top-left, ✓ top-right, picture quality bottom-right. */
+    .tile-frame { position: relative; }
+    .tile-badge { position: absolute; max-width: 70%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; font-weight: 700; color: #fff; }
+    .badge-start { top: 8px; left: 8px; }
+    .badge-end { top: 8px; right: 8px; }
+    .badge-episode { padding: 3px 8px; border-radius: 4px; background: rgba(0,0,0,.6); letter-spacing: .3px; }
+    .badge-upcoming { padding: 4px 8px; border-radius: 4px; background: var(--accent); }
+    .badge-watched { width: 28px; height: 28px; max-width: none; border-radius: 14px; background: #2dd49a; line-height: 28px; text-align: center; }
+    .badge-quality { right: 8px; bottom: 8px; padding: 3px 8px; border-radius: 6px; background: rgba(0,0,0,.62); font-size: 13px; letter-spacing: .5px; }
+    .tile-sub { font-size: 15px; color: var(--ink-soft); padding: 0 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .detail-btn { font-size: 23px; font-weight: 650; padding: 14px 30px; margin: 0 14px 12px 0; border-radius: 11px; background: rgba(255,255,255,.12); color: var(--ink); text-shadow: none; }
     .detail-btn.primary { background: linear-gradient(90deg, var(--accent), var(--accent-2)); color: #fff; }
     .detail-btn.cur { box-shadow: inset 0 0 0 2px var(--accent); }

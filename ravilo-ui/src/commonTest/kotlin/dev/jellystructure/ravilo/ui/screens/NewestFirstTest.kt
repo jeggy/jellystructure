@@ -1,5 +1,7 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.shared.tv.airDateText
+import dev.jellystructure.shared.tv.currentYearUtc
 import dev.jellystructure.ravilo.ui.i18n.t
 import dev.jellystructure.shared.tv.CardPlayState
 import dev.jellystructure.shared.tv.Episode

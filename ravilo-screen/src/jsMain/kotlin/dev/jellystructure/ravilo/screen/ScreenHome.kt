@@ -5,6 +5,9 @@ import dev.jellystructure.shared.tv.HomeFeed
 import dev.jellystructure.shared.tv.MediaCard
 import dev.jellystructure.shared.tv.RowKind
 import dev.jellystructure.shared.tv.TileShape
+import dev.jellystructure.shared.tv.continueDateBadge
+import dev.jellystructure.shared.tv.episodeCode
+import dev.jellystructure.shared.tv.rowHeadingCount
 import kotlinx.browser.document
 import kotlinx.browser.window
 import org.w3c.dom.HTMLElement
@@ -42,14 +45,17 @@ internal class ScreenHome(private val serverUrl: String, private val showProgres
         }
         feed.rows.forEachIndexed { rowIndex, row ->
             val section = node("section", "home-section home-content-row")
-            section.appendChild(label("h2", "home-heading", row.title))
+            val heading = label("h2", "home-heading", row.title)
+            // DEB-5640 FR-52: Android TV's row count, only above 1; a grid's heading has none.
+            rowHeadingCount(row.seedTotalCount, row.items.size)?.let { heading.appendChild(label("span", "home-heading-count", "· $it")) }
+            section.appendChild(heading)
             val rail = node("div", "home-rail")
             val track = node("div", "rail-track")
             rail.appendChild(track)
             val shape = if (row.kind == RowKind.CONTINUE) TileShape.LANDSCAPE else feed.tileShape
             row.items.forEachIndexed { tileIndex, card ->
                 val tile = tile(card, "home-row-$rowIndex-tile-$tileIndex", "row-$rowIndex", shape,
-                    row.kind == RowKind.CONTINUE && showProgress())
+                    row.kind == RowKind.CONTINUE && showProgress(), row.kind)
                 // DEB-5648 (FR-50) — the router warms what a Continue Watching tile's page would play.
                 if (row.kind == RowKind.CONTINUE) tile.setAttribute("data-row-kind", CONTINUE_ROW)
                 track.appendChild(tile)
@@ -115,17 +121,44 @@ internal class ScreenHome(private val serverUrl: String, private val showProgres
         }
     }
 
-    /** Shared by Home rows and FR-6's browse grid. */
-    fun tile(card: MediaCard, id: String, row: String, shape: TileShape, showProgress: Boolean = false): HTMLElement {
+    /**
+     * Shared by Home rows, FR-6's browse grid and FR-51's row. DEB-5640 FR-52: the badges are Android TV's, from
+     * `resolveCornerBadges` with `isNew` false. [rowKind] is the row's kind, null outside Home (a grid, a search).
+     */
+    fun tile(card: MediaCard, id: String, row: String, shape: TileShape, showProgress: Boolean = false, rowKind: RowKind? = null): HTMLElement {
+        val language = ScreenLanguage.lang
+        val isContinue = rowKind == RowKind.CONTINUE
         val target = target(id, row, "tile")
         target.classList.add("tile-${shape.name.lowercase()}")
         target.setAttribute("data-media-id", card.id)
         target.setAttribute("data-media-kind", card.kind.name.lowercase())
+        val frame = node("div", "tile-frame")
         val art = node("div", "tile-art")
         val artUrl = if (shape == TileShape.LANDSCAPE) card.backdropUrl ?: card.posterUrl
             else card.posterUrl ?: card.backdropUrl
         artUrl?.let { art.setAttribute("data-art-url", absoluteUrl(it)) }
-        target.appendChild(art)
+        frame.appendChild(art)
+        // The badges sit beside the art, not in it: FR-42's image slots empty the art holder when a tile leaves the screen.
+        val code = if (isContinue && card.seasonNumber != null && card.episodeNumber != null)
+            episodeCode(card.seasonNumber!!, card.episodeNumber!!, card.episodeNumberEnd) else null
+        val dateBadge = if (isContinue) continueDateBadge(card.episodeAirDate, card.progressPct ?: 0f) { k, v -> t(k, language, v) } else null
+        val episodeBadge = dateBadge ?: code
+        val upcoming = card.upcomingEpisode?.let { t("tile.badge_soon", language, mapOf("label" to it)) }
+        // resolveCornerBadges: top-left is the episode, else the upcoming; top-right the ✓, else the upcoming the top-left did not take.
+        val topStart = when {
+            episodeBadge != null -> badge("badge-episode", episodeBadge)
+            upcoming != null -> badge("badge-upcoming", upcoming)
+            else -> null
+        }
+        val topEnd = when {
+            card.watched -> badge("badge-watched", "✓")
+            upcoming != null && episodeBadge != null -> badge("badge-upcoming", upcoming)
+            else -> null
+        }
+        topStart?.let { it.classList.add("badge-start"); frame.appendChild(it) }
+        topEnd?.let { it.classList.add("badge-end"); frame.appendChild(it) }
+        card.qualityBadge?.takeIf { it.isNotBlank() }?.let { frame.appendChild(badge("badge-quality", it)) }
+        target.appendChild(frame)
         if (showProgress) card.progressPct?.let { progress ->
             val track = node("div", "tile-progress")
             val fill = node("div", "tile-progress-fill")
@@ -134,8 +167,11 @@ internal class ScreenHome(private val serverUrl: String, private val showProgres
             target.appendChild(track)
         }
         target.appendChild(label("div", "tile-title", card.title))
+        if (!isContinue) card.nextUpLabel?.takeIf { it.isNotBlank() }?.let { target.appendChild(label("div", "tile-sub", it)) }
         return target
     }
+
+    private fun badge(className: String, text: String): HTMLElement = label("div", "tile-badge $className", text)
 
     private fun image(url: String): HTMLElement? {
         if (url.isBlank()) return null

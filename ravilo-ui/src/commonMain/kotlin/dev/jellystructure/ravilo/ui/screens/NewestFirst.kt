@@ -6,11 +6,9 @@ import dev.jellystructure.ravilo.ui.i18n.t
 import dev.jellystructure.shared.tv.CardPlayState
 import dev.jellystructure.shared.tv.Episode
 import dev.jellystructure.shared.tv.Season
+import dev.jellystructure.shared.tv.airDateText
+import dev.jellystructure.shared.tv.currentYearUtc
 import dev.jellystructure.shared.tv.SeriesDetail
-import kotlinx.datetime.LocalDate
-import kotlinx.datetime.TimeZone
-import kotlinx.datetime.toLocalDateTime
-import kotlin.time.Clock
 
 /*
  * DEB-2938 (DEB-2916, FR-8..FR-12, FR-15) — a newest-first series on the series page and the Continue tile.
@@ -63,28 +61,13 @@ internal fun newestState(detail: SeriesDetail, overlay: Map<String, CardPlayStat
     return if (olderWatched) NewestState.NEW_EPISODE else NewestState.NONE
 }
 
-/** The calendar year a date is compared against (UTC, as the Upcoming calendar's *today*). */
-internal fun currentYearUtc(): Int = Clock.System.now().toLocalDateTime(TimeZone.UTC).year
-
-/**
- * FR-9 — an air date (`yyyy-MM-dd`) as the viewer reads it: `date.weekday_day_month` (*Thu 29 Oct*), or
- * `date.month_day_year` when it is not in [thisYear]. Null for a blank, malformed or impossible date, so the
- * caller keeps the episode's code. [tr] is the viewer's string table.
- */
-internal fun airDateText(iso: String?, thisYear: Int, tr: (key: String, vars: Map<String, String>) -> String): String? {
-    val date = iso?.trim()?.takeIf { it.isNotEmpty() }?.let { runCatching { LocalDate.parse(it) }.getOrNull() } ?: return null
-    val day = date.day.toString()
-    val month = tr(monthKey(date.month), emptyMap())
-    return if (date.year == thisYear) {
-        tr("date.weekday_day_month", mapOf("weekday" to tr(weekdayKey(date.dayOfWeek), emptyMap()), "day" to day, "month" to month))
-    } else {
-        tr("date.month_day_year", mapOf("month" to month, "day" to day, "year" to date.year.toString()))
-    }
-}
-
 /** [airDateText] in the language [lang], for code that is not composable. */
 internal fun airDateText(iso: String?, lang: String, thisYear: Int = currentYearUtc()): String? =
     airDateText(iso, thisYear) { k, v -> t(k, lang, v) }
+
+/** DEB-2938 (FR-15) — [continueDateBadge] in the language [lang]. */
+internal fun continueDateBadge(airDate: String?, progressPct: Float, lang: String, thisYear: Int = currentYearUtc()): String? =
+    dev.jellystructure.shared.tv.continueDateBadge(airDate, progressPct, thisYear) { k, v -> t(k, lang, v) }
 
 /** [airDateText] in the viewer's language. */
 @Composable

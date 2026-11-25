@@ -61,6 +61,7 @@ kotlin {
             dependencies {
                 implementation(libs.kotlinx.serialization.json)
                 implementation(libs.kotlinx.coroutines.core)
+                implementation(libs.kotlinx.datetime)   // DEB-5640 — TileBadges' air dates
                 implementation(libs.ktor.client.core)
                 implementation(libs.ktor.client.websockets)
             }

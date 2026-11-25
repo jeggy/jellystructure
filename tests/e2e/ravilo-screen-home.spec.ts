@@ -55,7 +55,7 @@ test.describe("Continue Watching progress follows show_continue_progress (DEB-56
   test("false: no tile has a bar", async ({ page }) => {
     await config(page, { show_continue_progress: false });
     await boot(page, withProgress);
-    await expect(page.locator("#shell-body .home-heading")).toHaveText(["Collections", "New Arrivals", "Keep Watching"]);
+    await expect(page.locator("#shell-body .home-heading")).toHaveText(["Collections", "New Arrivals", /^Keep Watching/]);   // FR-52: a two-item row carries its count
     await expect(page.locator("#home-row-1-tile-1")).toContainText("Red Meadow");
     await expect(page.locator("#shell-body .tile-progress")).toHaveCount(0);
   });
@@ -481,4 +481,82 @@ test("Tizen the hero loads the slide showing and the next two backdrops, and let
   await expect(showing(page)).toHaveText("Hero 2");
   await page.clock.fastForward(600);
   await expect.poll(loaded).toEqual(["2", "3", "4"]);
+});
+
+// DEB-5650 (DEB-5640 FR-52): Home's tiles carry Android TV's badges, and a row heading carries its count.
+test.describe("Tizen tile badges and row counts (DEB-5640 FR-52)", () => {
+  const series = (id: string, title: string, extra: object = {}) => ({ ...card(id, title), kind: "SERIES", ...extra });
+  const feed = {
+    heroes: [], channels: [],
+    rows: [
+      { id: "continue", title: "Keep Watching", kind: "CONTINUE", seedTotalCount: 37, items: [
+        series("cw-code", "Blue Orchard", { season_number: 1, episode_number: 5, progress_pct: 0.4, next_up_label: "S01E06 · Next" }),
+        series("cw-range", "Red Meadow", { season_number: 1, episode_number: 1, episode_number_end: 3 }),
+        series("cw-new", "Dagbók", { season_number: 2026, episode_number: 302, episode_air_date: "2020-10-29" }),
+        series("cw-date", "Dagbók Two", { season_number: 2026, episode_number: 302, episode_air_date: "2020-10-29", progress_pct: 0.4 }),
+      ] },
+      { id: "shelf", title: "Shelf", kind: "CUSTOM", items: [
+        series("sh-done", "Paper Moon", { watched: true, quality_badge: "4K", next_up_label: "S02E01 · Up next" }),
+        series("sh-soon", "Copper River", { upcoming_episode: "S03E01" }),
+        series("sh-soon-watched", "Moss House", { upcoming_episode: "S04E02", watched: true }),
+        series("sh-plain", "Plain Title"),
+      ] },
+      { id: "single", title: "Single", kind: "CUSTOM", items: [card("one", "Only One")] },
+    ],
+    tile_shape: "POSTER", hero_height_pct: 48, focus_detail: "none",
+  };
+
+  test("a Continue Watching tile names its episode on the art and has no second line", async ({ page }) => {
+    await boot(page, feed);
+    const code = page.locator("#home-row-0-tile-0");
+    await expect(code.locator(".badge-episode")).toHaveText("S01E05");
+    await expect(code.locator(".badge-start")).toHaveText("S01E05");
+    await expect(code.locator(".tile-sub")).toHaveCount(0);
+    await expect(page.locator("#home-row-0-tile-1 .badge-episode")).toHaveText("S01E01–E03");
+  });
+
+  test("a newest-first card shows its date, New before it is started", async ({ page }) => {
+    await boot(page, feed);
+    await expect(page.locator("#home-row-0-tile-2 .badge-episode")).toHaveText(/^New · .*29.*2020/);
+    await expect(page.locator("#home-row-0-tile-3 .badge-episode")).toHaveText(/^(?!New).*29.*2020/);
+  });
+
+  test("a watched card shows ✓ top-right and quality shows bottom-right", async ({ page }) => {
+    await boot(page, feed);
+    const done = page.locator("#home-row-1-tile-0");
+    await expect(done.locator(".badge-end.badge-watched")).toHaveText("✓");
+    await expect(done.locator(".badge-quality")).toHaveText("4K");
+    const [frame, quality, watched] = await Promise.all(
+      [".tile-frame", ".badge-quality", ".badge-watched"].map(s => done.locator(s).evaluate(e => e.getBoundingClientRect().toJSON())));
+    expect(quality.right).toBeLessThanOrEqual(frame.right);
+    expect(frame.right - quality.right).toBeLessThan(16);
+    expect(frame.bottom - quality.bottom).toBeLessThan(16);
+    expect(watched.top - frame.top).toBeLessThan(16);
+    expect(frame.right - watched.right).toBeLessThan(16);
+  });
+
+  test("a card outside Continue Watching puts next_up_label under its title", async ({ page }) => {
+    await boot(page, feed);
+    await expect(page.locator("#home-row-1-tile-0 .tile-title + .tile-sub")).toHaveText("S02E01 · Up next");
+    await expect(page.locator("#home-row-1-tile-3 .tile-sub")).toHaveCount(0);
+  });
+
+  test("upcoming takes the top-left, and the top-right when a watched ✓ is not there to take it", async ({ page }) => {
+    await boot(page, feed);
+    await expect(page.locator("#home-row-1-tile-1 .badge-start.badge-upcoming")).toContainText("S03E01");
+    await expect(page.locator("#home-row-1-tile-1 .badge-end")).toHaveCount(0);
+    await expect(page.locator("#home-row-1-tile-2 .badge-start.badge-upcoming")).toContainText("S04E02");
+    await expect(page.locator("#home-row-1-tile-2 .badge-end.badge-watched")).toHaveText("✓");
+    await expect(page.locator("#home-row-1-tile-3 .tile-badge")).toHaveCount(0);
+  });
+
+  test("a row heading shows the seed's total, and a one-item row shows no count", async ({ page }) => {
+    await boot(page, feed);
+    const headings = page.locator("#shell-body .home-heading");
+    await expect(headings.nth(0)).toContainText("Keep Watching");
+    await expect(headings.nth(0).locator(".home-heading-count")).toHaveText("· 37");
+    await expect(headings.nth(1).locator(".home-heading-count")).toHaveText("· 4");
+    await expect(headings.nth(2)).toHaveText("Single");
+    await expect(headings.nth(2).locator(".home-heading-count")).toHaveCount(0);
+  });
 });

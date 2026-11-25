@@ -2,7 +2,7 @@ package dev.jellystructure.ravilo.ui.components
 
 import androidx.compose.runtime.Composable
 import dev.jellystructure.ravilo.ui.i18n.str
-import dev.jellystructure.ravilo.ui.screens.monthKey
+import dev.jellystructure.shared.tv.monthKey
 import kotlin.time.Clock
 import kotlin.time.Instant
 import kotlinx.datetime.DayOfWeek

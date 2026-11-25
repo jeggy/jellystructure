@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.components
 
+import dev.jellystructure.shared.tv.rowHeadingCount
 import dev.jellystructure.ravilo.ui.theme.raviloItemSpacing
 import dev.jellystructure.ravilo.ui.theme.raviloRowHeadPadB
 import dev.jellystructure.ravilo.ui.theme.raviloTrackPadV
@@ -67,12 +68,6 @@ import dev.jellystructure.ravilo.ui.theme.raviloHPad
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 import dev.jellystructure.ravilo.ui.theme.SpaceGrotesk
 import kotlinx.coroutines.launch
-
-/**
- * DEB-3983 (FR-14) — the count that sits beside a content row's heading on the TV: the seed's true total when the
- * server sent one, else the items the row holds. A row of one item or fewer has no meaningful count, so none shows.
- */
-fun rowHeadingCount(seedTotalCount: Int?, itemCount: Int): Int? = (seedTotalCount ?: itemCount).takeIf { it > 1 }
 
 /** DEB-3983 (FR-14) — the TV's quieter row heading is 16 sp; the phone and the desktop keep 18. */
 fun rowHeadingSize(family: LayoutFamily): TextUnit = if (family == LayoutFamily.TV) 16.sp else 18.sp

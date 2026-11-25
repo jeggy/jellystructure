@@ -83,7 +83,7 @@ import dev.jellystructure.ravilo.ui.components.RaviloButton
 import dev.jellystructure.ravilo.ui.components.SparkleGlyph
 import dev.jellystructure.ravilo.ui.components.SeeAllTile
 import dev.jellystructure.ravilo.ui.components.StaticContentRow
-import dev.jellystructure.ravilo.ui.components.rowHeadingCount
+import dev.jellystructure.shared.tv.rowHeadingCount
 import dev.jellystructure.ravilo.ui.components.Tile
 import dev.jellystructure.ravilo.ui.focus.dpadFocusable
 import dev.jellystructure.ravilo.ui.focus.effectiveFocusDetailMode
@@ -1072,14 +1072,4 @@ private fun HomeErrorState(
             ) { Text(str("profile.sign_out"), color = colors.textSecondary, fontSize = 14.sp, fontWeight = FontWeight.SemiBold) }
         },
     )
-}
-
-/**
- * DEB-2938 (FR-15) — the Continue tile's corner badge for a card that carries `episode_air_date` (a newest-first
- * series): *New · Thu 29 Oct* (`tile.new_on`) when there is no progress, the date alone beside the progress bar when
- * there is. Null — keep the code — for a card with no date, or one the date will not parse.
- */
-internal fun continueDateBadge(airDate: String?, progressPct: Float, lang: String, thisYear: Int = currentYearUtc()): String? {
-    val date = airDateText(airDate, lang, thisYear) ?: return null
-    return if (progressPct > 0f) date else t("tile.new_on", lang, mapOf("date" to date))
 }
