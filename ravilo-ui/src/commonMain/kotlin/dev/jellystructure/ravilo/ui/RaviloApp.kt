@@ -184,6 +184,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.launch
@@ -944,8 +945,8 @@ fun RaviloApp(
         }
         // DEB-4091 FR-4 — one socket-open collector recovers every retained music entry loader, including hidden Browse chips.
         LaunchedEffect(Unit) {
-            serverOpens.drop(1).collect {
-                dev.jellystructure.ravilo.ui.music.recoverMusicEntryStores(storeRegistry)
+            serverOpens.drop(1).collectLatest {
+                dev.jellystructure.ravilo.ui.music.recoverMusicEntryStoresWithRetry(storeRegistry)
             }
         }
         // R352 (FR-R352-8) — a `playstate_changed` patch reaches a series page in the stack too, not only the tiles.

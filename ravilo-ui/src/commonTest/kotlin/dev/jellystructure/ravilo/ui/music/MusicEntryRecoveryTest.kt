@@ -114,6 +114,21 @@ class MusicEntryRecoveryTest {
         assertEquals(listOf(2, 2, 2, 1), listOf("malbum:a", "martist:r:en", "mplaylist:p", "malbum:ok").map { calls.getValue(it) })
     }
 
+    @Test fun `a reload on the open tick that fails again is tried once more, and stops once nothing is failed`() = runBlocking {
+        var calls = 0
+        val genres = MusicLoader {
+            calls++
+            if (calls <= 2) error("stale connection") else "genres"
+        }
+        val registry = mapOf<String, Any>("mlisten:x" to genres)
+        genres.load()
+        withTimeout(3_000) { genres.state.first { it is Load.Failed } }
+        withTimeout(10_000) { recoverMusicEntryStoresWithRetry(registry, listOf(50L, 50L, 50L)) }
+        withTimeout(3_000) { genres.state.first { it is Load.Ready } }
+        assertEquals(3, calls)
+        assertFalse(anyMusicEntryFailed(registry))
+    }
+
     @Test fun `unknown availability shows the desktop toggle only in Music`() {
         assertTrue(desktopMusicToggleVisible(null, true))
         assertFalse(desktopMusicToggleVisible(null, false))

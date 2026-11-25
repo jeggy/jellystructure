@@ -152,6 +152,34 @@ internal fun recoverMusicEntryStores(registry: Map<String, Any>) {
     }
 }
 
+/** DEB-4091 FR-4 — is any retained music entry loader still on its error view? */
+internal fun anyMusicEntryFailed(registry: Map<String, Any>): Boolean = registry.any { (key, store) ->
+    when {
+        store is MusicBrowseStore -> store.hasFailed()
+        store is MusicLoader<*> && MUSIC_RECOVERABLE_PREFIXES.any { key.startsWith(it) } -> store.state.value is Load.Failed
+        else -> false
+    }
+}
+
+/**
+ * DEB-5623 (DEB-4224, FR-4) — the reload on a socket-open tick is not the last try. The tick can land while the REST
+ * client still holds the connections the outage cut, so the first request fails again and the error view stays with
+ * nothing left to retry it. Each pass looks again after [delaysMs] and reloads what is still failed; it stops as soon as
+ * nothing is. A newer tick cancels the older pass (`collectLatest`).
+ */
+internal suspend fun recoverMusicEntryStoresWithRetry(registry: Map<String, Any>, delaysMs: List<Long> = MUSIC_RECOVERY_RETRY_MS) {
+    println("DEB-5623: socket open, failed music pages=${anyMusicEntryFailed(registry)}")
+    recoverMusicEntryStores(registry)
+    for (wait in delaysMs) {
+        delay(wait)
+        if (!anyMusicEntryFailed(registry)) return
+        println("DEB-5623: music page still failed ${wait}ms after the socket opened, reloading again")
+        recoverMusicEntryStores(registry)
+    }
+}
+
+internal val MUSIC_RECOVERY_RETRY_MS = listOf(2_000L, 5_000L, 10_000L)
+
 /** DEB-4091 FR-4 — reload only failed lists, genres and playlists; Ready data stays on screen. */
 internal fun reloadFailedBrowseLoaders(lists: Collection<MusicPagedList>, genres: MusicLoader<*>, playlists: MusicLoader<*>) {
     lists.forEach { it.reloadIfFailed() }
@@ -179,6 +207,8 @@ class MusicBrowseStore(private val api: TvApiClient, private val snapshots: User
     val genres = MusicLoader(saved?.genres?.value, snapshots?.let { s -> { g: List<MusicGenreCount> -> s.saveGenres(g) } }) { api.getMusicGenres() }
     val playlists = MusicLoader(saved?.playlists?.value, snapshots?.let { s -> { p: List<MusicPlaylist> -> s.savePlaylists(p) } }) { api.getMusicPlaylists() }
     fun reloadFailed() = reloadFailedBrowseLoaders(lists.values, genres, playlists)
+    /** DEB-5623 — any chip of this store on its error view. */
+    fun hasFailed() = lists.values.any { it.state.value is Load.Failed } || genres.state.value is Load.Failed || playlists.state.value is Load.Failed
 
     val query = MutableStateFlow("")
     private val _results = MutableStateFlow<Load<MusicSearch>?>(null)
