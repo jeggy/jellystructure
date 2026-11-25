@@ -31,6 +31,8 @@ internal class FakeJellyfinCollections {
     /** What a failing Jellyfin does: the list of collections, or any one collection's members, answers 500. */
     @kotlin.concurrent.Volatile var failList = false
     @kotlin.concurrent.Volatile var failMembers = false
+    /** DEB-4075 — every write (create, add, remove, rename, delete) answers 500 and changes nothing. */
+    @kotlin.concurrent.Volatile var failWrites = false
     /** 12.1 has ignored an `Ids=` filter before (the `Path` one): answer with the whole library. */
     @kotlin.concurrent.Volatile var ignoreIdsFilter = false
 
@@ -96,6 +98,7 @@ internal class FakeJellyfinCollections {
             }
             post("/Items/{id}") {
                 calls.add("POST " + call.request.uri)
+                if (failWrites) return@post call.respondText("boom", status = HttpStatusCode.InternalServerError)
                 val body = call.receiveText()
                 bodies.add(body)
                 val id = call.parameters["id"]
@@ -105,12 +108,14 @@ internal class FakeJellyfinCollections {
             }
             delete("/Items/{id}") {
                 calls.add("DELETE " + call.request.uri)
+                if (failWrites) return@delete call.respondText("boom", status = HttpStatusCode.InternalServerError)
                 val id = call.parameters["id"]
                 update { l -> l.filter { it.id != id } }
                 call.respondText("", status = HttpStatusCode.NoContent)
             }
             post("/Collections") {
                 calls.add("POST " + call.request.uri)
+                if (failWrites) return@post call.respondText("boom", status = HttpStatusCode.InternalServerError)
                 val n = counter.value + 1; counter.value = n
                 val id = "new-box-$n"
                 val ids = call.request.queryParameters["Ids"]?.split(',').orEmpty()
@@ -119,12 +124,14 @@ internal class FakeJellyfinCollections {
             }
             post("/Collections/{id}/Items") {
                 calls.add("POST " + call.request.uri)
+                if (failWrites) return@post call.respondText("boom", status = HttpStatusCode.InternalServerError)
                 val ids = call.request.queryParameters["Ids"]?.split(',').orEmpty()
                 update { l -> l.map { if (it.id == call.parameters["id"]) it.copy(members = (it.members + ids).distinct()) else it } }
                 call.respondText("", status = HttpStatusCode.NoContent)
             }
             delete("/Collections/{id}/Items") {
                 calls.add("DELETE " + call.request.uri)
+                if (failWrites) return@delete call.respondText("boom", status = HttpStatusCode.InternalServerError)
                 val ids = call.request.queryParameters["Ids"]?.split(',').orEmpty().toSet()
                 update { l -> l.map { if (it.id == call.parameters["id"]) it.copy(members = it.members.filter { m -> m !in ids }) else it } }
                 call.respondText("", status = HttpStatusCode.NoContent)

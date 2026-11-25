@@ -220,6 +220,7 @@ fun renderLibrary(container: Element, scope: CoroutineScope, query: Map<String, 
           <button id="f-attention" class="chip">Needs attention</button>
           <button id="f-artwork" class="chip">Missing artwork</button>
           <button id="lib-clear" class="chip" style="display:none">✕ Clear filters</button>
+          <a id="lib-collections" class="chip" href="#/jellyfin-collections" title="Hand-made collections, kept in Jellyfin">Jellyfin collections →</a>
           <span class="spacer" style="flex:1"></span>
           <select id="lib-sort" class="input" style="width:auto;font-size:.83rem;">
             <option value="">recently added ▾</option>

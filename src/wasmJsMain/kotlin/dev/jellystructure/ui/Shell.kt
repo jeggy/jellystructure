@@ -225,6 +225,7 @@ private var paletteSearchJob: Job? = null
 
 private fun buildPaletteCommands(): List<PaletteCmd> = listOfNotNull(
     PaletteCmd("Go to Library", "Browse all media") { App.navigate("/library") },
+    PaletteCmd("Go to Jellyfin collections", "Hand-made collections, kept in Jellyfin") { App.navigate("/jellyfin-collections") },   // DEB-4075 (DEB-4032, FR-6)
     PaletteCmd("Go to Settings", "Connections, scan & metadata options") { App.navigate("/settings") },
     PaletteCmd("Go to Activity", "Scan log and workers") { App.navigate("/activity") },
     // FR-3 — the palette follows the sidebar: AI or Suggestions, never both.

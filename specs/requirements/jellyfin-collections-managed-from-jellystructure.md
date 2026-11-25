@@ -166,6 +166,20 @@ button opens the *New collection* editor already filled in: the name, with every
 rename or untick films before *Create*, and nothing is made until they press it. There is no dismiss: a suggestion
 disappears once it is covered, and the owner can ask for a dismiss later.
 
+**Amendment, 2026-11-25 (DEB-4075).** How FR-5 to FR-7 were built, where the text left a choice:
+- **Wire.** `GET /api/jellyfin-collections` answers `{configured, collections: [{id, name, members: [{id, title, year, kind}], unmapped_count}]}`;
+  `configured` is false while no Jellyfin URL or key is set, so the page says so instead of listing nothing. Create answers 201 and rename,
+  add and remove answer 200, each with the one collection re-read from Jellyfin. Delete answers 204. `/suggestions` answers
+  `[{franchise_id, name, films: [{id, title, year, kind}]}]`. A refusal is `{error: "<sentence>"}`. A collection is named by its Jellyfin id.
+- **Rename's user id** is the signed-in admin's Jellyfin user id, or the first Jellyfin user when the session has none (FR-1 amendment).
+- **Order of checks:** name (400), duplicate (409), titles (400), then Jellyfin (502). Nothing is sent to Jellyfin for a request that is refused.
+  A title with no Jellyfin id answers 400 naming it, because it cannot go in a collection.
+- **Suggestions leave out a film with no Jellyfin id.** A franchise left with fewer than two films that can be collected is not suggested.
+- **Where the page is linked:** a *Jellyfin collections →* chip on the Library page's filter row and a *Go to Jellyfin collections* palette
+  command. There is no sidebar row: `shell-layout.spec.ts` compares the sidebar's pixels.
+- **The title page's *New collection*** opens the page's editor with that title already ticked (`#/jellyfin-collections?new=<media id>`).
+  Nothing is made until *Create*.
+
 ### FR-8 — Ravilo: one *Collection* chip, two kinds of value
 
 The browse page's `BrowseFacetKey.CHANNEL` chip becomes the **Collection** chip:

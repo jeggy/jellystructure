@@ -720,6 +720,7 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
                 </div>
               </div>
               $tagsChipsHtml
+              <div class="card" id="jc-section" style="display:none"></div>
               $resolverTraceHtml
               $ageRatingTraceHtml
             </div>"""
@@ -1218,6 +1219,7 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
     scope.launch { loadAvSync(item) }   // Phase 317
     scope.launch { loadTimeline(item) }   // DEB-3637
     scope.launch { loadChecksCard(item, scope) }   // Phase 261
+    jcWireTitleLine(item.id, scope)   // DEB-4075 (DEB-4032, FR-6) — the Collections card
     scope.launch { loadSubtitleVerdicts(item, scope) }   // Phase 273
     scope.launch { loadFileFixTitleCard(item.id, scope) }   // Phase 314c
     scope.launch { loadSeedingReport(item.id, item.kind == MediaKind.TV_SHOW) }

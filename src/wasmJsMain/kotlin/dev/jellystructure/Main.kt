@@ -4,6 +4,7 @@ import dev.jellystructure.api.AuthApi
 import dev.jellystructure.api.UserProfile
 import dev.jellystructure.ui.installDelegatedActions
 import dev.jellystructure.ui.leaveAiPage
+import dev.jellystructure.ui.renderJellyfinCollections
 import dev.jellystructure.ui.renderActivity
 import dev.jellystructure.ui.renderAiPage
 import dev.jellystructure.ui.renderDashboard
@@ -98,10 +99,11 @@ object App {
         }
         val container = document.getElementById("page-content") ?: return
         // Phase 278 — an album or artist page belongs to the Library in the sidebar.
-        updateActiveNav(if (path.startsWith("/album/") || path.startsWith("/artist/") || path.startsWith("/audiobook/") || path.startsWith("/audiobook-author/")) "/library" else Router.current())
+        updateActiveNav(if (path.startsWith("/album/") || path.startsWith("/artist/") || path.startsWith("/audiobook/") || path.startsWith("/audiobook-author/") || path.startsWith("/jellyfin-collections")) "/library" else Router.current())
         when {
             path == "/" || path.isEmpty() || path == "/dashboard" -> renderDashboard(container, scope)
             path.startsWith("/library") -> renderLibrary(container, scope, query)
+            path.startsWith("/jellyfin-collections") -> renderJellyfinCollections(container, scope, query)   // DEB-4075 (DEB-4032, FR-6)
             path.startsWith("/media/") && path.contains("/bulk-reorder") -> {
                 val id = path.removePrefix("/media/").substringBefore('/')
                 if (id.isNotEmpty()) renderBulkReorderWizard(container, scope, id)
