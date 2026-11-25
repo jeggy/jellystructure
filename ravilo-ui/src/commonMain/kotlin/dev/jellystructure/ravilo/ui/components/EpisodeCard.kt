@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.components
 
+import dev.jellystructure.ravilo.ui.screens.newestCardLines
 import dev.jellystructure.ravilo.ui.focus.rememberFocusVisual
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
@@ -57,8 +58,9 @@ fun EpisodeCard(
     /** R350 (FR-R350-10) — the season's number, so the card names its episode `S01E05` like every viewer screen
      *  (R346 FR-R346-5). Null keeps the bare `E5`. */
     seasonNumber: Int? = null,
-    /** DEB-2938 (FR-9) — a newest-first series' air date, already formatted: the card's main label in place of the
-     *  code, with the title as the second line, and no episode-number overlay. Null keeps the code. */
+    /** DEB-2938 (FR-9) — a newest-first series' *when* (air date, then ` · ` and the air time), already formatted. The
+     *  card leads with the episode's title and carries this as the second line (DEB-5432); a blank title makes it the
+     *  main label. No episode-number overlay. Null keeps the code. */
     airLabel: String? = null,
     /** DEB-2938 (FR-12) — the *NEW* ribbon of a newest-first series' newest episode, in the *UP NEXT* ribbon's place. */
     newRibbon: Boolean = false,
@@ -75,6 +77,7 @@ fun EpisodeCard(
     val borderWidth     by animateDpAsState(if (focused) 3.dp else 0.dp, dpSpec, label = "epBorder")
     val glowElevation   by animateDpAsState(if (focused) 20.dp else 0.dp, dpSpec, label = "epShadow")
     val cardShape = remember { RoundedCornerShape(12.dp) }
+    val lines = airLabel?.let { newestCardLines(episode.title, it) }   // DEB-5432 (FR-9)
 
     // R84: prefer overlay (phase-2); fall back to embedded playback (always null from R83 catalog)
     val isWatched = playstateOverride?.played ?: episode.playback?.watched ?: false
@@ -221,7 +224,7 @@ fun EpisodeCard(
         // Text area
         Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
             Text(
-                text = if (airLabel != null) airLabel else "${cardEpisodeCode(seasonNumber, episode.episodeNumber)} · ${episode.title}",
+                text = lines?.main ?: "${cardEpisodeCode(seasonNumber, episode.episodeNumber)} · ${episode.title}",
                 color = if (focused) colors.text else colors.textSecondary,
                 fontSize = 17.sp,
                 fontWeight = FontWeight.SemiBold,
@@ -229,17 +232,19 @@ fun EpisodeCard(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            // DEB-2938 (FR-9) — a dated card: the air date was the main label, so the title is the second line.
-            if (airLabel != null) {
-                Spacer(Modifier.height(3.dp))
-                Text(
-                    text = episode.title,
-                    color = colors.textDim,
-                    fontSize = 13.sp,
-                    fontFamily = sora,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+            // DEB-5432 (FR-9) — a dated card: the title is the main label and the when is the second line.
+            if (lines != null) {
+                lines.second?.let { second ->
+                    Spacer(Modifier.height(3.dp))
+                    Text(
+                        text = second,
+                        color = colors.textDim,
+                        fontSize = 13.sp,
+                        fontFamily = sora,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
             // R148: episode air date (scanned from TMDB) under the title — nothing when absent.
             else episode.airDate?.let { formatAirDate(it) }?.let { aired ->

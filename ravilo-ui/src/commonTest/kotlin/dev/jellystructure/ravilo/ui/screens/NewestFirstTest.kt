@@ -104,6 +104,47 @@ class NewestFirstTest {
         assertEquals("S2026E302", episodeName(false, dated, "en") { "S2026E302" }, "a series that is not newest first keeps its code")
     }
 
+    // ── DEB-5432: the title leads, the when (date · time) goes under it ─────────────────────────────
+
+    @Test fun `DEB-5432 the when is the date then the time, in the language's clock`() {
+        assertEquals("Mon 23 Nov · 21:00", airWhenText("2026-11-23", "21:00", "en", 2026))
+        assertEquals("Mon 23 Nov · 18:30", airWhenText("2026-11-23", "18:30", "en", 2026))
+        assertEquals("Man 23. Nov · 21.00", airWhenText("2026-11-23", "21:00", "da", 2026))
+        assertEquals("Mon 23 Nov", airWhenText("2026-11-23", null, "en", 2026), "no time: the date alone")
+        assertEquals("Mon 23 Nov", airWhenText("2026-11-23", "evening", "en", 2026), "a time that will not read is dropped")
+        assertEquals("Dec 31, 2025 · 21:00", airWhenText("2025-12-31", "21:00", "en", 2026))
+        assertNull(airWhenText(null, "21:00", "en", 2026), "no date keeps the code, whatever the time")
+    }
+
+    @Test fun `DEB-5432 a card leads with the title and carries the when under it`() {
+        assertEquals(NewestCardLines("Storm closes the harbour", "Mon 23 Nov · 21:00"), newestCardLines("Storm closes the harbour", "Mon 23 Nov · 21:00"))
+        assertEquals(NewestCardLines("Thu 29 Oct", null), newestCardLines("", "Thu 29 Oct"), "a blank title keeps the when as the main label")
+        assertEquals(NewestCardLines("Thu 29 Oct", null), newestCardLines("   ", "Thu 29 Oct"))
+    }
+
+    @Test fun `DEB-5432 the button, the kicker name carry the when with its time and never the title`() {
+        val bulletin = ep(12).copy(title = "Storm closes the harbour", airDate = "2026-11-23", airTime = "21:00")
+        val name = episodeName(true, bulletin, "en") { "S2026E302" }
+        assertEquals(airWhenText("2026-11-23", "21:00", "en", currentYearUtc()), name)
+        assertEquals("Play newest · $name", newestButtonLabel(name, inProgress = false, lang = "en"))
+        assertEquals("Resume · $name", newestButtonLabel(name, inProgress = true, lang = "en"))
+        assertEquals("S2026E302", episodeName(true, bulletin.copy(airDate = null), "en") { "S2026E302" }, "no air date: the code")
+    }
+
+    @Test fun `DEB-5432 the Continue badge carries the time, New before it without progress`() {
+        assertEquals("New · Mon 23 Nov · 21:00", continueDateBadge("2026-11-23", 0f, "en", 2026, "21:00"))
+        assertEquals("Mon 23 Nov · 21:00", continueDateBadge("2026-11-23", 0.4f, "en", 2026, "21:00"))
+        assertEquals("New · Mon 23 Nov", continueDateBadge("2026-11-23", 0f, "en", 2026, null))
+        assertEquals("Ny · Man 23. Nov · 21.00", continueDateBadge("2026-11-23", 0f, "da", 2026, "21:00"))
+        assertNull(continueDateBadge(null, 0f, "en", 2026, "21:00"))
+    }
+
+    @Test fun `DEB-5432 time_hour_minute ships in every language`() {
+        assertEquals("21:00", t("time.hour_minute", "en", mapOf("h" to "21", "m" to "00")))
+        assertEquals("21.00", t("time.hour_minute", "da", mapOf("h" to "21", "m" to "00")))
+        assertEquals("21.00", t("time.hour_minute", "fo", mapOf("h" to "21", "m" to "00")))
+    }
+
     @Test fun `FR-9 the weekday and the month follow the viewer's language`() {
         assertEquals("tor 29. okt", airDateText("2026-10-29", "da", 2026)?.lowercase())
     }

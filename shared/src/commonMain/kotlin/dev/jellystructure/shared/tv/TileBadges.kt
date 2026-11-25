@@ -45,6 +45,28 @@ fun airDateText(iso: String?, thisYear: Int, tr: (key: String, vars: Map<String,
 }
 
 /**
+ * DEB-5432 (FR-5a, FR-16a) — an air time (`HH:mm`, a 24-hour clock with no time zone) as the viewer's language writes
+ * it: `time.hour_minute` (`21:00` in en, `21.00` in da and fo). Null for a blank or malformed time.
+ */
+fun airTimeText(time: String?, tr: (key: String, vars: Map<String, String>) -> String): String? {
+    val m = time?.trim()?.let { Regex("""^([01]\d|2[0-3]):([0-5]\d)$""").matchEntire(it) } ?: return null
+    return tr("time.hour_minute", mapOf("h" to m.groupValues[1], "m" to m.groupValues[2]))
+}
+
+/**
+ * DEB-5432 (FR-9) — an episode's *when*: its air date ([airDateText]), then ` · ` and its air time when it has one
+ * (*Mon 23 Nov · 21.00*). Null — keep the code — when there is no readable date; a time without a date is not shown.
+ */
+fun airWhenText(
+    iso: String?, time: String?, thisYear: Int = currentYearUtc(),
+    tr: (key: String, vars: Map<String, String>) -> String,
+): String? {
+    val date = airDateText(iso, thisYear, tr) ?: return null
+    val at = airTimeText(time, tr) ?: return date
+    return "$date · $at"
+}
+
+/**
  * DEB-2938 (FR-15) — the Continue tile's corner badge for a card that carries `episode_air_date` (a newest-first
  * series): *New · Thu 29 Oct* (`tile.new_on`) when there is no progress, the date alone beside the progress bar when
  * there is. Null — keep the code — for a card with no date, or one the date will not parse.
@@ -52,10 +74,20 @@ fun airDateText(iso: String?, thisYear: Int, tr: (key: String, vars: Map<String,
 fun continueDateBadge(
     airDate: String?, progressPct: Float, thisYear: Int = currentYearUtc(),
     tr: (key: String, vars: Map<String, String>) -> String,
-): String? {
-    val date = airDateText(airDate, thisYear, tr) ?: return null
-    return if (progressPct > 0f) date else tr("tile.new_on", mapOf("date" to date))
-}
+): String? = continueBadgeFor(airDateText(airDate, thisYear, tr), progressPct, tr)
+
+/**
+ * DEB-5432 (FR-15) — [continueDateBadge] for a card that also carries `episode_air_time`: the time follows the date
+ * in both forms (*New · Mon 23 Nov · 21.00*, *Mon 23 Nov · 21.00* beside the bar). A card with no time reads as
+ * [continueDateBadge] does.
+ */
+fun continueWhenBadge(
+    airDate: String?, airTime: String?, progressPct: Float, thisYear: Int = currentYearUtc(),
+    tr: (key: String, vars: Map<String, String>) -> String,
+): String? = continueBadgeFor(airWhenText(airDate, airTime, thisYear, tr), progressPct, tr)
+
+private fun continueBadgeFor(`when`: String?, progressPct: Float, tr: (key: String, vars: Map<String, String>) -> String): String? =
+    `when`?.let { if (progressPct > 0f) it else tr("tile.new_on", mapOf("date" to it)) }
 
 /**
  * DEB-3983 (FR-14) — the count that sits beside a content row's heading on the TV: the seed's true total when the

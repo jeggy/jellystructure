@@ -758,6 +758,10 @@
     "text": "{weekday} {day}. {month}",
     "note": "Draft Danish — review before release."
   },
+  "time.hour_minute": {
+    "text": "{h}.{m}",
+    "note": "Draft Danish — review before release."
+  },
   "date.day_month": {
     "text": "{day}. {month}",
     "note": "Draft Danish — review before release."

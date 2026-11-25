@@ -211,9 +211,9 @@ private fun episodeGroupRange(ep: Episode, episodes: List<Episode>): Pair<Int, I
 private fun episodeKicker(sNum: Int, ep: Episode, episodes: List<Episode>): String = seasonEpisodeCode(sNum, ep, episodes)
 
 /**
- * DEB-2938 (FR-9) — what names an episode where a viewer would see its code (the player's title line, the button, the
- * resume kicker): on a newest-first series its air date (*Thu 29 Oct*), else — no date, a multi-episode file's range,
- * or any other series — [seasonEpisodeCode].
+ * DEB-2938 (FR-9) — what names an episode where a viewer would see its code (the player's kicker above its title, the
+ * button, the resume kicker): on a newest-first series its *when* (*Mon 23 Nov · 21.00*, DEB-5432), else — no date, a
+ * multi-episode file's range, or any other series — [seasonEpisodeCode].
  */
 private fun episodeLabel(newestFirst: Boolean, sNum: Int, ep: Episode, episodes: List<Episode>, lang: String): String =
     if (episodeGroupRange(ep, episodes) != null) seasonEpisodeCode(sNum, ep, episodes)
@@ -1079,7 +1079,7 @@ internal fun SeriesDetailLoaded(
                                             focusRequester = if (ep.id == returnCardId) returnCardFR else if (ep.id == entryCardId) entryCardFR else null,   // R350 (FR-R350-2) / R365
                                             // R84: overlay-driven; no "UP NEXT" ribbon until playstate arrives
                                             isResumeEpisode = overlayLoaded && !nf && ep.id == resumeEpId,   // DEB-2938 (FR-11) — no UP NEXT on a newest-first series
-                                            airLabel = if (nf) airDateLabel(ep.airDate) else null,   // DEB-2938 (FR-9)
+                                            airLabel = if (nf) airWhenLabel(ep) else null,   // DEB-2938 / DEB-5432 (FR-9)
                                             newRibbon = newRibbon && ep.id == newest?.id,   // DEB-2938 (FR-12)
                                             downloaded = dev.jellystructure.ravilo.ui.downloads.isDownloaded(ep.id),   // DEB-4071 (FR-8)
                                             playstateOverride = overlay[ep.id],

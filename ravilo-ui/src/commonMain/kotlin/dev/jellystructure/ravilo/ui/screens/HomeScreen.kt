@@ -835,7 +835,7 @@ private fun ContentRowItem(
         val episodeBadge = if (isContinue && card.seasonNumber != null && card.episodeNumber != null)
             dev.jellystructure.shared.tv.episodeCode(card.seasonNumber!!, card.episodeNumber!!, card.episodeNumberEnd) else null   // R346 (FR-R346-5) — S01E05 / S01E01–E03
         // DEB-2938 (FR-15) — a newest-first series' card names its episode by air date, in the code's place.
-        val dateBadge = if (isContinue) continueDateBadge(card.episodeAirDate, card.progressPct ?: 0f, LocalLang.current) else null
+        val dateBadge = if (isContinue) continueDateBadge(card.episodeAirDate, card.progressPct ?: 0f, LocalLang.current, airTime = card.episodeAirTime) else null
         Tile(
             title = card.title,
             subtitle = if (isContinue) null else card.nextUpLabel,

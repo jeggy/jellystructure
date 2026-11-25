@@ -839,6 +839,10 @@
     "text": "{weekday} {day} {month}",
     "note": "R279 — a day header on the Upcoming calendar. Reorder as needed."
   },
+  "time.hour_minute": {
+    "text": "{h}:{m}",
+    "note": "DEB-5432 — an episode's air time on a newest-first series, after the date (Mon 23 Nov · 21:00). {h} and {m} are the 24-hour clock's hour and minute, the minute always two digits."
+  },
   "date.day_month": {
     "text": "{day} {month}",
     "note": "DEB-1482 — the date on the upcoming-episode badge when the episode is a week or more away, e.g. 12 Nov. {day} is a plain number; {month} comes from the month.* keys. Reorder or add punctuation as your language writes a short date."

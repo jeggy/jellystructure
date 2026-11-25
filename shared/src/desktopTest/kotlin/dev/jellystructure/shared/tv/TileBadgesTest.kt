@@ -7,18 +7,29 @@ import kotlin.test.assertNull
 /** DEB-5640 (FR-52) — the pure text behind a Home tile's badges and a row's count, now shared by both apps. */
 class TileBadgesTest {
     private val strings = mapOf(
-        "wd.abbr.thu" to "Thu", "wd.abbr.mon" to "Mon", "month.oct" to "Oct", "month.jan" to "Jan", "month.dec" to "Dec",
+        "wd.abbr.thu" to "Thu", "wd.abbr.mon" to "Mon", "month.oct" to "Oct", "month.jan" to "Jan", "month.dec" to "Dec", "month.nov" to "Nov",
     )
     private fun en(key: String, vars: Map<String, String>): String = when (key) {
         "date.weekday_day_month" -> "${vars["weekday"]} ${vars["day"]} ${vars["month"]}"
         "date.month_day_year" -> "${vars["month"]} ${vars["day"]}, ${vars["year"]}"
         "tile.new_on" -> "New · ${vars["date"]}"
+        "time.hour_minute" -> "${vars["h"]}:${vars["m"]}"
         else -> strings[key] ?: key
     }
 
     @Test fun `an air date this year is weekday day month`() {
         assertEquals("Thu 29 Oct", airDateText("2026-10-29", 2026, ::en))
         assertEquals("Mon 5 Jan", airDateText("2026-01-05", 2026, ::en))
+    }
+
+    @Test fun `DEB-5432 the when is the date then the time`() {
+        assertEquals("Mon 23 Nov · 21:00", airWhenText("2026-11-23", "21:00", 2026, ::en))
+        assertEquals("Mon 23 Nov", airWhenText("2026-11-23", null, 2026, ::en))
+        assertEquals("Mon 23 Nov", airWhenText("2026-11-23", "25:00", 2026, ::en), "a malformed time is dropped")
+        assertEquals("Mon 23 Nov", airWhenText("2026-11-23", "9:5", 2026, ::en))
+        assertNull(airWhenText(null, "21:00", 2026, ::en), "a time with no date shows nothing")
+        assertEquals("New · Mon 23 Nov · 21:00", continueWhenBadge("2026-11-23", "21:00", 0f, 2026, ::en))
+        assertEquals("Mon 23 Nov · 21:00", continueWhenBadge("2026-11-23", "21:00", 0.4f, 2026, ::en))
     }
 
     @Test fun `an air date in another year is month day year`() {

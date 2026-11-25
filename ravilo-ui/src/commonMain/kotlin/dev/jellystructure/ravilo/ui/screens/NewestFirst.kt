@@ -7,6 +7,7 @@ import dev.jellystructure.shared.tv.CardPlayState
 import dev.jellystructure.shared.tv.Episode
 import dev.jellystructure.shared.tv.Season
 import dev.jellystructure.shared.tv.airDateText
+import dev.jellystructure.shared.tv.airWhenText
 import dev.jellystructure.shared.tv.currentYearUtc
 import dev.jellystructure.shared.tv.SeriesDetail
 
@@ -65,23 +66,42 @@ internal fun newestState(detail: SeriesDetail, overlay: Map<String, CardPlayStat
 internal fun airDateText(iso: String?, lang: String, thisYear: Int = currentYearUtc()): String? =
     airDateText(iso, thisYear) { k, v -> t(k, lang, v) }
 
-/** DEB-2938 (FR-15) — [continueDateBadge] in the language [lang]. */
-internal fun continueDateBadge(airDate: String?, progressPct: Float, lang: String, thisYear: Int = currentYearUtc()): String? =
-    dev.jellystructure.shared.tv.continueDateBadge(airDate, progressPct, thisYear) { k, v -> t(k, lang, v) }
+/** DEB-2938 (FR-15) — [continueDateBadge] in the language [lang]; DEB-5432 adds the card's [airTime]. */
+internal fun continueDateBadge(
+    airDate: String?, progressPct: Float, lang: String, thisYear: Int = currentYearUtc(), airTime: String? = null,
+): String? =
+    dev.jellystructure.shared.tv.continueWhenBadge(airDate, airTime, progressPct, thisYear) { k, v -> t(k, lang, v) }
 
-/** [airDateText] in the viewer's language. */
+/** DEB-5432 (FR-9) — an episode's *when* in the language [lang]: *Mon 23 Nov · 21.00*, the date alone with no time. */
+internal fun airWhenText(iso: String?, time: String?, lang: String, thisYear: Int = currentYearUtc()): String? =
+    airWhenText(iso, time, thisYear) { k, v -> t(k, lang, v) }
+
+/** [airWhenText] in the viewer's language. */
 @Composable
-internal fun airDateLabel(iso: String?): String? {
+internal fun airWhenLabel(ep: Episode): String? {
     val lang = LocalLang.current
-    return airDateText(iso, lang)
+    return airWhenText(ep.airDate, ep.airTime, lang)
 }
 
-/** FR-9 — what names an episode where a viewer would see its code: its air date on a newest-first series, else [code]. */
+/**
+ * FR-9 — what names an episode where a viewer would see its code (the button, the resume kicker, the player's kicker):
+ * its *when* on a newest-first series (DEB-5432: date and time), else [code].
+ */
 internal fun episodeName(newestFirst: Boolean, ep: Episode, lang: String, code: () -> String): String =
-    (if (newestFirst) airDateText(ep.airDate, lang) else null) ?: code()
+    (if (newestFirst) airWhenText(ep.airDate, ep.airTime, lang) else null) ?: code()
 
 /**
- * FR-10 — the primary button on a newest-first series: *Resume · Thu 29 Oct* while the newest is in progress, else
+ * DEB-5432 (FR-9) — a newest-first card's two lines: the main label is the episode's title and the second line is its
+ * [when]; an episode whose title is blank keeps the *when* as the main label with no second line. Null [`when`] (no
+ * air date) is not a dated card — the caller draws the code.
+ */
+internal data class NewestCardLines(val main: String, val second: String?)
+
+internal fun newestCardLines(title: String, `when`: String): NewestCardLines =
+    if (title.isBlank()) NewestCardLines(`when`, null) else NewestCardLines(title, `when`)
+
+/**
+ * FR-10 — the primary button on a newest-first series: *Resume · Mon 23 Nov · 21.00* while the newest is in progress, else
  * *Play newest · Thu 29 Oct* (a watched newest plays again from the start). [name] is the newest episode's
  * [episodeName]; without one the words stand alone.
  */
