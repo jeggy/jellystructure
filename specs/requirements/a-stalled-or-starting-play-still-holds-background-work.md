@@ -63,6 +63,39 @@ Kotlin was written. **Neither candidate let the claims through.**
 Whether the switch goes back on, and which of FR-2 to FR-4 are still wanted, is the owner's decision on DEB-5535. Its
 answer is written here when it comes.
 
+### Amendment 2026-11-25 — owner: the switch goes back on, and only FR-3 is built (DEB-5535)
+
+> Owner, 2026-11-25 (DEB-5535 card): *"Turn it on + make a running job step aside"* (recommended option).
+
+- **The household switch goes back on.** `scan.defer_while_playing = true` is set in Settings on prod (live, no
+  restart). That is an operations step, not part of the build, and it is Tróndur's.
+- **FR-1 holds on the shipped code and needs no build.** **FR-2 and FR-4 are withdrawn.** FR-4 named FR-1's and FR-2's
+  windows, so with FR-1 already shipped and FR-2 dropped there is nothing left for it to name.
+- **FR-3 is narrowed to `segments_season`.** `verify_file` and `check_track_lengths` are one file per job (FR-261-1).
+  A job of one unit has no boundary inside it, and the claim already holds such a job while a play runs. Nothing is
+  built for them.
+- **What a unit is in `segments_season`.** The job runs the chapter/heuristic tier over the season's episodes, then
+  the intro fingerprint pass and the outro fingerprint pass. Each pass fingerprints every episode (Phase A, cached on
+  disk by `FingerprintService`) and then correlates every pair (Phase B). The job may yield:
+  - after each episode of the chapter/heuristic tier;
+  - after each episode of a pass's Phase A;
+  - after each pair of a pass's Phase B.
+- **What resuming skips.**
+  - A resumed job does not repeat a tier or pass that had finished.
+  - In the heuristic tier it does not repeat an episode already done. This holds for a forced job too: progress travels
+    in the requeued row's params, the way the subtitle retry count does (`Requeue.nextParams`).
+  - Phase A re-reads its fingerprints from the cache, so that is free.
+  - A Phase B cut short restarts that pass's pairs, because its candidates live only in memory. That costs at most one
+    pass's correlation and writes nothing twice.
+- **Yielding uses the rule the claim uses.** A job yields only where the claim would have held it: the row asks, the
+  household switch is on, and something plays (`yieldsToPlayback`, FR-295-1). A yield is a requeue in place with a
+  reason, as the subtitles pre-warm's is. A non-deferrable `segments_season` (a title's own *Detect segments*) never
+  yields.
+- **Acceptance** now reads: Acceptance 1 is withdrawn, because FR-1 needs no build and FR-2 is gone. Acceptance 2 stands
+  for the heuristic tier and gains one case, a yield inside an intro pass's Phase B that resumes with the heuristic tier
+  and Phase A skipped. Acceptance 3 counts its week from the later of the switch going on and the FR-3 build reaching
+  prod.
+
 ## Requirements
 
 - **FR-1 — a start counts at once.** A play counts as watching from the moment the server accepts its start (the
