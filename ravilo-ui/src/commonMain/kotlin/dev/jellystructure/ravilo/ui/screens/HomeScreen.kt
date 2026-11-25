@@ -589,6 +589,7 @@ private fun HomeLoaded(
     val appBarScrolled by remember { derivedStateOf {
         listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 0
     } }
+    val barCollapsed by dev.jellystructure.ravilo.ui.components.rememberBarCollapsed(listState)   // DEB-4270 (FR-15, FR-18)
     AppBar(
         navItems = navItems,
         activeNav = activeNav,
@@ -612,6 +613,7 @@ private fun HomeLoaded(
         onProfile = onProfile,
         onSearch = onSearch,
         scrolled = appBarScrolled,
+        collapsed = barCollapsed,
         // R250 (FR-R250-3) — opaque to anything scrolled under it for as long as J's backdrop is up.
         opaque = fdUi?.mode == "rowOpen",
         // Phase R240 — the nav bar is outside Home content rows too.

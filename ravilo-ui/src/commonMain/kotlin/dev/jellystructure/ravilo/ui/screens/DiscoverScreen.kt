@@ -244,6 +244,7 @@ fun DiscoverScreen(
             val appBarScrolled by remember(activeListState) { derivedStateOf {
                 activeListState.firstVisibleItemIndex > 0 || activeListState.firstVisibleItemScrollOffset > 0
             } }
+            val barCollapsed by dev.jellystructure.ravilo.ui.components.rememberBarCollapsed(activeListState)   // DEB-4270 (FR-15, FR-18)
             AppBar(
                 navItems = navItems,
                 activeNav = DISCOVER_NAV_INDEX,
@@ -258,6 +259,7 @@ fun DiscoverScreen(
                 onProfile = onProfile,
                 onSearch = onSearch,
                 scrolled = appBarScrolled,
+                collapsed = barCollapsed,
             )
         }
     }

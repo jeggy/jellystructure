@@ -3,7 +3,6 @@ package dev.jellystructure.tv
 import dev.jellystructure.db.JellystructureDb
 import dev.jellystructure.shared.tv.BehaviourOverlay
 import dev.jellystructure.shared.tv.RaviloConfig
-import dev.jellystructure.shared.tv.snapHeaderStyle
 import dev.jellystructure.shared.tv.snapUiScalePct
 import dev.jellystructure.shared.tv.firstValueProblem
 import dev.jellystructure.shared.tv.RaviloThemes
@@ -133,8 +132,9 @@ class RaviloConfigService(
     }
 
     /** FR-202-2 — never trust a stored/round-tripped `focus_detail` value; always recompute it from the
-     *  two admin-side booleans before a config leaves the server, on every read path. */
-    private fun RaviloConfig.withResolvedFocusDetail(): RaviloConfig = copy(focusDetail = resolvedFocusDetail(), cast = castCapability?.invoke(), supportEnabled = supportAvailable?.invoke() ?: false)
+     *  two admin-side booleans before a config leaves the server, on every read path. DEB-4270 (FR-8): and `header_style`
+     *  is `standard` on every read, so a layout stored as `slim` before the setting went is never served as it. */
+    private fun RaviloConfig.withResolvedFocusDetail(): RaviloConfig = copy(headerStyle = "standard", focusDetail = resolvedFocusDetail(), cast = castCapability?.invoke(), supportEnabled = supportAvailable?.invoke() ?: false)
 
     /** DEB-1854 (FR-5) — per viewer, so only the per-user read path calls it; the URL rides only with a `true`. */
     private fun RaviloConfig.withResolvedPasswordManagement(userId: String): RaviloConfig {
@@ -209,7 +209,8 @@ class RaviloConfigService(
                 // Phase 225 (FR-225-11) — pins deduplicated, first occurrence wins; an absent sort/limit STAYS absent.
                 rows = c.rows?.let { rc -> rc.copy(
                     items = rc.items.map { it.copy(query = it.query?.pruned(), pinned = it.pinned.distinct(), hideTags = tidyHideTags(it.hideTags)) },
-                    system = rc.system.copy(cont = rc.system.cont.copy(hideTags = tidyHideTags(rc.system.cont.hideTags))),  // DEB-1264 (FR-1)
+                    system = rc.system.copy(cont = rc.system.cont.copy(hideTags = tidyHideTags(rc.system.cont.hideTags)),  // DEB-1264 (FR-1)
+                        newly = rc.system.newly.copy(hideTags = tidyHideTags(rc.system.newly.hideTags))),  // DEB-5003 (FR-1)
                 ) },
             )
         },
@@ -220,8 +221,8 @@ class RaviloConfigService(
         gridColumns = config.gridColumns.coerceIn(2, 10),
         // DEB-3966 (FR-1) — Screen scale is one of exactly four values; a stray one snaps to the nearest.
         uiScalePct = snapUiScalePct(config.uiScalePct),
-        // DEB-3967 (FR-8) — Header style is "standard" or "slim"; anything else is standard.
-        headerStyle = snapHeaderStyle(config.headerStyle),
+        // DEB-4270 (FR-8) — the Header setting is gone: whatever arrives is stored as "standard".
+        headerStyle = "standard",
         // R159 — portrait can go smaller than landscape's 40 floor (a phone hero at 40% is still huge).
         portrait = config.portrait?.let { p ->
             p.copy(

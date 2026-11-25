@@ -569,6 +569,7 @@ fun SeededBrowseScreen(
     // DEB-4291 — per store: the screen outlives a swap of the store (Movies to Series), and a Down pressed on the first
     // must not turn the second's arrival focus off.
     var movedOffBar by remember(store) { mutableStateOf(false) }
+    val barCollapsed by dev.jellystructure.ravilo.ui.components.rememberBarCollapsed(gridState)   // DEB-4270 (FR-15, FR-18)
     val barScrolled by remember { derivedStateOf {
         gridState.firstVisibleItemIndex > 0 || gridState.firstVisibleItemScrollOffset > 0
     } }
@@ -712,6 +713,7 @@ fun SeededBrowseScreen(
             onSearch = onSearch,
             handsetTopSlot = handsetTopSlot,
             scrolled = barScrolled,
+            collapsed = barCollapsed,
         )
     }
 }

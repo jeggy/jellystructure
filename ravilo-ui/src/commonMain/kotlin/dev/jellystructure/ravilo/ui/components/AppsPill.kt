@@ -28,7 +28,6 @@ import dev.jellystructure.ravilo.ui.focus.rememberFocusVisual
 import dev.jellystructure.ravilo.ui.i18n.str
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 import dev.jellystructure.ravilo.ui.theme.Sora
-import dev.jellystructure.ravilo.ui.theme.raviloAppBar
 
 /**
  * DEB-4912 (FR-10) — what the TV bar's *Apps* pill does: open Apps. Null where there is no pill: not a TV, a TV whose home-screen hook
@@ -50,7 +49,7 @@ fun AppsPill(
     modifier: Modifier = Modifier,
 ) {
     val colors = RaviloTheme.colors
-    val g = raviloAppBar
+    val g = LocalAppBarGeometry.current
     var focused by rememberFocusVisual()
     val shape = RoundedCornerShape(g.navCorner + 6.dp)
     val ink = if (focused) colors.background else colors.text

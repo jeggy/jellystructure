@@ -39,12 +39,6 @@ val UI_SCALE_PCT_OPTIONS: List<Int> = listOf(100, 95, 90, 85)
 /** DEB-3966 (FR-1) — snaps a stray value to the nearest of [UI_SCALE_PCT_OPTIONS]; above 100 → 100, below 85 → 85. */
 fun snapUiScalePct(v: Int): Int = v.coerceIn(85, 100).let { c -> UI_SCALE_PCT_OPTIONS.minByOrNull { kotlin.math.abs(it - c) } ?: 100 }
 
-/** DEB-3967 (FR-8) — the header styles an admin can pick. A string on the wire so a future style never breaks an installed app. */
-val HEADER_STYLE_OPTIONS: List<String> = listOf("standard", "slim")
-
-/** DEB-3967 (FR-8) — anything but `standard` / `slim` is `standard`: the one place an unknown value is mapped. */
-fun snapHeaderStyle(v: String?): String = if (v != null && v in HEADER_STYLE_OPTIONS) v else "standard"
-
 // ─── Login ────────────────────────────────────────────────────────────────────
 
 /** Phase 141/R175 — posted to `POST /api/tv/login`. [deviceId] is the device's own stable id
@@ -1264,6 +1258,9 @@ data class SystemContinue(
 data class SystemNewly(
     val show: Boolean = true,
     val merge: Boolean = false,
+    /** DEB-5003 (FR-1) — titles carrying one of these tags (whole name, case-insensitive) are left out of this
+     *  Custom collection's Newly Added rows. Home's list does not apply here. */
+    @SerialName("hide_tags") val hideTags: List<String> = emptyList(),
 )
 
 @Serializable
@@ -1382,8 +1379,10 @@ data class RowConfig(
     val pinned: List<String> = emptyList(),
     /** Titles the row shows, 3..30; null = 30 (FR-225-1b). Also the ceiling on [pinned]. */
     val limit: Int? = null,
-    /** DEB-1264 (FR-1) — read ONLY on a `CONTINUE` row: titles carrying one of these tags (whole name,
-     *  case-insensitive) are left out of the row and its See all. Absent from an older config = empty. */
+    /** DEB-1264 (FR-1) — read on a `CONTINUE` row: titles carrying one of these tags (whole name,
+     *  case-insensitive) are left out of the row and its See all. DEB-5003 (FR-1) — also read on a `NEWLY_ADDED` row
+     *  (the first one in `order` speaks for every Newly Added row of the layout). Ignored on every other kind.
+     *  Absent from an older config = empty. */
     @SerialName("hide_tags") val hideTags: List<String> = emptyList(),
     /** DEB-2837 (FR-6.1) — `"franchise"` makes this row a template: the server serves one row per franchise among
      *  its matches. `null` = the row as it is today. Ignored by every installed client (rows reach it as ordinary
@@ -1437,8 +1436,11 @@ data class RaviloConfig(
     // DEB-3966 (FR-1) — the whole TV screen drawn at 100 / 95 / 90 / 85 %; global only. An app that does not know
     // the field ignores it, a server that does not send it means 100. [snapUiScalePct] is the one place it is snapped.
     @SerialName("ui_scale_pct") val uiScalePct: Int = 100,
-    // DEB-3967 (FR-8) — the TV app bar: "standard" (60 dp) or "slim" (48 dp); global only. A string, so an unknown value
-    // (a style a newer server knows) draws as standard. [snapHeaderStyle] is the one place it is mapped.
+    // DEB-3967 (FR-8), DEB-4270 (FR-8, replaced) — no longer a setting. The server sends `standard` always and nothing
+    // reads it: the TV bar is Standard at the top of a scrolling page and collapses once the page has scrolled (FR-15).
+    // The field stays so a build from DEB-3967 on, which reads it, still decodes; removing it is a later release's call.
+    @Deprecated("Not a setting any more (DEB-4270): always `standard`, and nothing reads it.")
+    @kotlinx.serialization.EncodeDefault(kotlinx.serialization.EncodeDefault.Mode.ALWAYS)
     @SerialName("header_style") val headerStyle: String = "standard",
     // DEB-3984 (FR-13) — a server that has `GET /api/tv/surprise` sends true; an older one never sends the field, so the
     // TV bar's Surprise me pill stays hidden. A capability field only: no admin control, and the server forces it on.

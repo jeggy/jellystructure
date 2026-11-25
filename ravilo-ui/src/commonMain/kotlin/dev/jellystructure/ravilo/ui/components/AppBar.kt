@@ -6,6 +6,14 @@ import dev.jellystructure.ravilo.ui.focus.requestFocusAwaiting
 import androidx.compose.ui.platform.testTag
 import dev.jellystructure.ravilo.ui.focus.rememberFocusVisual
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.grid.LazyGridState
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.State
+import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -63,7 +71,8 @@ import dev.jellystructure.ravilo.ui.seams.windowDragArea
 import dev.jellystructure.ravilo.ui.theme.LocalHandset
 import dev.jellystructure.ravilo.ui.theme.LocalCompact
 import dev.jellystructure.ravilo.ui.theme.RaviloDimens
-import dev.jellystructure.ravilo.ui.theme.raviloAppBar
+import dev.jellystructure.ravilo.ui.theme.AppBarGeometry
+import dev.jellystructure.ravilo.ui.isTvPlatform
 import dev.jellystructure.ravilo.ui.theme.raviloHPad
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 import dev.jellystructure.ravilo.ui.theme.Sora
@@ -90,6 +99,9 @@ fun AppBar(
     onProfile: (() -> Unit)? = null,
     onSearch: (() -> Unit)? = null,
     scrolled: Boolean = false,
+    // DEB-4270 (FR-15) — the page is past 24 dp ([rememberBarCollapsed]); the bar collapses when this holds and focus is
+    // not inside it. Ignored off a TV platform. A page with no scroll position of its own leaves it false: Standard always.
+    collapsed: Boolean = false,
     // R250 (FR-R250-3) — fully opaque to whatever scrolls under it while J's backdrop is showing: a
     // rail lit by the backdrop used to show through the 0.95 surface as clutter behind the nav.
     opaque: Boolean = false,
@@ -190,11 +202,20 @@ fun AppBar(
     // breakpoint: a phone in landscape is still a phone, and a narrow `ravilo-web` window is not one.
     // When false, everything below is exactly what shipped.
     val handset = LocalHandset.current
-    // DEB-3967 (FR-9) — the TV bar's numbers for the header style in force; the handset row below keeps its own.
-    val g = raviloAppBar
+    // DEB-4270 (FR-15/FR-17) — the TV bar's numbers, Standard at the top and Slim once collapsed, one fraction between.
+    // Read here and nowhere above the bar; the handset row below keeps its own.
+    var barFocused by remember { mutableStateOf(false) }
+    val collapse by animateFloatAsState(
+        targetValue = if (appBarCollapsedTarget(isTvPlatform, collapsed, barFocused)) 1f else 0f,
+        animationSpec = tween(180),
+        label = "appBarCollapse",
+    )
+    val g = AppBarGeometry.lerp(AppBarGeometry.Standard, AppBarGeometry.Slim, collapse)
 
+    CompositionLocalProvider(LocalAppBarGeometry provides g) {
     Box(
         modifier = modifier
+            .onFocusChanged { barFocused = it.hasFocus }
             .fillMaxWidth()
             .height(g.height)
             .background(solidBg)         // R62: solid layer (transparent when at top)
@@ -377,6 +398,41 @@ fun AppBar(
             NavScrollIndicator(navScrollState, Modifier.align(Alignment.BottomCenter))
         }
     }
+    }
+}
+
+/**
+ * DEB-4270 (FR-17) — the geometry the bar is drawing right now, for the parts of it that live in their own composables
+ * (the avatar, the search circle, the clock, the Apps pill). Provided by [AppBar] and read nowhere else.
+ */
+internal val LocalAppBarGeometry = compositionLocalOf { AppBarGeometry.Standard }
+
+/** DEB-4270 (FR-15) — how far a page scrolls before the bar collapses: the gap every page leaves under the Standard bar. */
+internal val BAR_COLLAPSE_AFTER = 24.dp
+
+/** DEB-4270 (FR-15) — whether a list or grid is past [thresholdPx]: an item has scrolled off, or the first has moved more. */
+internal fun pastCollapseLine(firstVisibleItemIndex: Int, firstVisibleItemScrollOffset: Int, thresholdPx: Float): Boolean =
+    firstVisibleItemIndex > 0 || firstVisibleItemScrollOffset > thresholdPx
+
+/** DEB-4270 (FR-15) — the bar is collapsed only on a TV platform, with the page past the line and focus outside the bar. */
+internal fun appBarCollapsedTarget(tvPlatform: Boolean, pageScrolled: Boolean, barHasFocus: Boolean): Boolean =
+    tvPlatform && pageScrolled && !barHasFocus
+
+/**
+ * DEB-4270 (FR-15, FR-18) — a page's own "past 24 dp" for its [AppBar]: a boolean `derivedStateOf`, so the page
+ * recomposes when the line is crossed and not on every scroll frame. R62's `scrolled` keeps its own predicate.
+ */
+@Composable
+fun rememberBarCollapsed(list: LazyListState): State<Boolean> {
+    val px = with(LocalDensity.current) { BAR_COLLAPSE_AFTER.toPx() }
+    return remember(list, px) { derivedStateOf { pastCollapseLine(list.firstVisibleItemIndex, list.firstVisibleItemScrollOffset, px) } }
+}
+
+/** The grid form of [rememberBarCollapsed] (Movies / Series / My List). */
+@Composable
+fun rememberBarCollapsed(grid: LazyGridState): State<Boolean> {
+    val px = with(LocalDensity.current) { BAR_COLLAPSE_AFTER.toPx() }
+    return remember(grid, px) { derivedStateOf { pastCollapseLine(grid.firstVisibleItemIndex, grid.firstVisibleItemScrollOffset, px) } }
 }
 
 /** R136 — `· {name}`, the page the bar is over (a channel, a collection). One line, ellipsised when the slot is short. */
@@ -520,7 +576,7 @@ private fun ProfileAvatar(
     onSelect: () -> Unit,
 ) {
     val colors = RaviloTheme.colors
-    val g = raviloAppBar
+    val g = LocalAppBarGeometry.current
     var focused by rememberFocusVisual()
     val avatarUrl = LocalUserAvatarUrl.current
     val profile = LocalUserProfile.current
@@ -562,7 +618,7 @@ private fun SearchIcon(
     onSelect: () -> Unit,
 ) {
     val colors = RaviloTheme.colors
-    val g = raviloAppBar
+    val g = LocalAppBarGeometry.current
     var focused by rememberFocusVisual()
     Box(
         modifier = Modifier
@@ -608,7 +664,7 @@ private fun ClockDisplay() {
     if (LocalHandset.current) return
     val colors = RaviloTheme.colors
     val sora = Sora
-    val g = raviloAppBar
+    val g = LocalAppBarGeometry.current
     var timeStr by remember { mutableStateOf("") }
 
     LaunchedEffect(Unit) {

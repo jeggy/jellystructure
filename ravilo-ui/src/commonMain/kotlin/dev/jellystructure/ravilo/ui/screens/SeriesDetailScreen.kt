@@ -615,6 +615,8 @@ internal fun SeriesDetailLoaded(
     val appBarScrolled by remember {
         derivedStateOf { listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 0 }
     }
+    // DEB-4270 (FR-15, FR-18) — the TV bar collapses once the page is past 24 dp.
+    val barCollapsed by dev.jellystructure.ravilo.ui.components.rememberBarCollapsed(listState)
 
     val navItems = raviloNavItems()
 
@@ -1168,6 +1170,7 @@ internal fun SeriesDetailLoaded(
             onProfile = onProfile,
             onSearch = onSearch,
             scrolled = appBarScrolled,
+            collapsed = barCollapsed,
         )
 
         // DEB-4070 — the season's quality sheet, over the AppBar too.

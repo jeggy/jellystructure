@@ -171,6 +171,7 @@ fun ChannelScreen(
     val barScrolled by remember { derivedStateOf {
         listState.firstVisibleItemIndex > 0 || listState.firstVisibleItemScrollOffset > 0
     } }
+    val barCollapsed by dev.jellystructure.ravilo.ui.components.rememberBarCollapsed(listState)   // DEB-4270 (FR-15, FR-18)
 
     // R136: full nav bar (section tabs) on the channel page, matching the other screens.
     val navItems = raviloNavItems()
@@ -363,6 +364,7 @@ fun ChannelScreen(
                         onProfile = onProfile,
                         onSearch = onSearch,
                         scrolled = barScrolled,
+                        collapsed = barCollapsed,
                         title = channel.name,
                     )
                 }

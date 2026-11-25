@@ -7,8 +7,8 @@ import androidx.compose.ui.BiasAlignment
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.lerp as lerpUnit
 import androidx.compose.ui.unit.sp
-import dev.jellystructure.shared.tv.snapHeaderStyle
 
 // R145: true on a handset-width screen (the phone target). Provided once by RaviloApp from the window
 // width. Drives a tighter horizontal gutter + full-width detail content so the TV-tuned 48dp margins
@@ -73,21 +73,9 @@ val raviloRowHeadPadB: Dp
     @Composable get() = if (isDesktopLayout) 8.dp else RaviloDimens.rowHeadPadB
 
 /**
- * DEB-3967 (FR-8/FR-9) — the TV app bar's two styles. The wire carries a string (`header_style`); [of] maps an
- * unknown one to [STANDARD], so a style a newer server knows never breaks an installed app.
- */
-enum class HeaderStyle {
-    STANDARD, SLIM;
-
-    companion object {
-        fun of(wire: String?): HeaderStyle = if (snapHeaderStyle(wire) == "slim") SLIM else STANDARD
-    }
-}
-
-/**
- * DEB-3967 (FR-9) — every number the TV app bar is drawn with, for one [HeaderStyle]
- * (tv-screen-scale-and-slim-header.md, "The Slim geometry"). The bar and everything that offsets content by it read
- * from here; nothing repeats a literal.
+ * DEB-3967 (FR-9), DEB-4270 (FR-15, FR-17) — every number the TV app bar is drawn with, at one end of its collapse
+ * (tv-screen-scale-and-slim-header.md, "The Slim geometry"). [Standard] is the bar at the top of a page, [Slim] the
+ * collapsed bar; [lerp] is every point between, which is what the transition draws.
  */
 data class AppBarGeometry(
     val height: Dp,
@@ -117,28 +105,26 @@ data class AppBarGeometry(
             circle = 32.dp, searchGlyph = 18.dp, initials = 12.sp, clock = 13.sp,
         )
 
-        fun of(style: HeaderStyle): AppBarGeometry = if (style == HeaderStyle.SLIM) Slim else Standard
+        /** DEB-4270 (FR-17) — every number linearly interpolated from [a] to [b] by [f] (0 = [a], 1 = [b]). */
+        fun lerp(a: AppBarGeometry, b: AppBarGeometry, f: Float): AppBarGeometry = AppBarGeometry(
+            height = lerpUnit(a.height, b.height, f), brandMark = lerpUnit(a.brandMark, b.brandMark, f),
+            wordmark = lerpUnit(a.wordmark, b.wordmark, f), wordmarkTracking = lerpUnit(a.wordmarkTracking, b.wordmarkTracking, f),
+            brandGap = lerpUnit(a.brandGap, b.brandGap, f), navType = lerpUnit(a.navType, b.navType, f),
+            navPadH = lerpUnit(a.navPadH, b.navPadH, f), navPadV = lerpUnit(a.navPadV, b.navPadV, f),
+            navCorner = lerpUnit(a.navCorner, b.navCorner, f), itemGap = lerpUnit(a.itemGap, b.itemGap, f),
+            circle = lerpUnit(a.circle, b.circle, f), searchGlyph = lerpUnit(a.searchGlyph, b.searchGlyph, f),
+            initials = lerpUnit(a.initials, b.initials, f), clock = lerpUnit(a.clock, b.clock, f),
+        )
     }
 }
 
-/**
- * DEB-3967 (FR-8) — the header style in force. Provided by RaviloApp on a TV platform only (the phone, the desktop and
- * the web app in a desktop browser keep the standard bar); [HeaderStyle.STANDARD] everywhere else.
- */
-val LocalHeaderStyle = staticCompositionLocalOf { HeaderStyle.STANDARD }
-
-/** DEB-3967 (FR-9) — the geometry of the bar as it is drawn in this composition. */
-val raviloAppBar: AppBarGeometry
-    @Composable get() = AppBarGeometry.of(LocalHeaderStyle.current)
-
 object RaviloDimens {
     /**
-     * Overlay nav bar height (R65 tokenized) — **for the active header style** (DEB-3967, FR-9): 60 dp Standard,
-     * 48 dp Slim. Everything that offsets content by the bar reads this, so a Slim bar moves the content up by
-     * exactly what it saves. Outside a composition, read [AppBarGeometry] directly.
+     * Overlay nav bar height (R65 tokenized) — **always the Standard 60 dp** (DEB-4270, FR-16). The TV bar collapses to
+     * 48 dp once the page has scrolled, but it overlays the page: every resting offset and scroll target reads this
+     * and so lays out as it does at the top, whatever the bar is drawing. Only the bar knows its live geometry.
      */
-    val appBarHeight: Dp
-        @Composable get() = raviloAppBar.height
+    val appBarHeight: Dp = AppBarGeometry.Standard.height
     /**
      * R267 (FR-R267-12) — the phone's bottom navigation bar, **from one place**.
      *

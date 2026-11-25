@@ -72,6 +72,7 @@ fun MusicListenScreen(
     val colors = RaviloTheme.colors
     val state by loader.state.collectAsState()
     val list = rememberLazyListState()
+    val barCollapsed by dev.jellystructure.ravilo.ui.components.rememberBarCollapsed(list)   // DEB-4270 (FR-15, FR-18)
     LaunchedEffect(Unit) { loader.load() }
     OnReselect(scrollToTopTick) { runCatching { list.animateScrollToItem(0) } }
     val desk = isDesktopLayout
@@ -108,7 +109,7 @@ fun MusicListenScreen(
             }
         }
         AppBar(
-            onProfile = onProfile, scrolled = list.firstVisibleItemIndex > 0 || list.firstVisibleItemScrollOffset > 0, brandBadge = { MusicModeBadge() },
+            onProfile = onProfile, scrolled = list.firstVisibleItemIndex > 0 || list.firstVisibleItemScrollOffset > 0, collapsed = barCollapsed, brandBadge = { MusicModeBadge() },
             // R388 — Listen's own control, in the top bar's page slot (FR-R267-2).
             handsetTopSlot = if (playAllShown) ({ PlayAllControl(LISTEN_PLAY_ALL, playAll!!, PLAY_ALL_BAR_HEIGHT) }) else null,
         )

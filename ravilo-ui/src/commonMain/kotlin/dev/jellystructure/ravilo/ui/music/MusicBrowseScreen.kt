@@ -229,6 +229,7 @@ fun MusicBrowseScreen(
     val sorts by store.sorts.collectAsState()
     val genre by store.genre.collectAsState()
     val list = rememberLazyListState()
+    val barCollapsed by dev.jellystructure.ravilo.ui.components.rememberBarCollapsed(list)   // DEB-4270 (FR-15, FR-18)
     val fieldFR = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
     val scope = rememberCoroutineScope()
@@ -308,6 +309,7 @@ fun MusicBrowseScreen(
         AppBar(
             onProfile = onProfile,
             scrolled = list.firstVisibleItemIndex > 0 || list.firstVisibleItemScrollOffset > 0,
+            collapsed = barCollapsed,
             brandBadge = { MusicModeBadge() },
             // FR-R321-6 — the sort pill sits in the top row's page slot.
             handsetTopSlot = when {

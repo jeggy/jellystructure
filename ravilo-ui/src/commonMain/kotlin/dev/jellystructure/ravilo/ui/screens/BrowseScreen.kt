@@ -260,6 +260,7 @@ fun BrowseScreen(
 
     // R55: Back scrolls a scrolled grid to the top before falling through to RaviloApp's pop.
     val gridState = store.gridState   // R137: retained scroll position survives navigate→back
+    val barCollapsed by dev.jellystructure.ravilo.ui.components.rememberBarCollapsed(gridState)   // DEB-4270 (FR-15, FR-18) — Browse passes no `scrolled`; only the collapse follows the grid
     val scope = rememberCoroutineScope()
     val screenFocusManager = LocalFocusManager.current
     val firstCellFR = remember { FocusRequester() }
@@ -395,6 +396,7 @@ fun BrowseScreen(
             onProfile = onProfile,
             onSearch = onSearch,
             avatarFocusRequester = avatarFR,
+            collapsed = barCollapsed,
         )
     }
 }
