@@ -335,7 +335,20 @@ internal class PlayerScreenState(initial: PlayerScreenInputs) {
 
     // ─── Chrome ──────────────────────────────────────────────────────────────
 
-    fun wake() { chromeVisible = true; chromeRevision++ }
+    fun wake() { noteInsideReplacementHold("the chrome was raised"); chromeVisible = true; chromeRevision++ }
+
+    /**
+     * DEB-3693 (FR-6) — one line when something is drawn inside a replacement's first [REPLACEMENT_HOLD_MS], where nothing may be: the
+     * Stue TV drew a dim and the controls 0.1 s after a file-to-ladder switch and no log said what raised them. [what] and the caller
+     * frames name the road, so the next device run can read it.
+     */
+    fun noteInsideReplacementHold(what: String) {
+        val since = replacementHeldSinceMs ?: return
+        val inside = kotlin.time.Clock.System.now().toEpochMilliseconds() - since
+        if (inside > REPLACEMENT_HOLD_MS) return
+        val callers = Throwable().stackTraceToString().lines().drop(3).take(5).joinToString(" < ") { it.trim().removePrefix("at ") }
+        println("[player] DEB-3693 FR-6: $what $inside ms into a replacement's hold — $callers")
+    }
     fun scheduleHide() { chromeRevision++ }
     // Every chrome-hide goes through this single choke point rather than a bare `chromeVisible = false`.
     // R350 (FR-R350-7) — it no longer moves `focus` (R178 FR-RV-SEL1-1 parked it on PLAY): the control the viewer last
@@ -1093,6 +1106,7 @@ internal class PlayerScreenState(initial: PlayerScreenInputs) {
             displayedBufferMoment = PlBufferMoment.NONE
         } else {
             delay(bufferMomentDebounceMs(raw))   // DEB-3102 (FR-5) — a stall waits 2 s, the cold start and a seek 400 ms
+            noteInsideReplacementHold("a $raw moment was drawn")
             displayedBufferMoment = raw
         }
     }

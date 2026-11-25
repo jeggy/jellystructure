@@ -156,7 +156,8 @@ class PlayerStoreReplacementTest {
         player.failed.set(false)
         val landed = states.last { it is PlayerSessionState.Ready } as PlayerSessionState.Ready
         assertEquals(8_000_000L, landed.ticket.startVariantBps)
-        assertEquals(null, dev.jellystructure.ravilo.ui.seams.PlayerLadderHints.warmedStartBps)
+        // DEB-3693 (FR-6) — the player's first read is held to the rung that was kept even when it is the start rung, or its own estimate may pick another
+        assertEquals(8_000_000L, dev.jellystructure.ravilo.ui.seams.PlayerLadderHints.warmedStartBps)
         store.close()
     }
 

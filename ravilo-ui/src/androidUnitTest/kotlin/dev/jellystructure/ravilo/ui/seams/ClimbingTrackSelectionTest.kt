@@ -252,4 +252,32 @@ class ClimbingTrackSelectionTest {
         assertEquals(1, events.size, "$events")
         assertTrue(": climb, 40.0 s buffered" in events[0], events[0])
     }
+
+    private fun warmedOn(bps: Long): ClimbingTrackSelection =
+        ClimbingTrackSelection(group, intArrayOf(0, 1, 2), C.TRACK_TYPE_VIDEO, meter, emptyList(), LadderBuffer { nowMs }, { nowMs }, { events += it }, startCapBps = bps)
+            .also { it.enable() }
+
+    private fun firstPick(sel: ClimbingTrackSelection): Int {
+        sel.updateSelectedTrack(0, 0, 40_000_000, emptyList(), Array(3) { MediaChunkIterator.EMPTY })
+        return sel.selectedFormat.bitrate
+    }
+
+    @Test fun `DEB-3693 a replacement's first pick is the rung its warm-up kept, whatever the estimate says`() {
+        estimate = 100_000_000L   // the estimate would take the top rung
+        assertEquals(4_000_000, firstPick(warmedOn(4_000_000L)))
+        estimate = 500_000L       // and a starved one would take the lowest
+        assertEquals(4_000_000, firstPick(warmedOn(4_000_000L)))
+        estimate = 100_000_000L
+        assertEquals(8_000_000, firstPick(warmedOn(8_000_000L)), "the start rung, warmed and not lower, is held too")
+    }
+
+    @Test fun `DEB-3693 once a chunk is queued the pin is gone and the ladder moves as before`() {
+        estimate = 100_000_000L
+        val sel = warmedOn(4_000_000L)
+        assertEquals(4_000_000, firstPick(sel))
+        sel.updateSelectedTrack(0, 15_000_000, 40_000_000, queueOf(mid), Array(3) { MediaChunkIterator.EMPTY })
+        nowMs += 1_000
+        sel.updateSelectedTrack(0, 12_000_000, 40_000_000, queueOf(mid), Array(3) { MediaChunkIterator.EMPTY })
+        assertEquals(1_500_000, sel.selectedFormat.bitrate, "under 20 s and falling: a step down, the pin does not hold it")
+    }
 }

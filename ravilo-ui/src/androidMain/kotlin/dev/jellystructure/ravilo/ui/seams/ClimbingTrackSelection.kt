@@ -34,7 +34,8 @@ internal class ClimbingTrackSelection(
     private val buffer: LadderBuffer,
     private val nowMs: () -> Long = System::currentTimeMillis,
     private val onLadderEvent: (String) -> Unit = {},
-    // DEB-3330 (FR-6) — the rung a replacement was warmed on when that was lower than the server's start rung; read once, at build.
+    // DEB-3330 (FR-6), DEB-3693 — the rung a replacement was warmed on; read once, at build. The first pick is bounded by it and, until a
+    // chunk is queued, held to the highest rung at or under it (the one that was kept), so the player's first read is a cache hit.
     private val startCapBps: Long? = PlayerLadderHints.warmedStartBps,
 ) : AdaptiveTrackSelection(
     group, tracks, type, bandwidthMeter,
@@ -46,6 +47,8 @@ internal class ClimbingTrackSelection(
     @Volatile private var allowedMaxBps: Long? = null
     private var lastBufferedMs: Long? = null
     private var picking = false
+    /** DEB-3693 — a chunk has been queued: the replacement's first pick is behind us and [startCapBps] no longer pins the rung. */
+    private var started = false
     private val trend = BufferTrend()
 
     /** DEB-3102 (FR-4) — after an abandon, nothing above this until [abandonCapUntilMs]. */
@@ -70,6 +73,7 @@ internal class ClimbingTrackSelection(
         queue: List<MediaChunk>, mediaChunkIterators: Array<MediaChunkIterator>,
     ) {
         val playing = queue.lastOrNull()?.trackFormat?.bitrate?.takeIf { it > 0 }?.toLong()
+        if (playing != null) started = true
         val rungs = (0 until length()).map { getFormat(it).bitrate.toLong() }.filter { it > 0 }
         val bufferedMs = bufferedDurationUs / 1000
         buffer.note(bufferedMs)
@@ -100,7 +104,16 @@ internal class ClimbingTrackSelection(
         val max = allowedMaxBps
         if (max != null && format.bitrate > 0 && format.bitrate > max) return false
         if (format.bitrate > abandonCapBps && nowMs() < abandonCapUntilMs) return false
+        // DEB-3693 — the warm-up chose this rung because it fetched in time; the player's estimate has no say in the first read.
+        if (!started && startCapBps != null) return isWarmedRung(format)
         return super.canSelectFormat(format, trackBitrate, effectiveBitrate)
+    }
+
+    /** DEB-3693 — before the first chunk, a replacement may start only on the rung its warm-up kept (the highest at or under [startCapBps]); anything else is a cache miss. */
+    private fun isWarmedRung(format: Format): Boolean {
+        val cap = startCapBps ?: return true
+        val warmed = (0 until length()).map { getFormat(it).bitrate.toLong() }.filter { it in 1..cap }.maxOrNull() ?: return true
+        return format.bitrate.toLong() == warmed
     }
 
     /**
