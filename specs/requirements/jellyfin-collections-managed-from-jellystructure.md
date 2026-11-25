@@ -229,6 +229,16 @@ There is one glyph for a **Ravilo collection** and another for a **Jellyfin coll
   (en draft *Hand-picked collection*). da and fo are drafted through the lexicon. A viewer never reads the word
   *Jellyfin*.
 
+**Amendment, 2026-11-25 (DEB-4077).** The build note *"its ink is `colors.text`, resting and focused"* was written on
+2026-11-09, when a focused popover row was `colors.surface` on the plate. R187's FR-RV-BROWSE1-5a (DEB-4079,
+`d0cadab4e`) has since inverted the focused row to a `colors.text` fill, so a `colors.text` glyph on it would vanish. The
+glyph's ink follows its row, as the check already does:
+- an unfocused row's glyph is `colors.text`;
+- the focused row's glyph is `colors.background`, at full alpha, and changes with the fill on the same 200 ms ease;
+- a phone draws no focused row (FR-R298-2), so its glyph is always `colors.text`.
+
+The glyph is still the same weight as the row's name. No other build note changes.
+
 ## Acceptance
 
 1. **Delete safety.**
