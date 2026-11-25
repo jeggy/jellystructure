@@ -93,9 +93,13 @@ internal fun floorFirst(takeBps: Long?, stallHold: Boolean): Boolean = stallHold
  * its bitrate capped by its output size, the source's own bitrate and the device's decode ceiling × 0.9; then 308's
  * [LADDER] rungs below it that are clearly lower and no taller. At most [maxRungs].
  *
- * DEB-4541 (FR-2) — then the [FLOOR_RUNGS] under those. With [floorFirst] (a path not known to be fast) the limit keeps the top, then 240p,
- * then 360p, and fills what is left from the lowest of the middle rungs up, so the rungs dropped are the ones just under the top. Without it
- * the limit keeps today's rungs and a floor rung fills a slot only when one is free.
+ * DEB-4541 (FR-2) — then the [FLOOR_RUNGS] under those. With [floorFirst] (a path not known to be fast) and no [takeBps] the limit keeps the
+ * top, then 240p, then 360p, and fills what is left from the lowest of the middle rungs up, so the rungs dropped are the ones just under the
+ * top. Without [floorFirst] the limit keeps today's rungs and a floor rung fills a slot only when one is free.
+ *
+ * DEB-5640 (FR-2) — with [floorFirst] and a [takeBps], the slots go to the start rung ([startRungFor] on the full list, with [audioPeakBps]),
+ * the rung above it (the climb rung), 240p, 360p, the middle rungs below the start (highest first), then the rungs above the climb rung
+ * (lowest first). The top is dropped when it holds none of the first four.
  */
 internal fun encoderRungs(
     codec: EncoderCodec, srcW: Int, srcH: Int, srcBps: Long?, ceilingBps: Long?, maxRungs: Int = ENCODER_MAX_RUNGS,
@@ -103,6 +107,9 @@ internal fun encoderRungs(
     boxLimit: Int? = null,
     /** DEB-4541 (FR-2) — the floor rungs go first under the limit (see above). */
     floorFirst: Boolean = false,
+    /** DEB-5640 (FR-2) — the device's take and the loudest audio rendition: with [floorFirst] they find the start rung and the one above it. */
+    takeBps: Long? = null,
+    audioPeakBps: Long = 0L,
 ): List<EncoderRung> {
     // The largest box the family allows that the source fills in at least one dimension (3840×1600 fills 2160p's width).
     val topBox = listOf(2160, 1440, 1080, 720, 480).firstOrNull { it <= maxBoxHeight(codec) && it <= (boxLimit ?: Int.MAX_VALUE) && (srcW >= boxWidth(it) || srcH >= it) } ?: 480
@@ -132,6 +139,20 @@ internal fun encoderRungs(
         floors += EncoderRung(f.height, w, h, bps).also { above = it }
     }
     if (!floorFirst) return out + floors.take((maxRungs - out.size).coerceAtLeast(0))
+    if (takeBps != null && takeBps > 0) {
+        val full = out + floors
+        val start = startRungFor(full, audioPeakBps, takeBps, noRecord = false)
+        val floorIdx = { height: Int -> full.indices.firstOrNull { it >= out.size && full[it].boxHeight == height } }
+        val order = buildList {
+            add(start)
+            if (start > 0) add(start - 1)
+            floorIdx(240)?.let { add(it) }
+            floorIdx(360)?.let { add(it) }
+            for (i in start + 1 until out.size) add(i)
+            for (i in start - 2 downTo 0) add(i)
+        }
+        return order.distinct().take(maxRungs.coerceAtLeast(1)).sorted().map { full[it] }
+    }
     val keep = (maxRungs - 1).coerceAtLeast(0)
     val keptFloors = floors.takeLast(keep)
     return listOf(out[0]) + middle.takeLast((keep - keptFloors.size).coerceAtLeast(0)) + keptFloors

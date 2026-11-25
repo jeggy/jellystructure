@@ -192,7 +192,7 @@ class Encoder(
         }
         val audioPeak = encAudio.maxOfOrNull { audioBitrate(it) } ?: 0L
         var rungs = encoderRungs(codec, source.width, source.height, source.videoBps, ceiling, boxLimit = boxLimit,
-            floorFirst = floorFirst(takeBps, stallHold))
+            floorFirst = floorFirst(takeBps, stallHold), takeBps = takeBps, audioPeakBps = audioPeak)
         if (belowBandwidthBps != null) rungs = rungsBelowBandwidth(rungs, audioPeak, belowBandwidthBps)
         // 309 (FR-309-2) — where this device starts: what it has shown it can take, else (no record, a player that
         // climbs) the 720p 4 Mbps rung, else (a player that can't climb) the top.

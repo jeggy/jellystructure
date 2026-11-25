@@ -44,11 +44,45 @@ class EncoderPlanTest {
         assertEquals(listOf(600_000L, 300_000L), r.takeLast(2).map { it.videoBps })
     }
 
-    @Test fun `a thin path keeps the top then 240p and 360p inside four and drops from just under the top`() {
-        val r = encoderRungs(EncoderCodec.HEVC, 3840, 2160, 50_000_000, null, floorFirst = floorFirst(3_000_000, false))
+    @Test fun `a thin path with a take keeps the start rung and the climb rung and 240p and 360p and drops the top`() {
+        val r = encoderRungs(EncoderCodec.HEVC, 3840, 2160, 50_000_000, null, floorFirst = floorFirst(3_000_000, false), takeBps = 3_000_000)
+        assertEquals(listOf(720, 480, 360, 240), r.map { it.boxHeight })
+        val hold = encoderRungs(EncoderCodec.HEVC, 3840, 2160, 50_000_000, null, floorFirst = floorFirst(50_000_000, stallHold = true), takeBps = 3_000_000)
+        assertEquals(listOf(720, 480, 360, 240), hold.map { it.boxHeight })
+    }
+
+    @Test fun `a thin path with no take keeps the top then 240p and 360p inside four and drops from just under the top`() {
+        val r = encoderRungs(EncoderCodec.HEVC, 3840, 2160, 50_000_000, null, floorFirst = floorFirst(null, false))
         assertEquals(listOf(2160, 480, 360, 240), r.map { it.boxHeight })
-        val hold = encoderRungs(EncoderCodec.HEVC, 3840, 2160, 50_000_000, null, floorFirst = floorFirst(50_000_000, stallHold = true))
-        assertEquals(listOf(2160, 480, 360, 240), hold.map { it.boxHeight })
+    }
+
+    // DEB-5640 (FR-2) — a floor-first ladder keeps a rung to climb to.
+    @Test fun `a 7 Mbps 1080p source at a 5 Mbps take lists 720p above its 480p start`() {
+        val take = 5_108_000L
+        val r = encoderRungs(EncoderCodec.H264, 1920, 1080, 7_034_000, null, floorFirst = floorFirst(take, false), takeBps = take, audioPeakBps = 192_000)
+        assertEquals(listOf(720, 480, 360, 240), r.map { it.boxHeight })
+        assertEquals(1, startRungFor(r, 192_000, take, noRecord = false))
+        assertEquals(480, r[1].boxHeight)
+    }
+
+    @Test fun `the same source at a 7 Mbps take gets today four rungs and with no record the top then 480p 360p 240p`() {
+        val fast = encoderRungs(EncoderCodec.H264, 1920, 1080, 7_034_000, null, floorFirst = floorFirst(7_000_000, false), takeBps = 7_000_000, audioPeakBps = 192_000)
+        assertEquals(listOf(1080, 720, 480, 360), fast.map { it.boxHeight })
+        val none = encoderRungs(EncoderCodec.H264, 1920, 1080, 7_034_000, null, floorFirst = floorFirst(null, false), takeBps = null, audioPeakBps = 192_000)
+        assertEquals(listOf(1080, 480, 360, 240), none.map { it.boxHeight })
+    }
+
+    @Test fun `a 1 Mbps take starts on 240p with 360p above it and both floors kept`() {
+        val r = encoderRungs(EncoderCodec.H264, 1920, 1080, 7_034_000, null, floorFirst = floorFirst(1_000_000, false), takeBps = 1_000_000, audioPeakBps = 192_000)
+        assertEquals(240, r[startRungFor(r, 192_000, 1_000_000, noRecord = false)].boxHeight)
+        assertEquals(listOf(480, 360, 240), r.map { it.boxHeight }.takeLast(3))
+        assertEquals(4, r.size)
+    }
+
+    @Test fun `a live stall hold at a 3 Mbps take makes 720p the climb rung`() {
+        val r = encoderRungs(EncoderCodec.H264, 1920, 1080, 7_034_000, null, floorFirst = floorFirst(3_000_000, stallHold = true), takeBps = 3_000_000, audioPeakBps = 192_000)
+        assertEquals(listOf(720, 480, 360, 240), r.map { it.boxHeight })
+        assertEquals(1, startRungFor(r, 192_000, 3_000_000, noRecord = false))
     }
 
     @Test fun `a fast path with no hold gets today four rungs and a floor rung only fills a free slot`() {
