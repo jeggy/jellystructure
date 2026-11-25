@@ -8,7 +8,9 @@ import dev.jellystructure.log.Logger
 import dev.jellystructure.ops.GateClass
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -70,7 +72,7 @@ class JellyfinCollections(
     fun start(scope: CoroutineScope) {
         scope.launch(GateClass.BACKGROUND) {
             while (true) {
-                runCatching { refresh() }.onFailure { if (it is CancellationException) throw it }
+                runCatching { refresh() }.onFailure { if (it is CancellationException && !currentCoroutineContext().isActive) throw it }   // only the caller's own
                 delay(COLLECTIONS_REFRESH_INTERVAL_MS)
             }
         }

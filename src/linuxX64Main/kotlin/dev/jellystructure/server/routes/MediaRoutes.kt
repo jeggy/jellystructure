@@ -88,6 +88,7 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -2527,7 +2528,7 @@ internal fun launchScanRun(
             runPipeline(RunTarget.Library(plan.libraryId, resumeSkipIds), pipeline, jobId, scanTracker, pipelineDeps, fullRun = plan.full, deferEligible = deferEligible, byHand = triggerKind == "manual", askAi = askAi, discover = !plan.featuresOnly)
         } }
         // DEB-4074 (FR-3) — a scan can change which titles exist and their Jellyfin ids, so the collections are mapped again.
-        pipelineDeps.jellyfinCollections?.let { c -> runCatching { c.refresh() }.onFailure { if (it is CancellationException) throw it } }
+        pipelineDeps.jellyfinCollections?.let { c -> runCatching { c.refresh() }.onFailure { if (it is CancellationException && !currentCoroutineContext().isActive) throw it } }
     }
     scanTracker.attachJob(job)
     return pipeline
