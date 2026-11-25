@@ -54,6 +54,11 @@ data class MediaJobParams(
     // retrying forever (open question 2 in the phase-213 spec).
     val subtitleRetryCount: Int = 0,
 
+    // DEB-5535 (FR-3) — segments_season, set only on a row that stepped aside for playback: the units it has
+    // finished (the heuristic tier's "filename#episodeNumber" keys, then "tier:heuristic", "pass:intro" as each
+    // ends), so the resume does not repeat them. Empty on every row until it first yields.
+    val segmentDone: List<String> = emptyList(),
+
     // DEB-2051 — container_convert (the media lane): the language the operator asked for on each track, carried by the
     // one conversion (FR-3). The file is the title's own, so no path is stored: the job reads it at run time.
     val convertLanguages: List<dev.jellystructure.media.ConversionRequested>? = null,

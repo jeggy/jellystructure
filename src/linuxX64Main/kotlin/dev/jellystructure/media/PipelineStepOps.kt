@@ -433,8 +433,15 @@ object PipelineStepOps {
         // per-episode rows would flood a 2000-row-capped, revertable-edit-oriented log), only when
         // something was actually written. Defaults to null so no history is unavailable to a caller.
         mediaHistory: MediaHistory? = null,
+        // DEB-5535 (FR-3) — a running deferrable job stops here, between episodes, when playback starts. Checked
+        // before each episode (so after the last one there is nothing left to stop for). [skipEpisodeKeys] are the
+        // episodes an earlier run of this job already finished; [onEpisodeKeyDone] names each one as it ends, so
+        // the queue can carry them to the resume. Returns true when it stopped for playback.
+        yieldToPlayback: () -> Boolean = { false },
+        skipEpisodeKeys: Set<String> = emptySet(),
+        onEpisodeKeyDone: suspend (key: String) -> Unit = {},
         onEpisodeDone: suspend (done: Int, total: Int) -> Unit = { _, _ -> },
-    ) {
+    ): Boolean {
         when (item.kind) {
             MediaKind.MOVIE -> {
                 val wrote = detectForPath(item.id, "", 0, item.path, segmentStore, extraChapterKeywords, force, item.tracks.fileDurationMs())
@@ -445,17 +452,24 @@ object PipelineStepOps {
                 val eligible = item.episodes.filter { it.partCount == 1 }
                 var done = 0
                 var wroteCount = 0
+                var yielded = false
                 for (ep in eligible) {
+                    val epKey = "${ep.filename}#${ep.episodeNumber}"
+                    if (epKey in skipEpisodeKeys) { done++; continue }
                     if (isCancelled()) break
+                    if (yieldToPlayback()) { yielded = true; break }
                     if (detectForPath(item.id, ep.filename, ep.episodeNumber ?: 0, ep.path, segmentStore, extraChapterKeywords, force, ep.tracks.fileDurationMs())) wroteCount++
                     done++
+                    onEpisodeKeyDone(epKey)
                     onEpisodeDone(done, eligible.size)
                 }
                 if (wroteCount > 0) mediaHistory?.record(item.id, "detect_segments", "chapter/heuristic detection wrote $wroteCount of ${eligible.size} episode(s)")
+                return yielded
             }
             // Phase 168 (FR-168-6): never enqueued for detection — no-op if ever reached directly.
             MediaKind.MUSIC_VIDEO -> {}
         }
+        return false
     }
 
     /** Single-item convenience wrapper (chapter/heuristic tier, then — for a series — the fingerprint
@@ -484,6 +498,54 @@ object PipelineStepOps {
                 detectOutroFingerprintsForSeason(item, segmentStore, fingerprintService, seasonEpisodes, force, reportDetail)
             }
         }
+    }
+
+    /** DEB-5535 (FR-3) — how one run of a `segments_season` job ended. [Yielded] carries every unit finished so far
+     *  (the heuristic tier's episode keys, then [TIER_HEURISTIC], [PASS_INTRO] and [PASS_OUTRO] as each ends), which
+     *  the queue stores on the requeued row so the resume does not repeat them. */
+    sealed class SeasonRunOutcome {
+        object Finished : SeasonRunOutcome()
+        object Cancelled : SeasonRunOutcome()
+        data class Yielded(val done: List<String>) : SeasonRunOutcome()
+    }
+
+    const val TIER_HEURISTIC = "tier:heuristic"
+    const val PASS_INTRO = "pass:intro"
+    const val PASS_OUTRO = "pass:outro"
+
+    /** DEB-5535 (FR-3) — the order a season job runs its work in and what a resume skips. Each stage is a function
+     *  that returns true when it stopped for playback; [done] is what an earlier run already finished. The
+     *  heuristic tier is told which episodes to skip and reports each one it finishes; a pass that stopped
+     *  mid-way is not recorded as done, so the resume runs it again from its start. */
+    suspend fun runSeasonSegments(
+        done: List<String>,
+        runFingerprint: Boolean,
+        isCancelled: () -> Boolean,
+        heuristic: suspend (skip: Set<String>, onKeyDone: suspend (String) -> Unit) -> Boolean,
+        intro: suspend () -> Boolean,
+        outro: suspend () -> Boolean,
+    ): SeasonRunOutcome {
+        val finished = done.toMutableList()
+        if (TIER_HEURISTIC !in finished) {
+            val yielded = heuristic(finished.toSet()) { finished += it }
+            if (isCancelled()) return SeasonRunOutcome.Cancelled
+            if (yielded) return SeasonRunOutcome.Yielded(finished.toList())
+            finished += TIER_HEURISTIC
+        }
+        if (runFingerprint) {
+            if (PASS_INTRO !in finished) {
+                val yielded = intro()
+                if (isCancelled()) return SeasonRunOutcome.Cancelled
+                if (yielded) return SeasonRunOutcome.Yielded(finished.toList())
+                finished += PASS_INTRO
+            }
+            if (PASS_OUTRO !in finished) {
+                val yielded = outro()
+                if (isCancelled()) return SeasonRunOutcome.Cancelled
+                if (yielded) return SeasonRunOutcome.Yielded(finished.toList())
+            }
+        }
+        return if (isCancelled()) SeasonRunOutcome.Cancelled else SeasonRunOutcome.Finished
     }
 
     /** A series' `partCount == 1` episodes grouped by season, seasons with fewer than 2 such episodes
@@ -570,7 +632,11 @@ object PipelineStepOps {
         // Phase 170 (§3) — one roll-up History entry per season run, only when something was written —
         // see detectChapterAndHeuristic's doc comment for why this is per-run, not per-episode.
         mediaHistory: MediaHistory? = null,
-    ) {
+        // DEB-5535 (FR-3) — stops for playback after each Phase A episode and each Phase B pair, and returns true.
+        // Nothing is written before Phase C, so a stopped pass has written nothing; its resume re-reads Phase A from
+        // the fingerprint cache and correlates the pairs again.
+        yieldToPlayback: () -> Boolean = { false },
+    ): Boolean {
         fun key(ep: Episode) = "${ep.filename}#${ep.episodeNumber}"
         fun epNum(ep: Episode) = ep.episodeNumber ?: 0
         fun eligible(ep: Episode): Boolean {
@@ -581,7 +647,7 @@ object PipelineStepOps {
             return existing?.locked != true && overwriteOk && (force || existing == null)
         }
 
-        if (seasonEpisodes.size < 2) return
+        if (seasonEpisodes.size < 2) return false
         val sorted = seasonEpisodes.sortedBy { it.episodeNumber ?: Int.MAX_VALUE }
 
         // Every unordered pair within this season, kept only when at least one side still needs a
@@ -592,7 +658,7 @@ object PipelineStepOps {
                 if (eligible(sorted[i]) || eligible(sorted[j])) add(sorted[i] to sorted[j])
             }
         }
-        if (pairs.isEmpty()) return
+        if (pairs.isEmpty()) return false
 
         val touchedEpisodes = pairs.flatMap { listOf(it.first, it.second) }.distinctBy { key(it) }
         val seasonLabel = sorted.first().seasonNumber?.toString()?.padStart(2, '0') ?: "??"
@@ -608,7 +674,8 @@ object PipelineStepOps {
         val durations = mutableMapOf<String, Long?>()
         val failedEpisodes = mutableSetOf<String>()
         for ((i, ep) in touchedEpisodes.withIndex()) {
-            if (isCancelled()) return
+            if (isCancelled()) return false
+            if (yieldToPlayback()) return true
             reportDetail("fingerprinting ${episodeLabel(ep)} (${i + 1}/${touchedEpisodes.size})")
             // Phase 233 (FR-233-3) — cut at half the file, so this pass can never correlate the closing
             // theme of a short episode (the outro pass owns the other half).
@@ -631,6 +698,7 @@ object PipelineStepOps {
         }
         for ((i, pair) in pairs.withIndex()) {
             val (epA, epB) = pair
+            if (yieldToPlayback()) return true
             reportDetail("correlating ${i + 1}/${pairs.size} (${episodeLabel(epA)} × ${episodeLabel(epB)})")
             if (key(epA) in failedEpisodes || key(epB) in failedEpisodes) continue
             val fpA = fpCache[key(epA)] ?: continue
@@ -672,6 +740,7 @@ object PipelineStepOps {
             mediaHistory?.record(item.id, "detect_segments", "fingerprint detection wrote $wroteCount intro marker(s) in S$seasonLabel")
             Logger.info("detect_segments: '${item.title}' S$seasonLabel — fingerprinting done, $wroteCount episode(s) updated", "pipeline", item.id)
         }
+        return false
     }
 
     /**
@@ -698,7 +767,11 @@ object PipelineStepOps {
         isCancelled: () -> Boolean = { false },
         // Phase 170 (§3) — same one-roll-up-per-run shape as detectIntroFingerprintsForSeason's own.
         mediaHistory: MediaHistory? = null,
-    ) {
+        // DEB-5535 (FR-3) — stops for playback after each Phase A episode and each Phase B pair, and returns true.
+        // Nothing is written before Phase C, so a stopped pass has written nothing; its resume re-reads Phase A from
+        // the fingerprint cache and correlates the pairs again.
+        yieldToPlayback: () -> Boolean = { false },
+    ): Boolean {
         fun key(ep: Episode) = "${ep.filename}#${ep.episodeNumber}"
         fun epNum(ep: Episode) = ep.episodeNumber ?: 0
         fun eligible(ep: Episode): Boolean {
@@ -708,7 +781,7 @@ object PipelineStepOps {
             return existing?.locked != true && overwriteOk && (force || existing == null)
         }
 
-        if (seasonEpisodes.size < 2) return
+        if (seasonEpisodes.size < 2) return false
         val sorted = seasonEpisodes.sortedBy { it.episodeNumber ?: Int.MAX_VALUE }
 
         val pairs = buildList {
@@ -716,7 +789,7 @@ object PipelineStepOps {
                 if (eligible(sorted[i]) || eligible(sorted[j])) add(sorted[i] to sorted[j])
             }
         }
-        if (pairs.isEmpty()) return
+        if (pairs.isEmpty()) return false
 
         val touchedEpisodes = pairs.flatMap { listOf(it.first, it.second) }.distinctBy { key(it) }
         val seasonLabel = sorted.first().seasonNumber?.toString()?.padStart(2, '0') ?: "??"
@@ -731,7 +804,8 @@ object PipelineStepOps {
         val durations = mutableMapOf<String, Long?>()
         val failedEpisodes = mutableSetOf<String>()
         for ((i, ep) in touchedEpisodes.withIndex()) {
-            if (isCancelled()) return
+            if (isCancelled()) return false
+            if (yieldToPlayback()) return true
             reportDetail("outro-fingerprinting ${episodeLabel(ep)} (${i + 1}/${touchedEpisodes.size})")
             val duration = FfprobeRunner.duration(ep.path)
             val durationMs = duration?.let { (it * 1000).toLong() }
@@ -757,6 +831,7 @@ object PipelineStepOps {
         }
         for ((i, pair) in pairs.withIndex()) {
             val (epA, epB) = pair
+            if (yieldToPlayback()) return true
             reportDetail("correlating outro ${i + 1}/${pairs.size} (${episodeLabel(epA)} × ${episodeLabel(epB)})")
             if (key(epA) in failedEpisodes || key(epB) in failedEpisodes) continue
             val fpA = fpCache[key(epA)] ?: continue
@@ -798,5 +873,6 @@ object PipelineStepOps {
             mediaHistory?.record(item.id, "detect_segments", "fingerprint detection wrote $wroteCount credits marker(s) in S$seasonLabel")
             Logger.info("detect_segments: '${item.title}' S$seasonLabel — outro fingerprinting done, $wroteCount episode(s) updated", "pipeline", item.id)
         }
+        return false
     }
 }

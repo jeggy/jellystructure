@@ -795,6 +795,7 @@ class MediaJobQueue(
                 // FR-213-2/213-3 — same row, same id, `created_at` untouched: the job keeps its place in
                 // FIFO order instead of jumping to the back on every playback-deferral.
                 queries.requeueOne(row.id)
+                outcome.nextParams?.let { queries.updateParams(json.encodeToString(MediaJobParams.serializer(), it), row.id) }
                 parking.park(row.id)   // Phase 295 (FR-295-2) — waits; one line per deferral, not per spin
                 Logger.info("job ${row.id} (${row.type}) re-queued — ${outcome.reason}", "jobs")
             } else {
@@ -845,8 +846,9 @@ class MediaJobQueue(
     private data class Failure(val reason: String) : Outcome()
     /** Phase 213 — a job that stopped cleanly mid-way and should run again, either immediately in its
      *  existing queue position ([inPlace], a playback deferral) or as a fresh row after [delayMs] with
-     *  [nextParams] carrying an incremented retry count (a Jellyfin-side timeout, FR-213-4). Only ever
-     *  produced by the subtitles queue today. */
+     *  [nextParams] carrying an incremented retry count (a Jellyfin-side timeout, FR-213-4). An in-place requeue may also carry
+     *  [nextParams], written onto the same row (DEB-5535: a season job's finished units). Produced by the subtitles
+     *  queue and `segments_season`. */
     private data class Requeue(val inPlace: Boolean, val reason: String, val delayMs: Long = 0, val nextParams: MediaJobParams? = null) : Outcome()
 
     // ── media queue: reorder / remove / mkv_layout_repair ───────────────────────
@@ -1511,27 +1513,44 @@ class MediaJobQueue(
         if (seasonEpisodes.isEmpty()) return Failure("No eligible episodes in this season")
         val (chapterKeywords, detectFingerprint) = segmentPipelineSettings()
         val force = params.segmentForce
+        // DEB-5535 (FR-3) — a deferrable season job steps aside at each unit boundary while a play runs (the claim's own
+        // rule, FR-295-1); a title's own Detect segments is not deferrable and never does.
+        val yieldNow = { yieldsToPlayback(row) }
+        val fingerprintSeason = detectFingerprint && fingerprintService != null && seasonEpisodes.size >= 2
 
-        PipelineStepOps.detectChapterAndHeuristic(item.copy(episodes = seasonEpisodes), segmentStore, chapterKeywords, force = force, isCancelled = isCancelled, mediaHistory = mediaHistory) { done, total ->
-            segmentsProgress(row.id, done, total)
-        }
-        if (isCancelled()) return Cancelled()
-
-        if (detectFingerprint && fingerprintService != null && seasonEpisodes.size >= 2) {
-            PipelineStepOps.detectIntroFingerprintsForSeason(
-                item, segmentStore, fingerprintService, seasonEpisodes, force = force,
-                reportDetail = { detail -> segmentsDetail(row.id, seasonEpisodes.size, detail) },
-                isCancelled = isCancelled, mediaHistory = mediaHistory,
-            )
-            if (isCancelled()) return Cancelled()
+        val outcome = PipelineStepOps.runSeasonSegments(
+            done = params.segmentDone,
+            runFingerprint = fingerprintSeason,
+            isCancelled = isCancelled,
+            heuristic = { skip, onKeyDone ->
+                PipelineStepOps.detectChapterAndHeuristic(
+                    item.copy(episodes = seasonEpisodes), segmentStore, chapterKeywords, force = force, isCancelled = isCancelled, mediaHistory = mediaHistory,
+                    onEpisodeDone = { done, total -> segmentsProgress(row.id, done, total) },
+                    yieldToPlayback = yieldNow, skipEpisodeKeys = skip, onEpisodeKeyDone = onKeyDone,
+                )
+            },
+            intro = {
+                PipelineStepOps.detectIntroFingerprintsForSeason(
+                    item, segmentStore, fingerprintService!!, seasonEpisodes, force = force,
+                    reportDetail = { detail -> segmentsDetail(row.id, seasonEpisodes.size, detail) },
+                    isCancelled = isCancelled, mediaHistory = mediaHistory, yieldToPlayback = yieldNow,
+                )
+            },
             // Phase 159 (FR-159-3) — outro/credits counterpart, same season-scoped shape.
-            PipelineStepOps.detectOutroFingerprintsForSeason(
-                item, segmentStore, fingerprintService, seasonEpisodes, force = force,
-                reportDetail = { detail -> segmentsDetail(row.id, seasonEpisodes.size, detail) },
-                isCancelled = isCancelled, mediaHistory = mediaHistory,
-            )
+            outro = {
+                PipelineStepOps.detectOutroFingerprintsForSeason(
+                    item, segmentStore, fingerprintService!!, seasonEpisodes, force = force,
+                    reportDetail = { detail -> segmentsDetail(row.id, seasonEpisodes.size, detail) },
+                    isCancelled = isCancelled, mediaHistory = mediaHistory, yieldToPlayback = yieldNow,
+                )
+            },
+        )
+        return when (outcome) {
+            PipelineStepOps.SeasonRunOutcome.Finished -> Success
+            PipelineStepOps.SeasonRunOutcome.Cancelled -> Cancelled()
+            is PipelineStepOps.SeasonRunOutcome.Yielded ->
+                Requeue(inPlace = true, reason = "waiting for playback to end (${outcome.done.size} unit(s) already done)", nextParams = params.copy(segmentDone = outcome.done))
         }
-        return if (isCancelled()) Cancelled() else Success
     }
 
     /** Episodes redetect deliberately skips the fingerprint tier — it's a pairwise, whole-season

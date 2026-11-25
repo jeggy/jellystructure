@@ -202,6 +202,11 @@ WHERE type = 'bulk_reorder' AND state IN ('queued', 'running');
 requeueOne:
 UPDATE media_job SET state = 'queued', started_at = NULL, pct = 0, speed = NULL, eta_seconds = NULL WHERE id = :id;
 
+-- DEB-5535 (FR-3) — a segments_season row that stepped aside for playback keeps the units it finished in its
+-- params, so the resume skips them. Written together with requeueOne; nothing else changes the column.
+updateParams:
+UPDATE media_job SET params = :params WHERE id = :id;
+
 deleteOld:
 DELETE FROM media_job WHERE state IN ('done', 'failed', 'cancelled') AND COALESCE(finished_at, created_at) < :cutoff;
 
