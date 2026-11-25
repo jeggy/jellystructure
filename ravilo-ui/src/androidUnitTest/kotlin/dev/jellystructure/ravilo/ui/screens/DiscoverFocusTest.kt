@@ -9,6 +9,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.hasAnyDescendant
+import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isFocused
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -17,6 +18,7 @@ import androidx.compose.ui.test.performKeyInput
 import androidx.compose.ui.test.pressKey
 import dev.jellystructure.shared.tv.BrowseFacets
 import dev.jellystructure.shared.tv.FacetItem
+import kotlinx.coroutines.flow.first
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -121,6 +123,11 @@ class DiscoverFocusTest {
             if (path == "/api/tv/upcoming") dev.jellystructure.shared.tv.RaviloWireJson.encodeToString(dev.jellystructure.shared.tv.UpcomingFeed.serializer(), feed) else null
         }
         val upcoming = UpcomingStore(api)
+        // DEB-4707: the app keeps this store across a Back-return (RaviloApp keptStore), so the feed is already Loaded when
+        // the page composes. Wait for it here, on real time, so the arrival focus does not race a fetch on real threads.
+        kotlinx.coroutines.runBlocking {
+            kotlinx.coroutines.withTimeout(5_000) { upcoming.state.first { it is UpcomingState.Loaded } }
+        }
         rule.setContent {
             androidx.compose.runtime.CompositionLocalProvider(dev.jellystructure.ravilo.ui.components.LocalAvatarReturn provides avatarReturn) {
                 DiscoverScreen(
@@ -156,8 +163,10 @@ class DiscoverFocusTest {
     @Test fun `R365 FR-5 — arriving with the return-to-avatar flag focuses the avatar and consumes the flag once`() {
         var consumed = 0
         renderComingSoon(avatarReturn = { consumed++ })
-        rule.mainClock.advanceTimeBy(200)
-        rule.waitForIdle()
+        rule.waitUntil(5_000) {
+            rule.onAllNodes(hasTestTag(dev.jellystructure.ravilo.ui.components.APP_BAR_AVATAR_TAG) and isFocused(), useUnmergedTree = true)
+                .fetchSemanticsNodes().isNotEmpty()
+        }
         rule.onNodeWithTag(dev.jellystructure.ravilo.ui.components.APP_BAR_AVATAR_TAG, useUnmergedTree = true).assertIsFocused()
         assertEquals(1, consumed)
     }
