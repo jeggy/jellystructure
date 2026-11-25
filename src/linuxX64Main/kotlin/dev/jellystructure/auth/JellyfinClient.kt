@@ -21,9 +21,14 @@ import io.ktor.http.encodeURLParameter
 import io.ktor.http.encodeURLPathPart
 import io.ktor.http.isSuccess
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.sync.withPermit
+import kotlin.time.Duration.Companion.seconds
+import kotlin.time.TimeSource
 
 // R219 (FR-R219-2) — page size for the "page to completion" fetches Continue Watching's canonical list
 // needs. Not a cap: every paged fetch below loops until TotalRecordCount is reached.
@@ -315,7 +320,11 @@ data class TokenCheckResult(
     val error: String? = null,
 )
 
-class JellyfinClient {
+class JellyfinClient(
+    /** DEB-5540 (FR-3) — how long after the last request the coalesced library refresh fires. Tests shorten it. */
+    libraryRefreshDebounce: kotlin.time.Duration = 60.seconds,
+    libraryRefreshScanPoll: kotlin.time.Duration = 15.seconds,
+) {
     // Phase 310 — a GET is idempotent: one retry when a foreign cancellation (Ktor's Curl engine) failed it.
     private suspend fun httpGet(url: String, block: HttpRequestBuilder.() -> Unit = {}): HttpResponse =
         OutboundHttp.withPermit(retryForeignCancellation = true) { http.get(url, block) }
@@ -1087,11 +1096,47 @@ class JellyfinClient {
         httpPost(url) { jellyfinAuth(token) }.status.value in 200..299
     }.getOrElse { Logger.warn("Jellyfin mergeVersions failed: ${it.message}"); false }
 
+    /**
+     * `POST /Library/Refresh` **now**. On this Jellyfin it cancels a running library scan and starts a new one, so
+     * only the closing refresh of a `RunTarget.Library` run may call it directly (DEB-5540, FR-145-7). Everything
+     * else goes through [requestLibraryRefresh].
+     */
     suspend fun triggerLibraryRefresh(baseUrl: String, token: String): Boolean = runCatching {
         val url = baseUrl.trimEnd('/') + "/Library/Refresh"
         val response = httpPost(url) { jellyfinAuth(token) }
         response.status.value in 200..299
     }.getOrDefault(false)
+
+    /** DEB-5540 (FR-3) — is Jellyfin's `RefreshLibrary` task running (or cancelling) right now? A failed read is "no". */
+    suspend fun isLibraryScanRunning(baseUrl: String, token: String): Boolean =
+        getScheduledTasks(baseUrl, token).orEmpty().any { it.key == "RefreshLibrary" && (it.state == "Running" || it.state == "Cancelling") }
+
+    private val clockStart = TimeSource.Monotonic.markNow()
+    private val libraryRefresh = CoalescedLibraryRefresh(
+        scope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
+        scanRunning = ::isLibraryScanRunning,
+        fire = ::triggerLibraryRefresh,
+        debounce = libraryRefreshDebounce,
+        scanPoll = libraryRefreshScanPoll,
+        nowMs = { clockStart.elapsedNow().inWholeMilliseconds },
+    )
+
+    /**
+     * DEB-5540 (FR-3) — a library refresh a caller wants but no `RunTarget.Library` run is closing: a title Jellyfin
+     * has no id for, a batch push, the versions library's validate. Fires once, 60 s after the last request and never
+     * while a scan runs. Returns true: the request is owed, not yet made.
+     */
+    suspend fun requestLibraryRefresh(baseUrl: String, token: String): Boolean {
+        libraryRefresh.request(baseUrl, token)
+        return true
+    }
+
+    /**
+     * DEB-5540 (FR-1) — the ONE refresh a title gets: its own item, full metadata and image modes, a series with
+     * `Recursive=true` so its seasons and episodes re-read their NFOs (FR-145-7). Never a `/Library/Refresh`.
+     */
+    suspend fun refreshTitle(baseUrl: String, token: String, jellyfinId: String, isSeries: Boolean): Boolean =
+        refreshItem(baseUrl, token, jellyfinId, full = true, recursive = isSeries)
 
     /** R186: [limit] is the CANDIDATE pool the Continue row filters from (per-channel membership, dedup),
      *  not how many cards are shown — keep it well above a realistic in-flight count or a channel row

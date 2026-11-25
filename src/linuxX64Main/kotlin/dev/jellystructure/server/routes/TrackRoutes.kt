@@ -491,15 +491,13 @@ fun Route.trackRoutes(
                 return@post
             }
             val jellyfinId = item?.jellyfinId
+            // DEB-5540 (FR-1, FR-3) — the title's own refresh, once (a series recursively, so its tvshow.nfo and
+            // episode NFOs are re-read) and no /Library/Refresh: on this Jellyfin that call cancels a running scan.
+            // A title Jellyfin has no id for waits on the one coalesced library refresh instead.
             val ok = if (!jellyfinId.isNullOrBlank()) {
-                jellyfinClient.refreshItem(config.apiKeys.jellyfinUrl, config.apiKeys.jellyfinToken, jellyfinId, full = true)
+                jellyfinClient.refreshTitle(config.apiKeys.jellyfinUrl, config.apiKeys.jellyfinToken, jellyfinId, item?.kind == MediaKind.TV_SHOW)
             } else {
-                jellyfinClient.triggerLibraryRefresh(config.apiKeys.jellyfinUrl, config.apiKeys.jellyfinToken)
-            }
-            // For TV shows, also trigger a library scan so Jellyfin reliably re-reads tvshow.nfo.
-            // Per-item FullRefresh alone does not consistently pick up tvshow.nfo changes.
-            if (item?.kind == MediaKind.TV_SHOW) {
-                jellyfinClient.triggerLibraryRefresh(config.apiKeys.jellyfinUrl, config.apiKeys.jellyfinToken)
+                jellyfinClient.requestLibraryRefresh(config.apiKeys.jellyfinUrl, config.apiKeys.jellyfinToken)
             }
             // Phase 193 (FR-193-1) — this is exactly the button the "Jellyfin hasn't re-read the NFO
             // yet" banner offers; without this the fix action didn't fix the banner's own state.

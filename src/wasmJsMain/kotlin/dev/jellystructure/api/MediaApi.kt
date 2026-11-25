@@ -556,8 +556,9 @@ object MediaApi {
         httpClient.get("/api/media/$id/nfo/writable").body<NfoWritableResult>()
     }.getOrNull()
 
-    suspend fun writeNfo(id: String): Pair<NfoWriteResult?, String?> = runCatching {
-        val response = httpClient.post("/api/media/$id/nfo")
+    /** [refresh] false is the Save → Jellyfin chain's: its last step, `/jellyfin-refresh`, refreshes once (DEB-5540, FR-2). */
+    suspend fun writeNfo(id: String, refresh: Boolean = true): Pair<NfoWriteResult?, String?> = runCatching {
+        val response = httpClient.post("/api/media/$id/nfo" + if (refresh) "" else "?refresh=false")
         if (response.status == HttpStatusCode.OK) {
             Pair(response.body<NfoWriteResult>(), null)
         } else {
@@ -571,8 +572,8 @@ object MediaApi {
         httpClient.get("/api/media/$id/artwork").body<ArtworkStatus>()
     }.getOrNull()
 
-    suspend fun fetchArtwork(id: String): ArtworkStatus? = runCatching {
-        val response = httpClient.post("/api/media/$id/artwork")
+    suspend fun fetchArtwork(id: String, refresh: Boolean = true): ArtworkStatus? = runCatching {
+        val response = httpClient.post("/api/media/$id/artwork" + if (refresh) "" else "?refresh=false")
         if (response.status == HttpStatusCode.OK) response.body<ArtworkStatus>() else null
     }.getOrNull()
 

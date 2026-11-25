@@ -661,7 +661,7 @@ fun startServer(
                     validateJellyfinLibraries = {
                         val cfg = configStore.current
                         cfg.apiKeys.jellyfinUrl.isNotBlank() &&
-                            jellyfinClient.triggerLibraryRefresh(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken)
+                            jellyfinClient.requestLibraryRefresh(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken)   // DEB-5540 (FR-3)
                     })
                 setupRoutes(configStore, jellyfinClient)
                 jellyfinRoutes(configStore, jellyfinClient, mediaStore)

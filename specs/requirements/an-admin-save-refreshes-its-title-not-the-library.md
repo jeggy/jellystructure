@@ -35,7 +35,9 @@ On this Jellyfin a `POST /Library/Refresh` cancels a running library scan and st
   image refresh modes, which is what FR-145-7 sends. These routes send **no** `/Library/Refresh`.
 - **FR-2 — one save, one refresh.** The admin's Save → Jellyfin chain on a title ends in one Jellyfin refresh for
   that title, not one per step. The steps that write to disk (`/nfo`, `/artwork`) stop refreshing on their own when
-  they run as part of the chain. Called on its own, each still refreshes once.
+  they run as part of the chain. Called on its own, each still refreshes once. The chain says so with
+  `?refresh=false` on `POST /api/media/{id}/nfo` and `POST /api/media/{id}/artwork` (absent means refresh, so an
+  admin page loaded before the deploy still works).
 - **FR-3 — a title Jellyfin does not know yet.** A title with no `jellyfinId` still needs a library refresh to be
   found. That refresh goes through one coalesced trigger in `JellyfinClient`. The trigger fires 60 s after the last
   request for it. It does not fire while a Jellyfin library scan is running: after the scan ends it fires once, and only

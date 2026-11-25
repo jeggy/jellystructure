@@ -440,6 +440,7 @@ tasks.named("wasmJsBrowserDistribution") {
             dependencies {
                 implementation(kotlin("test"))
                 implementation(libs.ktor.server.test.host)
+                implementation(libs.kotlinx.coroutines.test)   // DEB-5540 — the coalesced library refresh's 60 s, on virtual time
             }
         }
         val wasmJsMain by getting {

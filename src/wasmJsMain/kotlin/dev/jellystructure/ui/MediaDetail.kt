@@ -4740,14 +4740,16 @@ private suspend fun handleWriteNfo(id: String, refresh: Boolean = false, scope: 
     val face = document.getElementById("write-nfo-refresh-btn") as? HTMLElement
     face?.setAttribute("disabled", "true"); face?.textContent = "Writing…"
 
-    val (result, error) = MediaApi.writeNfo(id)
+    // DEB-5540 (FR-2) — in the Save → Jellyfin chain the NFO and artwork steps do not refresh; the one
+    // /jellyfin-refresh at its end does.
+    val (result, error) = MediaApi.writeNfo(id, refresh = !refresh)
 
     if (result != null) {
         // The NFO raw tab re-fetches the on-disk files when activated (Phase 44), so no need to
         // push the freshly-written XML into the viewer here.
         if (refresh) {
             face?.textContent = "Syncing artwork…"
-            MediaApi.fetchArtwork(id)
+            MediaApi.fetchArtwork(id, refresh = false)
             face?.textContent = "Notifying Jellyfin…"
             MediaApi.jellyfinRefresh(id)
             showDetailMsg("NFO written, artwork synced, Jellyfin notified ✓", true)

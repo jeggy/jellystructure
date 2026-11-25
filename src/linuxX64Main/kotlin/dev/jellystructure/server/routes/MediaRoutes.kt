@@ -595,9 +595,11 @@ fun Route.mediaRoutes(
                             // exactly like pushToJellyfin already does, or DriftEvaluator's
                             // jfSyncedAt < nfoWrittenAt predicate reports "Jellyfin hasn't re-read it yet"
                             // forever about a refresh that happened seconds earlier on this same request.
+                            // DEB-5540 (FR-2) — Save → Jellyfin sends `refresh=false` here: it ends in one
+                            // /jellyfin-refresh, not one refresh per step. Called on its own this still refreshes once.
                             val cfg = configStore.current
-                            if (!item.jellyfinId.isNullOrBlank() && cfg.apiKeys.jellyfinUrl.isNotBlank()) {
-                                val refreshOk = jellyfinClient.refreshItem(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken, item.jellyfinId, full = true)
+                            if (call.request.queryParameters["refresh"] != "false" && !item.jellyfinId.isNullOrBlank() && cfg.apiKeys.jellyfinUrl.isNotBlank()) {
+                                val refreshOk = jellyfinClient.refreshTitle(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken, item.jellyfinId, item.kind == MediaKind.TV_SHOW)
                                 if (refreshOk) {
                                     store.updateOne((store.get(id) ?: item).copy(jfSyncedAt = nowEpochSec()))
                                 } else {
@@ -657,7 +659,8 @@ fun Route.mediaRoutes(
                     if (status.posterExists || status.fanartExists) {
                         mediaHistory.record(id, "artwork_fetch", "poster=${status.posterExists} fanart=${status.fanartExists}")
                         val cfg = configStore.current
-                        if (!item.jellyfinId.isNullOrBlank() && cfg.apiKeys.jellyfinUrl.isNotBlank()) {
+                        // DEB-5540 (FR-2) — `refresh=false` from Save → Jellyfin; its last step refreshes once.
+                        if (call.request.queryParameters["refresh"] != "false" && !item.jellyfinId.isNullOrBlank() && cfg.apiKeys.jellyfinUrl.isNotBlank()) {
                             jellyfinClient.refreshItem(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken, item.jellyfinId)
                         }
                     }
@@ -1720,7 +1723,7 @@ fun Route.mediaRoutes(
             val cfg = configStore.current
             if (!enriched.jellyfinId.isNullOrBlank() && cfg.apiKeys.jellyfinUrl.isNotBlank()) {
                 // Phase 193 (FR-193-1) — same bookkeeping gap as the plain NFO-write route.
-                val refreshOk = jellyfinClient.refreshItem(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken, enriched.jellyfinId, full = true)
+                val refreshOk = jellyfinClient.refreshTitle(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken, enriched.jellyfinId, enriched.kind == MediaKind.TV_SHOW)
                 if (refreshOk) {
                     store.updateOne((store.get(id) ?: enriched).copy(jfSyncedAt = nowEpochSec()), respectMetadataLanguageLock = false)
                 } else {
@@ -2224,9 +2227,8 @@ fun Route.mediaRoutes(
             call.respond(HttpStatusCode.ServiceUnavailable, mapOf("error" to "Jellyfin not configured"))
             return@post
         }
-        appScope.launch {
-            jellyfinClient.triggerLibraryRefresh(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken)
-        }
+        // DEB-5540 (FR-3) — through the one coalesced trigger: 60 s after the last request, never while a scan runs.
+        jellyfinClient.requestLibraryRefresh(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken)
         call.respond(HttpStatusCode.Accepted, mapOf("status" to "refresh triggered"))
     }
 
@@ -2296,6 +2298,7 @@ internal suspend fun pushNfosAndRefresh(
     var nfoFail = 0
     var refreshOk = 0
     var refreshFail = 0
+    var unknownToJellyfin = 0
     val freshCfg = configStore.current
     for (item in items) {
         var current = item
@@ -2312,15 +2315,16 @@ internal suspend fun pushNfosAndRefresh(
             }
             .onFailure { nfoFail++; Logger.warn("$label: NFO write failed for '${item.id}': ${it.message}") }
         if (!item.jellyfinId.isNullOrBlank()) {
-            val ok = jellyfinClient.refreshItem(freshCfg.apiKeys.jellyfinUrl, freshCfg.apiKeys.jellyfinToken, item.jellyfinId, full = true)
+            // DEB-5540 (FR-1) — each title's own refresh, a series recursively; no library scan behind it.
+            val ok = jellyfinClient.refreshTitle(freshCfg.apiKeys.jellyfinUrl, freshCfg.apiKeys.jellyfinToken, item.jellyfinId, item.kind == MediaKind.TV_SHOW)
             if (ok) { refreshOk++; store.updateOne(current.copy(jfSyncedAt = nowEpochSec())) }
             else { refreshFail++; Logger.warn("$label: Jellyfin refresh failed for '${item.id}'") }
-        }
+        } else unknownToJellyfin++
     }
-    // Trigger a library scan after all NFOs are written so Jellyfin reliably picks up
-    // tvshow.nfo changes — per-item FullRefresh alone is not sufficient for TV series NFOs.
-    jellyfinClient.triggerLibraryRefresh(freshCfg.apiKeys.jellyfinUrl, freshCfg.apiKeys.jellyfinToken)
-    Logger.info("$label complete: nfoOk=$nfoOk nfoFail=$nfoFail refreshOk=$refreshOk refreshFail=$refreshFail (+ library scan triggered)")
+    // DEB-5540 (FR-3) — a title Jellyfin has no id for is found by a library refresh, once for the whole batch.
+    if (unknownToJellyfin > 0) jellyfinClient.requestLibraryRefresh(freshCfg.apiKeys.jellyfinUrl, freshCfg.apiKeys.jellyfinToken)
+    Logger.info("$label complete: nfoOk=$nfoOk nfoFail=$nfoFail refreshOk=$refreshOk refreshFail=$refreshFail" +
+        (if (unknownToJellyfin > 0) " (+ library refresh requested for $unknownToJellyfin title(s) Jellyfin has no id for)" else ""))
     return NfoPushCounts(nfoOk, nfoFail, refreshOk, refreshFail)
 }
 
@@ -2373,18 +2377,15 @@ internal suspend fun pushToJellyfin(
 
     var refreshOk = true
     if (!item.jellyfinId.isNullOrBlank()) {
-        refreshOk = jellyfinClient.refreshItem(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken, item.jellyfinId, full = true)
+        // DEB-5540 (FR-1) — the title's own refresh, once; a series recursively so tvshow.nfo and every episode NFO
+        // are re-read. No /Library/Refresh: on this Jellyfin it cancels a running scan.
+        refreshOk = jellyfinClient.refreshTitle(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken, item.jellyfinId, item.kind == MediaKind.TV_SHOW)
         if (refreshOk) store.updateOne(current.copy(jfSyncedAt = nowEpochSec()))
         else Logger.warn("pushToJellyfin: Jellyfin refresh failed for '${item.id}' (jellyfinId=${item.jellyfinId})")
     } else {
-        Logger.warn("pushToJellyfin: no jellyfinId for '${item.id}' — skipping per-item Jellyfin refresh")
-    }
-
-    // For TV shows, also trigger a library scan so Jellyfin reliably re-reads tvshow.nfo from disk.
-    // Per-item FullRefresh alone does not consistently pick up tvshow.nfo changes in Jellyfin.
-    if (item.kind == MediaKind.TV_SHOW) {
-        jellyfinClient.triggerLibraryRefresh(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken)
-        Logger.info("pushToJellyfin: triggered library scan to pick up tvshow.nfo for '${item.id}'")
+        // DEB-5540 (FR-3) — Jellyfin does not know this title yet: the one coalesced library refresh finds it.
+        Logger.info("pushToJellyfin: no jellyfinId for '${item.id}' — requested the coalesced library refresh")
+        jellyfinClient.requestLibraryRefresh(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken)
     }
     // Phase 54 — nudge Radarr/Sonarr to rescan this title (best-effort, non-blocking; independent of
     // the Jellyfin refresh above). No-op unless the matching *arr is enabled with rescan_after_write.
