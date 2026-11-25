@@ -498,7 +498,8 @@ test.describe("DEB-5024 FR-34 — play that falls behind real time is a stall", 
       expect(stall.duration_ms).toBeLessThanOrEqual(7_500);
     }
     expect(last.rebuffer_count).toBeGreaterThanOrEqual(2);
-    expect(last.rebuffer_ms).toBeGreaterThanOrEqual(9_000);
+    // two stalls, each at least the 4 s floor above
+    expect(last.rebuffer_ms).toBeGreaterThanOrEqual(8_000);
     expect(last.frozen_count ?? 0, "a hold under a second is not a freeze").toBe(0);
   });
 
