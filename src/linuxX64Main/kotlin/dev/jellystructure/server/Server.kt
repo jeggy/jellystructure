@@ -230,6 +230,8 @@ fun startServer(
     processingRuns: dev.jellystructure.media.ProcessingRuns? = null,
     // DEB-2476 (DEB-2474, FR-12) — Auto-fetch's engine and routes; null in contexts that build none.
     autofetch: dev.jellystructure.autofetch.AutofetchRuntime? = null,
+    // DEB-4074 (DEB-4032, FR-3) — Jellyfin's collections; a scan these routes start re-reads them.
+    jellyfinCollections: dev.jellystructure.media.JellyfinCollections? = null,
 ): suspend () -> Unit {
     // Fire-and-forget work (scans, NFO/artwork pushes, image fetches) runs as appScope.launch{}.
     // On Kotlin/Native an exception escaping a launched coroutine reaches the global handler and
@@ -665,7 +667,7 @@ fun startServer(
                     })
                 setupRoutes(configStore, jellyfinClient)
                 jellyfinRoutes(configStore, jellyfinClient, mediaStore)
-                mediaRoutes(mediaStore, scanner, artworkDownloader, tmdbClient, appScope, scanTracker, broadcaster, jellyfinClient, configStore, mediaHistory, scanDispatcher, seedingGuard, seedingSnapshot, raviloConfigService, logoDownloader, arrRescan, sonarrEnrich, mediaJobQueue, imdbClient, fingerprintService, mediaSegmentStore, realtimeIngest, dirtyItemStore, imageProxyService = imageProxyService, musicPipeline = musicPipeline, processingRuns = processingRuns, jsTagStore = jsTagStore)
+                mediaRoutes(mediaStore, scanner, artworkDownloader, tmdbClient, appScope, scanTracker, broadcaster, jellyfinClient, configStore, mediaHistory, scanDispatcher, seedingGuard, seedingSnapshot, raviloConfigService, logoDownloader, arrRescan, sonarrEnrich, mediaJobQueue, imdbClient, fingerprintService, mediaSegmentStore, realtimeIngest, dirtyItemStore, imageProxyService = imageProxyService, musicPipeline = musicPipeline, processingRuns = processingRuns, jsTagStore = jsTagStore, jellyfinCollections = jellyfinCollections)
                 processingRoutes(configStore, processingRuns, mediaJobQueue, scanTracker, mediaStore)   // DEB-1664 (FR-9)
                 activityRoutes(activityLog)
                 aiRoutes(configStore, jellyfinClient, deviceService)   // Phase 270; DEB-2826 (FR-1.7)

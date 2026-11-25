@@ -72,6 +72,8 @@ class PipelineDeps(
     val music: MusicPipeline? = null,
     // DEB-1664 (FR-9) — when each feature last ran; null where a site keeps no such record (a single-item run).
     val processingRuns: ProcessingRuns? = null,
+    // DEB-4074 (DEB-4032, FR-3) — re-read after a scan; null where a site keeps none.
+    val jellyfinCollections: JellyfinCollections? = null,
 )
 
 /** Phase 275 — what the music steps need. Later music phases add their collaborators here. */

@@ -631,6 +631,9 @@ data class BrowseCard(
     /** DEB-2837 (FR-7) — the title's rating (IMDb, else TMDB) when it meets `DEFAULT_MIN_VOTES`, for the *IMDb* sort
      *  so a title only TMDB rates sorts where the row put it. Browse-only, like [imdbRating]; absent when unrated. */
     @SerialName("rating_score") val ratingScore: Double? = null,
+    /** DEB-4074 (DEB-4032, FR-4) — the ids of the Jellyfin collections (`BoxSet`) that hold this title, for the *Collection* chip;
+     *  the names ride [SeededBrowseResponse.boxSets]. Additive; empty on an older server. Browse-only, like [imdbRating]. */
+    @SerialName("box_sets") val boxSets: List<String> = emptyList(),
 )
 
 /** Request body for the seeded-browse endpoints — the row's (channel-ANDed) [Row.seedQuery] plus the
@@ -649,7 +652,15 @@ data class SeededBrowseResponse(
     /** R325 (FR-R325-4) — every person credited on [items], by title count: [FacetItem.id] is the TMDB person
      *  id the cards' [BrowseCard.people] carry, [FacetItem.name] the name. Additive; empty on an older server. */
     val people: List<FacetItem> = emptyList(),
+    /** DEB-4074 (DEB-4032, FR-4) — each Jellyfin collection that holds at least one of [items], and only those, so a collection
+     *  whose members are all hidden from this viewer is never named to them. [BoxSetFacet.id] is what the cards' [BrowseCard.boxSets]
+     *  carry. Additive; empty on an older server. */
+    @SerialName("box_sets") val boxSets: List<BoxSetFacet> = emptyList(),
 )
+
+/** DEB-4074 (DEB-4032, FR-4) — a Jellyfin collection as the browse page's *Collection* chip names it. */
+@Serializable
+data class BoxSetFacet(val id: String, val name: String)
 
 @Serializable
 data class Person(

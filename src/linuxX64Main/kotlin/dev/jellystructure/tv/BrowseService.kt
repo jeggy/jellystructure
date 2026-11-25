@@ -15,6 +15,7 @@ import dev.jellystructure.model.TrackKind
 import dev.jellystructure.model.ratingScore
 import dev.jellystructure.model.recencyKey
 import dev.jellystructure.resolver.CertificationResolver
+import dev.jellystructure.shared.tv.BoxSetFacet
 import dev.jellystructure.shared.tv.BrowseCard
 import dev.jellystructure.shared.tv.BrowseFacets
 import dev.jellystructure.shared.tv.ConditionGroup
@@ -49,6 +50,8 @@ class BrowseService(
     // Phase 216 (FR-216-5) — the ONLY permitted source for `logoUrl`: `hasLogo` says whether a logo
     // file is really on disk. Nullable so a test can construct the service without a data dir.
     private val logoDownloader: LogoDownloader? = null,
+    // DEB-4074 (DEB-4032, FR-4) — the Jellyfin collections a card is in; null where a site builds none (the cards then carry none).
+    private val jellyfinCollections: dev.jellystructure.media.JellyfinCollections? = null,
 ) {
     // Phase 216 (FR-216-8/11) — facets() used to iterate the whole visible library on every call and
     // cache nothing, which was fine for a rarely-opened facet bar and is not fine once R243 puts a
@@ -108,13 +111,23 @@ class BrowseService(
             else kindFiltered.filter { ConditionEvaluator.matches(it, query, heroIds, cascade) })
             .sortedByDescending { it.recencyKey() }
 
-        SeededBrowseResponse(items = browseCards(device, matched, cfg), total = matched.size, people = peopleFacet(matched))
+        seededResponse(browseCards(device, matched, cfg), matched.size, peopleFacet(matched))
     }
 
     /** Phase 269 (FR-269-2/7) — the Recommended row's *See all*: [items] (already the viewer's
      *  still-eligible list, in its order) as browse cards, never re-sorted. */
     fun recommendationCards(device: DeviceData, items: List<MediaItem>): SeededBrowseResponse =
-        SeededBrowseResponse(items = browseCards(device, items, raviloConfigService.getConfig(device.jellyfinUserId)), total = items.size, people = peopleFacet(items))
+        seededResponse(browseCards(device, items, raviloConfigService.getConfig(device.jellyfinUserId)), items.size, peopleFacet(items))
+
+    /** DEB-4074 (FR-4) — [cards] with the Jellyfin collections they carry named, and only those: [cards] are already what this viewer may
+     *  see (DEB-2518), so a collection whose members are all hidden from them is not named. Never wider than the cards on the response. */
+    private fun seededResponse(cards: List<BrowseCard>, total: Int, people: List<FacetItem>): SeededBrowseResponse {
+        val snapshot = jellyfinCollections?.current()
+        val named = cards.flatMapTo(HashSet()) { it.boxSets }
+        val boxSets = snapshot?.collections.orEmpty().filter { it.id in named }.map { BoxSetFacet(it.id, it.name) }
+            .sortedBy { it.name.lowercase() }
+        return SeededBrowseResponse(items = cards, total = total, people = people, boxSets = boxSets)
+    }
 
     /** R325 (FR-R325-4) — everyone credited on [items], by how many of them, the model R190 §D's admin facet uses.
      *  Names are the credit's own; a person counts once per title however many roles they hold. */
@@ -139,6 +152,7 @@ class BrowseService(
         // Phase 271 (FR-271-3/5) — the viewer's app language, without the title step: the browse page
         // counts and filters genres across these cards itself, so one genre must read the same on each.
         val lang = cfg.uiLanguage
+        val boxSets = jellyfinCollections?.current()
 
         return matched.map { item ->
             BrowseCard(
@@ -153,6 +167,7 @@ class BrowseService(
                 imdbRating = item.tvImdbRating(),   // Phase 131 / R387
                 sortName = item.sortName,   // R253 (FR-R253-3)
                 ratingScore = item.ratingScore(DEFAULT_MIN_VOTES),   // DEB-2837 (FR-7)
+                boxSets = boxSets?.boxSetsOf(item.id).orEmpty(),   // DEB-4074 (FR-4)
             )
         }
     }

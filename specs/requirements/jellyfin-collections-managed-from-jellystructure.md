@@ -63,6 +63,16 @@ token:
 Each call carries a verification note in code (`verified against Jellyfin 12.x, <date>`) written when it is built,
 per the constitution's *Supported Jellyfin* rule.
 
+**Amendment, 2026-11-25 (DEB-4074).** Each call above was run against a throwaway `jellyfin/jellyfin:12.1` (12.1.0). Two of
+them do not work as written, and are built as follows:
+- **members:** with the server key, `GET /Items?ParentId={boxSetId}` answers an **empty list** (there is no user behind the key).
+  The call is `GET /Items?ParentId={id}&Recursive=true&IncludeItemTypes=Movie,Series,MusicVideo`. `Recursive` also walks into a member
+  series' seasons and episodes, so the types are named, and a member of any other type is not listed. The *unmapped-member count*
+  (FR-3, FR-5) therefore counts members of these three types that jellystructure does not hold.
+- **rename:** `GET /Items/{id}` with no `userId` answers 400. The read is `GET /Items/{id}?userId={any user}` and the function takes
+  that user id (the signed-in admin's). The whole item goes back to `POST /Items/{id}` (204), and a rename of an item whose `Type` is
+  not `BoxSet` is refused.
+
 ### FR-2 — Deleting a collection can never delete a title
 
 `DELETE /Items/{id}` deletes a film's or series' **files** when the id is a title's. So:

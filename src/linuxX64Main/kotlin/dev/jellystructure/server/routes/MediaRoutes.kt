@@ -219,6 +219,8 @@ fun Route.mediaRoutes(
     // DEB-3701 (FR-3) — so an edit that adds a jellystructure tag out of its scope is refused, and the Library can list
     // the items outside a tag's scope (FR-4).
     jsTagStore: dev.jellystructure.media.JsTagStore? = null,
+    // DEB-4074 (DEB-4032, FR-3) — re-read after a scan these routes start.
+    jellyfinCollections: dev.jellystructure.media.JellyfinCollections? = null,
 ) {
     // Phase 175 — shared collaborator bundle for every runPipeline() call these routes make.
     val pipelineDeps = PipelineDeps(
@@ -230,6 +232,7 @@ fun Route.mediaRoutes(
         artworkPresize = imageProxyService?.let { svc -> { item -> svc.presize(item); Unit } },
         music = musicPipeline,
         processingRuns = processingRuns,
+        jellyfinCollections = jellyfinCollections,
     )
     route("/media") {
         get {
@@ -2523,6 +2526,8 @@ internal fun launchScanRun(
             if (plan.queueDirectPlay) queueDirectPlayNow(pipelineDeps.mediaJobQueue, scanTracker)
             runPipeline(RunTarget.Library(plan.libraryId, resumeSkipIds), pipeline, jobId, scanTracker, pipelineDeps, fullRun = plan.full, deferEligible = deferEligible, byHand = triggerKind == "manual", askAi = askAi, discover = !plan.featuresOnly)
         } }
+        // DEB-4074 (FR-3) — a scan can change which titles exist and their Jellyfin ids, so the collections are mapped again.
+        pipelineDeps.jellyfinCollections?.let { c -> runCatching { c.refresh() }.onFailure { if (it is CancellationException) throw it } }
     }
     scanTracker.attachJob(job)
     return pipeline

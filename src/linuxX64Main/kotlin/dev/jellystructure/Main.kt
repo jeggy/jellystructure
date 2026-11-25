@@ -263,7 +263,9 @@ fun main() = runBlocking {
     // Phase 216 (FR-216-5) — BrowseService answers `logoUrl` from LogoDownloader.hasLogo, the one
     // "was a logo really captured" predicate the admin Metadata page already uses.
     val logoDownloader = LogoDownloader(dataDir, tmdbClient)
-    val browseService = BrowseService(mediaStore, jellyfinClient, configStore, raviloConfigService, artworkDownloader, logoDownloader)
+    // DEB-4074 (DEB-4032, FR-3) — Jellyfin's collections, in memory: read at start-up, every five minutes, after a scan and after our own writes.
+    val jellyfinCollections = dev.jellystructure.media.JellyfinCollections(jellyfinClient, configStore, mediaStore).also { it.start(rootScope) }
+    val browseService = BrowseService(mediaStore, jellyfinClient, configStore, raviloConfigService, artworkDownloader, logoDownloader, jellyfinCollections)
     // Phase 232 (FR-232-2) — judge any logo that has no ink sidecar yet; background class, once per logo ever.
     rootScope.launch(dev.jellystructure.ops.GateClass.BACKGROUND) { runCatching { logoDownloader.computeMissingInk() } }
     // Phase 185 (FR-185-4) — needed by DetailService below, for playbackNote resolution.
@@ -859,6 +861,7 @@ fun main() = runBlocking {
         samsungRelease = samsungRelease,
         processingRuns = processingRuns,
         autofetch = autofetchRuntime,
+        jellyfinCollections = jellyfinCollections,
     )
 
     // R149: populate Sonarr next-airing data for all TV shows on startup (background, non-blocking).
@@ -876,6 +879,7 @@ fun main() = runBlocking {
         artworkPresize = { imageProxyService.presize(it) },   // Phase 220 (FR-220-1)
         music = musicPipeline,                                // Phase 275
         processingRuns = processingRuns,                      // DEB-1664
+        jellyfinCollections = jellyfinCollections,            // DEB-4074
     )
 
     // Scheduled scan / pipeline (Phase 91 / 93b). Fires at the LOCAL WALL-CLOCK time the admin set

@@ -1649,6 +1649,138 @@ class JellyfinClient(
     suspend fun deleteItem(baseUrl: String, userToken: String, itemId: String): Boolean =
         statusOf("deleteItem") { httpDelete(baseUrl.trimEnd('/') + "/Items/${itemId.encodeURLParameter()}") { jellyfinAuth(userToken) } } in 200..299
 
+    // ── DEB-4074 (DEB-4032, FR-1/FR-2): Jellyfin collections (`BoxSet`). Unlike the playlist writes above, every call here
+    //    takes the SERVER key, never a viewer's token. Each call was run against a throwaway jellyfin/jellyfin:12.1 (12.1.0). ──
+
+    /** One page loop over `GET {query}`: every page, or null when any page failed (a half list would read as "the rest are gone"). */
+    private suspend fun collectionItemPages(baseUrl: String, token: String, query: String, context: String): List<JellyfinItem>? {
+        val base = baseUrl.trimEnd('/')
+        val out = ArrayList<JellyfinItem>()
+        var start = 0
+        while (true) {
+            val page = runCatching {
+                httpGet("$base$query&EnableUserData=false&Limit=$JF_PAGE_SIZE&StartIndex=$start") { jellyfinAuth(token) }
+                    .bodyOrNull<JellyfinItemsResponse>(context)
+            }.getOrElse { e -> if (e is CancellationException) throw e; Logger.warn("Jellyfin $context failed: ${e.message}"); null } ?: return null
+            out += page.items
+            start += page.items.size
+            if (page.items.isEmpty() || start >= page.totalRecordCount) break
+        }
+        return out
+    }
+
+    /** FR-1 list — `GET /Items?IncludeItemTypes=BoxSet&Recursive=true`: each collection's `Id` and `Name`; null on a failed read.
+     *  Verified against Jellyfin 12.1.0, 2026-11-25. */
+    suspend fun getCollections(baseUrl: String, token: String): List<JellyfinItem>? =
+        collectionItemPages(baseUrl, token, "/Items?IncludeItemTypes=BoxSet&Recursive=true", "getCollections")?.filter { it.type == "BoxSet" }
+
+    /**
+     * FR-1 members — the films, series and music videos a collection holds; null on a failed read.
+     * Verified against Jellyfin 12.1.0, 2026-11-25, and **not the spec's first wording**: with a server key (no user behind it)
+     * `GET /Items?ParentId={id}` answers an empty list, so `Recursive=true` is required; and `Recursive` then also walks into a
+     * member series' seasons and episodes, so the types are named. A member of any other type is not listed.
+     */
+    suspend fun getCollectionMembers(baseUrl: String, token: String, collectionId: String): List<JellyfinItem>? =
+        collectionItemPages(baseUrl, token, "/Items?ParentId=${collectionId.encodeURLParameter()}&Recursive=true&IncludeItemTypes=Movie,Series,MusicVideo", "getCollectionMembers")
+
+    /**
+     * FR-1 create — `POST /Collections?Name=…&Ids=…`: the new collection's id, or null on any failure. [ids] are sent in batches of
+     * [PLAYLIST_ADD_BATCH]: the first with the create, the rest through [addToCollection]; a null after the first batch landed leaves
+     * a collection behind, which the caller's next cache refresh shows. Verified against Jellyfin 12.1.0, 2026-11-25 (answers 200 `{"Id":…}`).
+     */
+    suspend fun createCollection(baseUrl: String, token: String, name: String, ids: List<String>): String? {
+        val batches = ids.chunked(PLAYLIST_ADD_BATCH).ifEmpty { listOf(emptyList()) }
+        val id = try {
+            val r = httpPost(baseUrl.trimEnd('/') + "/Collections?Name=${name.encodeURLParameter()}" +
+                (if (batches[0].isEmpty()) "" else "&Ids=${batches[0].joinToString(",") { it.encodeURLParameter() }}")) { jellyfinAuth(token) }
+            if (r.status.isSuccess()) r.bodyOrNull<JellyfinPlaylistCreated>("createCollection")?.id?.takeIf { it.isNotBlank() } else null
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            Logger.warn("Jellyfin createCollection failed: ${e.message}")
+            null
+        } ?: return null
+        val rest = batches.drop(1).flatten()
+        return if (rest.isEmpty() || addToCollection(baseUrl, token, id, rest)) id else null
+    }
+
+    /** FR-1 add — `POST /Collections/{id}/Items?Ids=…`, in batches like [addToPlaylist]; false when any batch failed.
+     *  Verified against Jellyfin 12.1.0, 2026-11-25 (204). */
+    suspend fun addToCollection(baseUrl: String, token: String, collectionId: String, ids: List<String>): Boolean {
+        for (batch in ids.chunked(PLAYLIST_ADD_BATCH)) {
+            val status = statusOf("addToCollection") {
+                httpPost(baseUrl.trimEnd('/') + "/Collections/${collectionId.encodeURLParameter()}/Items?Ids=${batch.joinToString(",") { it.encodeURLParameter() }}") { jellyfinAuth(token) }
+            }
+            if (status !in 200..299) return false
+        }
+        return true
+    }
+
+    /** FR-1 remove — `DELETE /Collections/{id}/Items?Ids=…`, in batches; false when any batch failed. Only the link goes: the
+     *  titles are untouched. Verified against Jellyfin 12.1.0, 2026-11-25 (204). */
+    suspend fun removeFromCollection(baseUrl: String, token: String, collectionId: String, ids: List<String>): Boolean {
+        for (batch in ids.chunked(PLAYLIST_ADD_BATCH)) {
+            val status = statusOf("removeFromCollection") {
+                httpDelete(baseUrl.trimEnd('/') + "/Collections/${collectionId.encodeURLParameter()}/Items?Ids=${batch.joinToString(",") { it.encodeURLParameter() }}") { jellyfinAuth(token) }
+            }
+            if (status !in 200..299) return false
+        }
+        return true
+    }
+
+    /**
+     * FR-1 rename — reads the collection's FULL item (`GET /Items/{id}?userId=`), changes `Name`, and sends the whole item back to
+     * `POST /Items/{id}`: Jellyfin replaces the item with whatever it is given, so a partial body would blank the rest. False on any
+     * failure, and when the item is not a `BoxSet` (a rename never touches a title). Verified against Jellyfin 12.1.0, 2026-11-25:
+     * `GET /Items/{id}` with no `userId` answers 400, and the rename answers 204 with the members kept.
+     * [userId] is any Jellyfin user: the read needs a user context, the server key has none.
+     */
+    suspend fun renameCollection(baseUrl: String, token: String, userId: String, collectionId: String, name: String): Boolean {
+        val base = baseUrl.trimEnd('/')
+        val item = try {
+            httpGet("$base/Items/${collectionId.encodeURLParameter()}?userId=${userId.encodeURLParameter()}") { jellyfinAuth(token) }
+                .bodyOrNull<kotlinx.serialization.json.JsonObject>("renameCollection")
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            Logger.warn("Jellyfin renameCollection failed: ${e.message}")
+            null
+        } ?: return false
+        if ((item["Type"] as? kotlinx.serialization.json.JsonPrimitive)?.content != "BoxSet") return false
+        val renamed = kotlinx.serialization.json.JsonObject(item + ("Name" to kotlinx.serialization.json.JsonPrimitive(name)))
+        return statusOf("renameCollection") {
+            httpPost("$base/Items/${collectionId.encodeURLParameter()}") { jellyfinAuth(token); contentType(ContentType.Application.Json); setBody(renamed.toString()) }
+        } in 200..299
+    }
+
+    /**
+     * FR-2 — the one way a collection is deleted. `DELETE /Items/{id}` deletes a film's or series' FILES when the id is a title's, so
+     * this reads the item first and sends the `DELETE` only when it is there and its `Type` is `BoxSet`. A film's id, a series' id
+     * and an unknown id send none. [deleteItem] is a viewer's playlist call and is never used for a collection. Verified against
+     * Jellyfin 12.1.0, 2026-11-25: deleting a `BoxSet` answers 204 and leaves its films and their files.
+     */
+    suspend fun deleteCollection(baseUrl: String, token: String, collectionId: String): CollectionDeleteResult {
+        val wanted = collectionId.replace("-", "")
+        if (wanted.isBlank()) return CollectionDeleteResult.NOT_FOUND
+        val read = try {
+            httpGet(baseUrl.trimEnd('/') + "/Items?Ids=${collectionId.encodeURLParameter()}&EnableUserData=false") { jellyfinAuth(token) }
+                .bodyOrNull<JellyfinItemsResponse>("deleteCollection")
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Throwable) {
+            Logger.warn("Jellyfin deleteCollection failed: ${e.message}")
+            null
+        } ?: return CollectionDeleteResult.FAILED
+        // The id is matched, not trusted: 12.1 ignores some filters and answers with the whole library (the `Path` one did, DEB-1252).
+        val item = read.items.firstOrNull { it.id.replace("-", "").equals(wanted, ignoreCase = true) } ?: return CollectionDeleteResult.NOT_FOUND
+        if (item.type != "BoxSet") {
+            Logger.warn("Jellyfin deleteCollection refused: ${item.id} is a ${item.type}, not a collection")
+            return CollectionDeleteResult.NOT_A_COLLECTION
+        }
+        val status = statusOf("deleteCollection") { httpDelete(baseUrl.trimEnd('/') + "/Items/${item.id.encodeURLParameter()}") { jellyfinAuth(token) } }
+        return if (status in 200..299) CollectionDeleteResult.DELETED else CollectionDeleteResult.FAILED
+    }
+
     suspend fun markFavorite(baseUrl: String, userToken: String, userId: String, jellyfinId: String) = runCatching {
         httpPost(baseUrl.trimEnd('/') + "/UserFavoriteItems/$jellyfinId?userId=$userId") {
             jellyfinAuth(userToken)
@@ -2200,3 +2332,6 @@ internal fun userDataBody(played: Boolean?, positionTicks: Long?, lastPlayedDate
         isFavorite?.let { "\"IsFavorite\":$it" },
         playCount?.let { "\"PlayCount\":$it" },
     ).joinToString(",", "{", "}")
+
+/** DEB-4074 (FR-2) — what [JellyfinClient.deleteCollection] did. Only [DELETED] sent a `DELETE`. */
+enum class CollectionDeleteResult { DELETED, NOT_A_COLLECTION, NOT_FOUND, FAILED }
