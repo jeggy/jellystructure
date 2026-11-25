@@ -20,7 +20,6 @@ import dev.jellystructure.shared.tv.AudiobookDetail
 import dev.jellystructure.shared.tv.ClientCapabilities
 import dev.jellystructure.shared.tv.LiveTvChannel
 import dev.jellystructure.shared.tv.MusicTrackItem
-import dev.jellystructure.shared.tv.PlaybackQoeReport
 import dev.jellystructure.shared.tv.StreamTicket
 import dev.jellystructure.shared.tv.TvApiClient
 import kotlinx.coroutines.CoroutineScope
@@ -71,8 +70,6 @@ actual object MusicEngine {
     /** The song (or part) whose Jellyfin session is open, and so the one progress and stop are reported for. */
     private var openTrackId: String? = null
     private var parkedPositionMs = 0L
-    /** Whether the open song (or part) direct-plays; the freeze trace carries it. */
-    private var partOrSongDirect = false
     private var failed = false
     private var ended = false
     private var loadJob: Job? = null
@@ -83,7 +80,7 @@ actual object MusicEngine {
     /** DEB-3400 — a song that stops moving: the watch finds it, the recovery decides (one restart, then the next song). */
     private val freezeWatch = FreezeWatch()
     private val recovery = FreezeRecovery()
-    /** DEB-3400 (FR-3) — a restart of ours is starting the song again: it keeps the recovery's memory and the QoE trace. */
+    /** DEB-3400 (FR-3) — a restart of ours is starting the song again: it keeps the recovery's memory. */
     private var restarting = false
     /** Read by the quit (off Compose's thread), so the monitor keeps it current. */
     @Volatile private var lastPositionMs = 0L
@@ -224,12 +221,8 @@ actual object MusicEngine {
         tickJob?.cancel()
         val c = client()
         val b = book
-        // DEB-3400 (FR-6) — a song that froze reports it as it closes (not on our own restart: the song goes on, and so does its trace).
-        val trace = if (restarting) null else recovery.takeTrace()
-        val decoder = player.decoderName
-        val direct = partOrSongDirect
+        // DEB-5538 (FR-8) — a song posts no QoE row, frozen or not: its trace is the log, and the server hears of a wait from the `waiting` report.
         TeardownWork.track(scope.launch {
-            if (trace != null) runCatching { c?.postPlaybackQoe(PlaybackQoeReport(itemId = id, audioDecoder = decoder, directPlay = direct, frozenCount = trace.first, frozenMs = trace.second)) }
             if (b != null) runCatching { c?.audiobookProgress(b.id, b.part, pos, true) }
             runCatching { c?.stopPlayback(id, pos) }
         })
@@ -253,7 +246,6 @@ actual object MusicEngine {
             if (!isActive) return@launch
             if (ticket == null) { failed = true; publish(); return@launch }
             openTrackId = track.id
-            partOrSongDirect = ticket.directPlay
             MacNowPlaying.claim(nowPlaying, MacNowPlaying.Mode.MUSIC)
             MacNowPlaying.artwork(nowPlaying, artworkUrl(track.imageUrl))
             loadTicket(ticket, startMs, play, rate = 1f, volume = musicVolumeScale(track, context, q.shuffled, MusicPrefs.evenVolume))
@@ -411,9 +403,10 @@ actual object MusicEngine {
     private fun onFrozen(s: MacPlayerState, stillMs: Long) {
         val b = book
         val duration = s.durationMs.takeIf { it > 0 } ?: b?.detail?.parts?.getOrNull(b.part)?.durationMs ?: q.current?.durationMs ?: 0L
-        val verdict = recovery.onFreeze(s.positionMs, duration, stillMs, book = b != null)
+        val neverStarted = freezeWatch.neverStarted
+        val verdict = recovery.onFreeze(s.positionMs, duration, book = b != null, neverStarted = neverStarted)
         DesktopLog.note("music: frozen at ${s.positionMs} ms of $duration ms for $stillMs ms — ${player.debug()}")
-        DesktopLog.note("music: freeze at ${s.positionMs} ms: ${verdict.label}")
+        DesktopLog.note("music: freeze at ${s.positionMs} ms: ${verdict.label}${if (neverStarted && verdict == FreezeVerdict.SKIP) " (never started)" else ""}")
         when (verdict) {
             FreezeVerdict.ENDED -> { endHandled = true; onSongEnded() }
             FreezeVerdict.RESTART -> restartAt(s.positionMs)
@@ -694,7 +687,6 @@ actual object MusicEngine {
             if (ticket == null) { failed = true; publish(); return@launch }
             openTrackId = d.parts[part].id
             partDirect = ticket.directPlay
-            partOrSongDirect = ticket.directPlay
             lastChapter = -1
             MacNowPlaying.claim(nowPlaying, MacNowPlaying.Mode.BOOK)
             MacNowPlaying.artwork(nowPlaying, artworkUrl(d.coverUrl))
