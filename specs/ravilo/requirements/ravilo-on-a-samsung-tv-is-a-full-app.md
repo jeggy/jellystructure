@@ -1658,3 +1658,172 @@ neither"* already say the page should not do this. Two rules are added so the co
     The backdrop `<img>` and the logo are the same nodes as before the push (`===`), the title keeps `hidden`,
     `#shell-body.scrollTop` is unchanged, and focus and the season pill are where they were.
   After the tests, a 5-minute idle on a series page goes on the QA queue for the Tizen 5.0 emulator. The page must not move.
+
+## Amendment 2026-11-25 (DEB-5621) — a clean play reaches the server often enough to prove the path
+
+> Owner on DEB-5620, 2026-11-25: *"Lets give sjúrður more tizen work."* Found in DEB-5503's investigation (open question 2):
+> after 29 plays on our ladder, the household's set has `proven_bps = null`.
+
+**Why it is null.** 309 proves a take only from two `per_item` reports on the same variant, at least
+`PROOF_HOLD_SEC` (120 s) apart, with no new stall between them (`StreamRecord.kt` `foldRecord`; FR-309-1: *"held for ≥ 2 min
+with no rebuffer"*). FR-25 posts only when a stall ends, at a rung switch and when the item ends. A clean play therefore posts
+once, at its end: that opens a hold and nothing ever closes it. Android TV posts at the first frame and every 2 minutes for
+this reason (`PlayerStore.kt`, `QOE_PROOF_EVERY_N_TICKS`; 309: *"QoE is posted every 2 min, at the first frame and at every
+new stall, so a 2-minute hold reaches the server"*). AVPlay's missing `bandwidth_estimate_bps` is **not** the cause: that
+field feeds only the measurement, never the proof.
+
+**FR-25, amended (posting).** The bullet *"A report is posted when a stall ends, at a rung switch, and when the item ends"*
+becomes:
+- A report is posted **at the first frame**, when a stall ends, at a rung switch, **after every 120 s of play since the last
+  post**, and when the item ends.
+- *Play* means the position moving. Paused time, a seek's wait, a restream's wait and a stall do not count toward the 120 s.
+  A post for any other reason restarts the count.
+- Each post is the item's running totals, in the shape FR-25 already sends, with `variant_bandwidth_bps` as FR-25 holds it
+  (the ticket's start rung until AVPlay reports a switch). A direct play sends no variant, as FR-45 says; the server takes
+  the file's bitrate (FR-309-15).
+- A failed post is dropped, as today. Nothing waits on a post.
+
+**What it changes, and what it does not.**
+- A clean ladder play of 2 minutes or more proves its rung, and a clean direct play proves its file.
+- It does not by itself keep a Jellyfin copy on this set. DEB-4541 FR-1 keeps a copy only when the take is at least twice the
+  copy's bitrate, and a ladder rung can never prove that much. A proof of 6 Mb/s or more does lift the floor-rungs-first rule
+  (`FLOOR_FIRST_TAKE_BPS`), because the take becomes max(proven, measured × 0.7).
+- No wire change, no server change. Android TV, the receiver and the web are untouched. An installed `.wgt` keeps posting as
+  before until the update reaches it.
+
+**Proof (CI).**
+- `tests/e2e/ravilo-screen-qoe.spec.ts`, under `page.clock`:
+  - a clean ladder play posts at its first frame (`per_item`, `variant_bandwidth_bps` = the start rung, `rebuffer_count 0`),
+    again after 120 s of play with the same variant and `rebuffer_count 0`, and once more at Back;
+  - a pause of 60 s inside those 120 s delays the second post by 60 s;
+  - a stall at 90 s posts when it ends, and the next timed post comes 120 s of play after that one;
+  - a direct play posts at the same moments with `direct_play: true` and no `variant_bandwidth_bps`.
+- `linuxX64Test`, `StreamRecordTest`: two TV-shaped reports (no `bandwidth_estimate_bps`, the same `variant_bps`, no stall),
+  121 s apart, set `provenBps` to that variant; the same pair with a stall in the second does not. A direct-play pair with no
+  variant proves `fileStreamBpsOf`'s bitrate.
+
+**Proof (field).** No device run is needed to finish the build. On the next `.wgt` the household's set reaches, its
+`device_stream_record.proven_bps` should be non-null within a day of ordinary viewing. That read goes on the build's QA
+ticket, parked on DEB-4608.
+
+## Amendment 2026-11-25, second (DEB-5621) — the credits card and the skip settings are Android TV's
+
+> Owner on DEB-5620, 2026-11-25: *"Lets give sjúrður more tizen work."* Read against Android TV's player for DEB-5621.
+
+**What the app does today.** FR-9 promises R264's *"Skip Intro and Skip Credits"*, but the player reads none of the
+household's skip settings (`RaviloConfig.skip_intro`, `skip_credits`, `skip_secs`), and its only card is *Up next*, raised
+only when a next episode exists (`Screen.kt` `segmentLoop`). So on the Samsung:
+- Skip Intro is always *Prompt*, even when the household set it to *Off* or *Auto*;
+- *Skip credits* **Off** still raises the next-up card at the credits marker;
+- a film, or a series' last episode, gets no card at its credits at all: no *Skip credits*, and a post-credits scene gets
+  no *Skip to scene*. The film plays out under nothing and ends as FR-9 says.
+
+**FR-47 · The skip settings are the household's.** The app reads `skip_intro`, `skip_credits` and `skip_secs` from the
+config it already loads, and applies them as Android TV does (R182 FR-RV-SKIP1-1 and FR-RV-SKIP1-3, R230):
+- **Skip intro.** *Off*: no pill. *Prompt*: today's pill. *Auto*: the pill shows with a `skip_secs` countdown and, when it
+  runs out, seeks to the end of the intro exactly as OK on the pill does; OK before that skips at once, and Back on the pill
+  cancels the skip for this item.
+- **Skip credits.** *Off*: no card at the credits. A next episode with autoplay on starts at the real end (R230 FR-R230-2);
+  with autoplay off, the item ends as FR-9 says. *Prompt* and *Auto*: FR-48's card.
+
+**FR-48 · The card at the credits is R182's.** At a trusted credits marker (R384: with no marker, only a *Next Episode* card,
+at 1 s left, as today), the card offers **Watch credits** plus exactly one primary action, chosen as Android TV's
+`creditsCardMode` chooses it (R182 FR-RV-SKIP1-2):
+1. **Skip to scene** when the item has a `stinger`: it seeks to the scene, and nothing auto-skips past it. No countdown.
+2. **Next Episode** when a next episode exists: today's card, its countdown and FR-36's warm-up, unchanged.
+3. **Skip credits** otherwise (a film, a last episode): it ends the item as the end of the stream does, with the same
+   watched rule (R347 `playbackFinished`). No countdown.
+- The card's kicker and title are R182's strings, already in `ravilo-i18n`: `player.credits_kicker`, `player.end_of_movie`
+  or `player.end_of_episode`, `player.stinger_title`, `player.skip_to_scene`, `player.skip_credits`,
+  `player.watch_credits`. No new copy.
+- **Focus and keys.** The primary action is focused when the card rises; Left/Right moves between the two; OK acts;
+  **Watch credits** and Back both lower the card and latch it for this item, as `cancelNextUp` does today. R182's
+  DEB-3950 amendment holds: after the end of the stream one Back leaves, and nothing follows a film's end.
+- **The look** is the existing `#nextup` card with a second button. There is no new surface, so no design round.
+
+**Not in this amendment:** the episode rail in the player (FR-29 leaves it out) and newest-first's no-card rule beyond what
+`ScreenPlayContext` already carries.
+
+**Proof (CI).** `tests/e2e/ravilo-screen-play-from-tv.spec.ts` (or a new `ravilo-screen-credits.spec.ts`), with the fake
+AVPlay and the mocked config:
+- `skip_intro: off` shows no pill in the intro; `auto` with `skip_secs: 4` seeks to `introEndMs` after 4 s (an `avplayCalls`
+  `seekTo`); `prompt` is today's test;
+- a film with a credits marker and no stinger raises *Skip credits* + *Watch credits* at the marker; OK on *Skip credits*
+  posts the stop and leaves to the page;
+- a film with a stinger raises *Skip to scene* + *Watch credits*; OK seeks to the stinger and no countdown runs;
+- an episode with a next one raises *Next Episode* + *Watch credits* with today's countdown;
+- `skip_credits: off` raises no card at the marker, and with autoplay on the next episode starts at `onstreamcompleted`;
+- *Watch credits* lowers the card and it does not come back for that item.
+The look on a real set goes on the build's QA ticket, parked on DEB-4608.
+
+## Amendment 2026-11-25, third (DEB-5621) — a title's page has its cast, and a face opens that person's titles
+
+> Owner on DEB-5620, 2026-11-25. This brings one item off *Later* (*"Person pages and the detail page's cast row"*) into
+> the app. Under the *Parity* non-goal it reaches the Samsung only through this amendment.
+
+**FR-7, amended.** *"No people row in v1"* is replaced:
+- **The cast row.** A title's page (film and series) draws `detail.cast` as a row headed `detail.cast`, after the overview
+  and, on a series, after the episodes. Each face is Android TV's `CastCircle`, redrawn in DOM: the round photo
+  (`Person.image_url`), the name, and the role under it in `textSecondary`. A person with no photo shows their initials on
+  the plain circle. With an empty `cast`, there is no row and no heading.
+- **Artwork.** `image_url` is an absolute TMDB URL (`DetailService.castFrom`), not `/api/tv/image/`. A plain `<img>` loads
+  it with no token; this corrects *Decisions taken here*' *"Artwork comes from `/api/tv/image/`"* for faces. A face whose
+  image fails shows the initials. The row counts toward FR-42's image slots like any other row.
+- **Focus.** The row is a rail under FR-4, FR-39 and FR-41: focus enters at the last face focused, the rail slides, the
+  focused face grows. Down from the actions (or the episodes) reaches it; Up returns.
+
+**FR-49 · A face opens the person's titles.** OK on a face pushes a **person page**, Android TV's
+`openPersonBrowse` (R190 FR-RV-PPL1-1 to FR-RV-PPL1-3):
+- the request is `browseSeeded` with `cast_crew is_any_of [person.id]`, no media kind, as Android TV sends it;
+- the header is the breadcrumb (the title the face was on), the person's name, and the role line (`person.role`), then
+  the count of titles, as R187 FR-RV-BROWSE1-3 draws it;
+- the grid is FR-6's grid (`ScreenBrowse`), with its paging, FR-20's skeleton and its empty line, and a tile opens that
+  title's page as anywhere else;
+- Back returns to the title's page with focus on the same face (FR-4).
+
+**Not in this amendment:** the Seerr *more by this person* row (R190 FR-RV-PPL1-4 is Discover, a non-goal), the facet bar
+(R190's filters stay *Later*), and people in Search (FR-8).
+
+**No wire change.** `MovieDetail.cast`, `SeriesDetail.cast` and `browseSeeded` are already decoded and called by `shared`.
+
+**Proof (CI).**
+- `tests/e2e/ravilo-screen-detail.spec.ts`: a film whose detail mock has three `cast` entries draws three faces with name
+  and role; a face with `image_url: null` and one whose image 404s (`page.route`) show initials; empty `cast` draws no
+  heading; Down from the actions focuses the first face, Right moves along, Up returns to the actions.
+- A new `ravilo-screen-person.spec.ts`: OK on a face posts `/api/tv/browse/seeded` with the `cast_crew` condition, the page
+  shows the breadcrumb, name, role and count, OK on a tile opens that title, and Back from the person page lands on the
+  same face.
+- `check-tizen-bundle.sh` and the Chromium 63 CSS guard stay green (FR-13). A look on the set goes on the build's QA
+  ticket, parked on DEB-4608.
+
+## Amendment 2026-11-25, fourth (DEB-5621) — Settings has Android TV's two playback switches
+
+> Owner on DEB-5620, 2026-11-25. Read against Android TV's Settings for DEB-5621.
+
+**What the app does today.** FR-11's Settings has Language, Server and About. The player already honours
+`autoplay_next` (`Screen.kt` `autoplay()`), but a viewer on the Samsung cannot change it. Home always draws the progress bar
+on Continue Watching tiles, and ignores `show_continue_progress`.
+
+**FR-11, amended (Playback).** Between Language and Server, a **Playback** section (`settings.playback`) holds Android TV's
+two switches (`SettingsScreen.kt`, the *Playback prefs* block), in its order and with its strings:
+- **Show progress** (`settings.show_progress`), bound to `show_continue_progress`;
+- **Autoplay next episode** (`settings.autoplay_next`), bound to `autoplay_next`.
+
+Each is one focus target that OK flips. The switch shows the new value at once and writes it with
+`putViewerSettings(showContinueProgress = …)` or `putViewerSettings(autoplayNext = …)`, as Android TV does; the app's loaded
+config takes the new value, so the next card and the next Home use it without a reload. A failed write puts the switch
+back and shows nothing else.
+
+**FR-5, amended.** A Continue Watching tile draws its progress bar only while `show_continue_progress` is true.
+
+**Not in this amendment:** Appearance and theme (R338: the DOM client has no theme tokens), Change password (refused on
+Tizen 5.0, DEB-4719), and the skip settings, which are the household's in the admin (R182 FR-RV-SKIP1-3) and not a viewer
+switch.
+
+**No wire change.** `PUT /api/tv/settings` is a device-token route; FR-247-5 admits the 5.0 widget's `Origin: null` there.
+
+**Proof (CI).** `tests/e2e/ravilo-screen-settings.spec.ts`: the section shows both switches with the mocked config's values;
+OK on each sends one `PUT /api/tv/settings` with only that field; a 500 answer puts the switch back. `ravilo-screen-home.spec.ts`:
+with `show_continue_progress: false` no Continue Watching tile has a progress bar, and with `true` they do. In the player
+spec, `autoplay_next: false` set from Settings leaves the next-up card waiting at 0. A look on the set goes on the build's QA
+ticket, parked on DEB-4608.

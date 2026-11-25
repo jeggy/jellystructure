@@ -71,6 +71,41 @@ Drawing on Cast now has one path, the one FR-R285-3 gives the TV app:
 
 No wire change: no message, field or id is added, removed or retyped.
 
+**Amended 2026-11-25 (DEB-4994, DEB-5621) — the receiver remembers the pick itself.** The 2026-11-19 build
+(`90c1b1b2a`, DEB-5016) is on `main` and shipped in v1.71, but nothing has shown it working: the device check above
+is parked with the house devices, and `tests/e2e/cast-receiver.spec.ts` never makes a pick (its fake CAF answers
+`getActiveIds()` with `[]`). Point **b** also leaves one dependency in place. The layer draws only the track CAF's
+text-track manager *reports* active, and every one of those Tracks points at an empty `blob:` VTT. If CAF drops a
+track whose file it could not use, `getActiveIds()` comes back empty and nothing is drawn: not the load's default,
+not a phone's pick, not even our own `subtitle` command, which also goes through `setActiveByIds`. A `blob:` subtitle
+has already been seen failing on a real Chromecast (DEB-4792). Point **b** is replaced:
+
+- **b′.** The receiver keeps the active text position itself, and the drawing tick reads that:
+  - a **LOAD** sets it from the ticket (its shown text track, or none);
+  - our **`subtitle` command** sets it as `receiverSubPick` decides (a text pick, Off, or none for a burn-in);
+  - a new **`EDIT_TRACKS_INFO` interceptor** sets it from the request's `activeTrackIds`: the first id from 100 to
+    100 + the text count − 1 is that position, no such id is Off. The request is then passed on to CAF unchanged, so
+    the senders' status and the platform caption list stay as they are. A request with no `activeTrackIds` (a style or
+    language-only edit) leaves the position alone;
+  - **CAF's own report is the fallback for the platform caption control**: when `getActiveIds()` answers a text id that
+    differs from the last one the receiver read from it, that becomes the position. A report that stays empty never
+    clears a position the receiver set.
+- Points **a**, **c** and **d** are unchanged. Off, a burn-in and a new item still clear the layer. A pick that needs
+  burning in still restreams.
+- No sender changes. An installed phone or Mac keeps sending what it sends today.
+
+**Proof (CI).** `tests/e2e/cast-receiver.spec.ts` with the real bundle. `helpers/cast-receiver.ts`'s fake CAF gets a
+settable clock (`getCurrentTimeSec`) and keeps `getActiveIds()` at `[]` throughout, which is the failure under test:
+- a LOAD whose ticket shows text track 0 draws its fixture cue in `#subtitle` at the cue's time, fetched with
+  `Authorization: Bearer`;
+- an `EDIT_TRACKS_INFO` with `activeTrackIds: [101]` switches the layer to track 1's cue; one with `[]` clears it; `[100]`
+  shows track 0 again; the interceptor returns the request to CAF;
+- our `subtitle` command with a text index does the same;
+- `getActiveIds()` turning to `[101]` on its own (the platform's control) switches the layer;
+- exactly one `#subtitle` cue element is drawn at a time.
+`:shared:desktopTest` covers the position rules if they move into `TicketSubtitles`. The device check above stays, and
+goes on the build's QA ticket, parked on DEB-4608.
+
 ### FR-R285-5 — HEVC over HLS only where the device says yes
 Chromecast sets `hlsHevc` from the `canDisplayType('video/mp4', hev1…)` probe it already runs.
 `ravilo-screen` leaves it **false**: whether the RU7440's AVPlay takes fMP4-HEVC HLS is a hardware

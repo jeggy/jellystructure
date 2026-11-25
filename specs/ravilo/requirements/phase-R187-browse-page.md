@@ -506,3 +506,38 @@ refresh fetches; the order of the list.
 - `ravilo-ui` unit tests (260) and the wasmJs compile pass.
 
 **Not verified:** a TV (focus lands on the opened tile again, R139) and the web.
+
+## Amendment 2026-11-25 (DEB-4079) — a focused popover row is the bar's focused tab, readable on every theme
+
+Found by Rannvá in the DEB-4076 round, measured off the pixels: in every browse popover the focused row paints
+`colors.surface` on the popover's `colors.surfaceVariant` plate. On Aurora that is `#161A28` on `#1B2031`, so the focused
+row is *darker* than the rest at about 1.1 : 1. From 3 m it is almost no focus cue. The constitution's TV rule (*"there is
+always exactly one visible focus target with a clear focused treatment"*) is not met, and nothing in this spec says what the
+focused row looks like. This amendment says it.
+
+**FR-RV-BROWSE1-5a · The focused row is inverted, as the TV bar's focused tab is.** In the facet checklist
+(`FacetPopover`), the Maturity range picker's two rows (`MaturityRangePicker`) and the Sort popover (`SortPopover`):
+- the focused row's fill is `colors.text`, in the row's existing 8 dp rounded shape. This is the treatment the TV bar's
+  focused tab (`NavItems.kt`) and the Now Playing queue (`TvNowPlaying.kt`) already use, so there is no new colour and no
+  design round;
+- on that row, the label and the count are drawn in `colors.background`, the count at 0.7 alpha; the selected check, the
+  Sort popover's current-choice mark and the Maturity values keep their glyphs and take `colors.background` too, so nothing on
+  the focused row is drawn in `accent` on the light fill;
+- an unfocused row is unchanged: transparent, `colors.text` label, `textSecondary` count, `accent` check;
+- the focus still comes from `rememberFocusVisual()`, so a phone draws no focused row (FR-R298-2), and the change of fill
+  follows the focus-ring spec's FR-1 timing (DEB-2204: 200 ms on `RaviloMotion`'s ease; nothing added or removed as a
+  modifier).
+
+**What it must reach.** On all five themes (Aurora, Midnight, Noir, Graphite, Daylight), the focused row's fill against the
+plate (`surfaceVariant`) is at least **3 : 1**, and its label against its fill at least **4.5 : 1**. With the tokens in
+`theme/Colors.kt` today, the lowest of these is well above both.
+
+**Proof (CI).**
+- A `:ravilo-ui:desktopTest` case (`BrowsePopoverFocusTest`): for each theme, the colours the three popovers use for a focused
+  row meet the two ratios above. The colours come from one small function the three popovers share, so the test reads what
+  the screen draws.
+- A desktop compose UI test opens the Genre popover on a fake store with three values and checks that a pixel in the focused row's
+  left padding is `colors.text` and the same pixel of an unfocused row is the plate.
+- No device run is needed. A look at the TV popover on a BRAVIA goes on the build's QA ticket, parked on DEB-4608.
+
+No wire change. The web and the desktop browse page take the same rows; a phone is unchanged because it draws no focus.
