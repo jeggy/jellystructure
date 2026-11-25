@@ -4,6 +4,11 @@
   "published_at": "2026-11-25T15:20:02Z",
   "url": "https://github.com/jeggy/jellystructure/releases/tag/v1.73",
   "assets": {
+    "android": {
+      "name": "ravilo-android-1.73.apk",
+      "url": "https://github.com/jeggy/jellystructure/releases/download/v1.73/ravilo-android-1.73.apk",
+      "size": 13820287
+    },
     "linux": {
       "name": "ravilo-linux-1.73.flatpak",
       "url": "https://github.com/jeggy/jellystructure/releases/download/v1.73/ravilo-linux-1.73.flatpak",
@@ -17,7 +22,7 @@
     "tizen": {
       "name": "ravilo-tizen-1.73.wgt",
       "url": "https://github.com/jeggy/jellystructure/releases/download/v1.73/ravilo-tizen-1.73.wgt",
-      "size": 609289
+      "size": 609287
     }
   }
 }
