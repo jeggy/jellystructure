@@ -84,6 +84,14 @@ internal class ScreenDetail(
     private var reading = false
     private var readAgain = false
 
+    // DEB-5578 (DEB-5576, FR-31) — what the last draw left in the mount, so a redraw keeps the page still (see render).
+    private var drawn: HTMLElement? = null
+    private var drawnSeason = Int.MIN_VALUE
+    private var backdrop: HTMLElement? = null
+    private var logo: HTMLElement? = null
+    private var logoLoaded = false
+    private var titleNode: HTMLElement? = null
+
     val ready get() = movie != null || series != null
 
     /** The primary button: where focus lands when the page has drawn. */
@@ -138,6 +146,8 @@ internal class ScreenDetail(
      * `playstate_changed`. The old values stay until new ones arrive; a failed read, or one that answers `{}`, keeps them. One read at
      * a time: a call during one asks for exactly one more after it, never a queue. Nothing is drawn but [onChange]'s plain redraw,
      * so focus and the season pill stay where they were and no skeleton appears. A page still loading reads once it has loaded.
+     * DEB-5578 (DEB-5576, FR-31 amended) — an answer equal to what the page holds, for every id it asked for, draws nothing: the
+     * server's 20 s push is mostly that, and the page's DOM is not touched.
      */
     fun refresh() {
         if (!ready) { if (loading) readAgain = true; return }
@@ -148,7 +158,7 @@ internal class ScreenDetail(
                 readAgain = false
                 val ids = series?.let { s -> (listOf(id) + s.seasons.flatMap { sn -> sn.episodes.map { it.id } }).distinct() } ?: listOf(id)
                 val fresh = runCatching { api.getPlaystate(ids) }.getOrNull()
-                if (!fresh.isNullOrEmpty()) { overlay = fresh; onChange(this@ScreenDetail) }
+                if (!fresh.isNullOrEmpty() && ids.any { fresh[it] != overlay[it] }) { overlay = fresh; onChange(this@ScreenDetail) }
             } while (readAgain)
             reading = false
         }
@@ -216,11 +226,28 @@ internal class ScreenDetail(
 
     // ── Drawing ───────────────────────────────────────────────────────────────
 
+    /**
+     * DEB-5578 (DEB-5576, FR-31 amended) — a redraw of a page that is already in [mount] keeps it still: the backdrop and logo are the
+     * same elements (no new fade, no new `load`), the title is hidden at once when the logo has loaded (the head keeps its height),
+     * and the body's scroll and the episode rail's place are put back. A season switch starts the rail again at the left.
+     */
     fun render(mount: HTMLElement, fade: Boolean = false) {
-        mount.textContent = ""
+        val previous = drawn?.takeIf { it.parentElement === mount }
+        val scroll = mount.scrollTop
+        val oldTrack = previous?.querySelector(".rail-track") as? HTMLElement
+        val oldRail = oldTrack?.parentElement as? HTMLElement
+        val keepRail = previous != null && drawnSeason == season
+        val keptBackdrop = if (previous != null) backdrop else null
+        val keptLogo = if (previous != null) logo else null
+        drawn = null
+        backdrop = null
+        logo = null
+        titleNode = null
+        if (previous == null) mount.textContent = ""
         val m = movie
         val s = series
         if (m == null && s == null) {
+            mount.textContent = ""
             val f = failure
             if (f == null) {
                 // DEB-4893 (FR-20) — a title's page that is still loading draws a skeleton, never a word.
@@ -243,18 +270,22 @@ internal class ScreenDetail(
         val card = m?.card ?: s!!.card
         val page = node("div", "detail")
         if (fade) ScreenSkeleton.fadeIn(page)
-        card.backdropUrl?.let(::image)?.let { img ->
-            val backdrop = node("div", "detail-backdrop")
-            backdrop.appendChild(ScreenSkeleton.fadeOnLoad(img))
-            page.appendChild(backdrop)
+        val backdropBox = keptBackdrop ?: card.backdropUrl?.let(::image)?.let { img ->
+            node("div", "detail-backdrop").also { it.appendChild(ScreenSkeleton.fadeOnLoad(img)) }
         }
+        backdropBox?.let { page.appendChild(it) }
         val head = node("div", "detail-head")
         val title = label("h1", "detail-title", card.title)
-        (m?.logoUrl ?: s?.logoUrl)?.let(::image)?.let { logo ->
-            logo.className = "detail-logo"
-            logo.addEventListener("load", { title.classList.add("hidden") })
-            head.appendChild(logo)
+        titleNode = title
+        val logoImage = keptLogo ?: (m?.logoUrl ?: s?.logoUrl)?.let(::image)?.let { img ->
+            img.className = "detail-logo"
+            // The listener reads the page's current title, so a logo kept across a redraw hides the new one.
+            img.addEventListener("load", { logoLoaded = true; titleNode?.classList?.add("hidden") })
+            img
         }
+        if (keptLogo == null) logoLoaded = false
+        logoImage?.let { head.appendChild(it) }
+        if (logoImage != null && logoLoaded) title.classList.add("hidden")
         head.appendChild(title)
         val meta = node("div", "detail-meta")
         card.year?.let { meta.appendChild(label("span", "detail-fact", it.toString())) }
@@ -266,7 +297,20 @@ internal class ScreenDetail(
         head.appendChild(actions(m, s))
         page.appendChild(head)
         if (s != null) page.appendChild(episodes(s))
-        mount.appendChild(page)
+        if (previous != null) mount.replaceChild(page, previous) else mount.appendChild(page)
+        backdrop = backdropBox
+        logo = logoImage
+        drawn = page
+        drawnSeason = season
+        if (previous != null) {
+            mount.scrollTop = scroll
+            val track = page.querySelector(".rail-track") as? HTMLElement
+            if (keepRail && track != null && oldTrack != null) {
+                oldTrack.getAttribute("data-tx")?.let { track.setAttribute("data-tx", it) }
+                track.style.transform = oldTrack.style.transform
+                (track.parentElement as? HTMLElement)?.scrollLeft = oldRail?.scrollLeft ?: 0.0
+            }
+        }
     }
 
     /**

@@ -49,7 +49,10 @@ type Opts = {
   played?: (body: any) => Promise<{ status: number; body?: object }>;
   /** DEB-5396 — the page runs on Playwright's fake clock, so a test says when 2 s and 30 s have passed. */
   fakeClock?: boolean;
+  /** DEB-5578 — answer image requests with a real 1x1 PNG, so a backdrop or logo fires `load` (the default is an empty 204). */
+  images?: boolean;
 };
+const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==", "base64");
 
 /** Home with one tile (the movie or the series); OK on it is the page. */
 async function boot(page: Page, opts: Opts = {}): Promise<Seen> {
@@ -102,7 +105,7 @@ async function boot(page: Page, opts: Opts = {}): Promise<Seen> {
     if (path === "/api/tv/playback/prewarm/cancel") { seen.cancels.push(body); return route.fulfill({ status: 204 }); }
     if (path === "/api/tv/playback/start") { seen.starts.push(body); return json(route, 200, ticket(body.item_id)); }
     if (path.startsWith("/api/tv/playback/")) return route.fulfill({ status: 204 });
-    if (path.startsWith("/api/tv/image/")) return route.fulfill({ status: 204 });
+    if (path.startsWith("/api/tv/image/")) return opts.images ? route.fulfill({ status: 200, contentType: "image/png", body: PNG }) : route.fulfill({ status: 204 });
     return json(route, 404);
   });
   if (opts.fakeClock) await page.clock.install();
@@ -421,6 +424,71 @@ test.describe("DEB-5047 FR-31 — a title's page reads its state again", () => {
     await page.waitForTimeout(400);
     expect(seen.reads).toHaveLength(3);
     expect(seen.maxInFlight).toBe(1);
+  });
+
+  // DEB-5578 (DEB-5576, FR-31 amended) — the server pushes `playstate_changed` every ~20 s whether or not anything changed.
+  test("a re-read that answers what the page holds draws nothing: three pushes, three reads, no mutation", async ({ page }) => {
+    const held = { sr1: state({ continue_episode_id: "s1e2" }), s1e1: state({ played: true }) };
+    const seen = await boot(page, { series: seriesDetail({ logo_url: "/api/tv/image/sr1-logo" }), playstate: held, images: true });
+    await openPage(page);
+    await expect(page.locator(".detail-title")).toHaveClass(/hidden/);               // the logo loaded
+    await page.evaluate(() => {
+      const w = window as any;
+      w.__mutations = 0;
+      w.__observer = new MutationObserver((records) => { w.__mutations += records.length; });
+      w.__observer.observe(document.getElementById("shell-body")!, { childList: true, attributes: true, characterData: true, subtree: true });
+    });
+    const before = seen.reads.length;
+    for (let i = 1; i <= 3; i++) {
+      seen.push({ type: "playstate_changed", patch: {} });
+      await expect.poll(() => seen.reads.length).toBe(before + i);                    // one at a time, each answered
+    }
+    await page.waitForTimeout(300);
+    expect(seen.reads.length).toBe(before + 3);
+    expect(await page.evaluate(() => { const w = window as any; return w.__mutations + w.__observer.takeRecords().length; })).toBe(0);
+  });
+
+  test("a redraw that does happen keeps the backdrop, the logo, the scroll, the rail, focus and the season pill", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 540 });
+    const seen = await boot(page, { series: seriesDetail({ logo_url: "/api/tv/image/sr1-logo" }), playstate: { sr1: state({ continue_episode_id: "s1e1" }) }, images: true });
+    await openPage(page);
+    await expect(page.locator(".detail-title")).toHaveClass(/hidden/);
+    await page.keyboard.press("ArrowDown");                                         // Play -> the season strip
+    await page.keyboard.press("ArrowDown");                                         // -> the episode rail
+    await expect(page.locator("#detail-ep-0")).toHaveClass(/focused/);
+    await page.keyboard.press("ArrowRight");
+    await expect(page.locator("#detail-ep-1")).toHaveClass(/focused/);
+    const scroll = () => page.evaluate(() => (document.getElementById("shell-body") as HTMLElement).scrollTop);
+    const rail = () => page.evaluate(() => { const t = document.querySelector(".rail-track") as HTMLElement; return [t.style.transform, t.getAttribute("data-tx"), (t.parentElement as HTMLElement).scrollLeft]; });
+    const scrolled = await scroll();
+    const railBefore = await rail();
+    expect(scrolled).toBeGreaterThan(0);                                            // the rail is what shows; the head is scrolled away
+    await page.evaluate(() => {
+      const w = window as any;
+      w.__backdrop = document.querySelector(".detail-backdrop img");
+      w.__logo = document.querySelector(".detail-logo");
+      w.__title = document.querySelector(".detail-title");
+      w.__page = document.querySelector(".detail");
+      w.__titleShown = false;
+      new MutationObserver(() => { if (!(document.querySelector(".detail-title") as HTMLElement).classList.contains("hidden")) w.__titleShown = true; })
+        .observe(document.getElementById("shell-body")!, { childList: true, attributes: true, subtree: true });
+    });
+
+    seen.playstate = { sr1: state({ continue_episode_id: "s1e1" }), s1e2: state({ played: true }) };
+    seen.push({ type: "playstate_changed", patch: {} });
+    await expect(page.locator("#detail-ep-1 .detail-ep-check")).toHaveText("✓");
+    expect(await page.evaluate(() => {
+      const w = window as any;
+      return { page: document.querySelector(".detail") !== w.__page,                   // the page WAS redrawn ...
+        backdrop: document.querySelector(".detail-backdrop img") === w.__backdrop,     // ... and these are the same nodes
+        logo: document.querySelector(".detail-logo") === w.__logo,
+        hidden: document.querySelector(".detail-title")!.classList.contains("hidden"),
+        shown: w.__titleShown, fading: document.querySelector(".detail-backdrop img")!.classList.contains("loaded") };
+    })).toEqual({ page: true, backdrop: true, logo: true, hidden: true, shown: false, fading: true });
+    expect(await scroll()).toBe(scrolled);
+    expect(await rail()).toEqual(railBefore);
+    await expect(page.locator("#detail-ep-1")).toHaveClass(/focused/);
+    await expect(page.locator("#detail-season-1")).toHaveClass(/cur/);
   });
 });
 
