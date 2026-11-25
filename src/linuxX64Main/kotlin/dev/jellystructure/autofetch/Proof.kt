@@ -95,7 +95,7 @@ object ItemDates {
         val link = item.link?.takeIf { it.isNotBlank() } ?: return DateRead.NotAsked
         if (Urls.host(link) !in RecipeValidator.lanes(recipe)) return DateRead.NotAsked
         val cookies = lane.cookiesFile(RecipeValidator.lanes(recipe))
-        val out = when (val g = lane.pacedProgram(link, listing = false) { tools.ytdlpDate(link, cookies) }) {
+        val out = when (val g = lane.pacedProgram(Urls.forYtDlp(link), listing = false) { tools.ytdlpDate(Urls.forYtDlp(link), cookies) }) {
             is Gated.Refused -> return DateRead.Unread(g.outcome)
             is Gated.Through -> g.value
         }
@@ -338,7 +338,7 @@ class RecipeProof(private val tools: MediaTools, private val world: AutofetchWor
         val link = item.link ?: return Probed(null, "the item has no link")
         if (Urls.host(link) !in RecipeValidator.lanes(recipe)) return Probed(null, "the item's link is on ${Urls.host(link)}, which the recipe does not record")
         val cookies = lane.cookiesFile(RecipeValidator.lanes(recipe))
-        val out = when (val g = lane.pacedProgram(link, listing = false) { tools.ytdlpInfo(link, cookies) }) {
+        val out = when (val g = lane.pacedProgram(Urls.forYtDlp(link), listing = false) { tools.ytdlpInfo(Urls.forYtDlp(link), cookies) }) {
             is Gated.Refused -> return Probed(null, describe(g.outcome), blocked = g.outcome.takeIf { it is LaneOutcome.Stopped || it is LaneOutcome.BackOff }, robotsRefused = g.outcome is LaneOutcome.Forbidden)
             is Gated.Through -> g.value
         }

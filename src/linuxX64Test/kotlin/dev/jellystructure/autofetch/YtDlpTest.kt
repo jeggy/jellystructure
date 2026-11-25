@@ -15,6 +15,16 @@ class YtDlpTest {
     private val ua = "jellystructure/test (https://example.invalid)"
     private val dl = YtDlpDownload("https://varpid.example.fo/sendingar/dagbok/16", "/lib/Nordvest/Season 2026/.jellystructure/fetch_Nordvest - S2026E16.mkv", "fao", "fao", ua)
 
+    // ---- the link yt-dlp is handed (DEB-3832) ----
+
+    @Test
+    fun `forYtDlp makes each run of slashes in the path one and leaves the scheme and the query and the fragment alone`() {
+        assertEquals("https://www.example.fo/drtv/episode/x_1", Urls.forYtDlp("https://www.example.fo//drtv/episode/x_1"))
+        assertEquals("https://a.example/p/q/?u=http://b//c#f//g", Urls.forYtDlp("https://a.example///p//q/?u=http://b//c#f//g"))
+        assertEquals("https://a.example/p/q", Urls.forYtDlp("https://a.example/p/q"))
+        assertEquals("https://a.example?x=//", Urls.forYtDlp("https://a.example?x=//"))
+    }
+
     // ---- the command lines ----
 
     @Test

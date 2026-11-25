@@ -111,6 +111,16 @@ class YtDlpEngineTest {
     }
 
     @Test
+    fun `a listed link with a doubled slash in its path is handed to yt-dlp with one`() = runBlocking<Unit> {
+        val f = save()
+        h.tools.ytdlpEntries = listOf(listOf("N27", "https://varpid.example.fo//sendingar/dagbok/27", "Dagbók · 27. oktober", "20261027"))
+        h.tools.ytdlpDownloads.clear(); h.tools.ytdlpInfos.clear()
+        h.engine.run(f.id, RunTrigger.MANUAL)!!
+        assertTrue(h.tools.ytdlpDownloads.isNotEmpty())
+        assertTrue(h.tools.ytdlpDownloads.all { it.link == "https://varpid.example.fo/sendingar/dagbok/27" }, h.tools.ytdlpDownloads.toString())
+    }
+
+    @Test
     fun `robots txt that forbids an item's link keeps yt-dlp away from it`() = runBlocking<Unit> {
         val f = save()
         h.site.robots = "User-agent: *\nDisallow: /sendingar/dagbok/\n"

@@ -296,6 +296,17 @@ object Urls {
         return INTERNAL_SUFFIXES.none { h.endsWith(it) }
     }
 
+    /**
+     * DEB-3832 (FR-6.3) — the link handed to yt-dlp: each run of two or more `/` in the path (after the host, before `?` or `#`) made one.
+     * The `//` after the scheme and anything in the query or fragment stay as they are.
+     */
+    fun forYtDlp(link: String): String {
+        val schemeEnd = link.indexOf("//").let { if (it < 0) return link else it + 2 }
+        val pathStart = link.indexOfAny(charArrayOf('/', '?', '#'), schemeEnd).let { if (it < 0) return link else it }
+        val pathEnd = link.indexOfAny(charArrayOf('?', '#'), pathStart).let { if (it < 0) link.length else it }
+        return link.substring(0, pathStart) + link.substring(pathStart, pathEnd).replace(Regex("/{2,}"), "/") + link.substring(pathEnd)
+    }
+
     /** The lane key for a page URL: its host without a leading `www.`. */
     fun siteOf(url: String): String? = host(url)?.removePrefix("www.")
 

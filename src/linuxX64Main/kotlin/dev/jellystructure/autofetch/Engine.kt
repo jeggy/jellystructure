@@ -431,8 +431,10 @@ class AutofetchEngine(
                 store.setItemState(f.id, item.itemId, "skipped", why, item.failures)
                 return OneResult.Skipped(why)
             }
-            lane.admit(link)?.let { return refusal(it) }
-            Source.YtDlp(link)
+            // DEB-3832 (FR-6.3) — yt-dlp is handed the link with its path's `//` runs made one; the stored link stays as the page printed it.
+            val ytLink = Urls.forYtDlp(link)
+            lane.admit(ytLink)?.let { return refusal(it) }
+            Source.YtDlp(ytLink)
         } else {
             // The media id on the item's own page: read once, stored (FR-4.1).
             val resolved = ManifestResolver.resolveWithPage(recipe, listed, lane, item.mediaValue) { v, _ -> store.setMediaValue(f.id, item.itemId, v) }
