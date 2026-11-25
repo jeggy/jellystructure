@@ -314,6 +314,13 @@ After Android, because TVs are nearly all the plays. Each follows FR-4 to FR-6 a
     config accepted by hls.js 1.7.3 (20 s to the first byte, five retries, `shouldRetry` a function); a top rung answering 503 or 404 from one
     segment on gave one failed request, then every later segment from the rung below with no stall; an abandon from the page's side moved the
     next request to the lower rung; and the poster showed the held frame while the new source had no data and was gone at its first frame.
+  - *2026-11-25, DEB-3543 — the level-playlist half of "falls to the rung below at once" did not run.* hls.js 1.7.3 names the rung of a
+    level-playlist error in `context.level` and has no `level` on it; the handler read `d.level`, so a failing start rung's playlist was
+    asked again at 0.5, 1, 2, 4 and 5 s and the rung below only after the sixth (12.6 s with nothing on screen, QA on DEB-3535). It reads
+    `context.level` now, so the first retry asks the rung below (a restore of the note above, no change to what it promises). Item (4)
+    above has one exception: `tests/e2e/ravilo-web-level-playlist-fallback.spec.ts` lifts the handler out of `RaviloPlayerWasm.kt`,
+    runs it on the vendored hls.js against a ladder whose top rung's playlist is a reset connection, and asserts the rung below is asked
+    within 4 s.
   - *2026-11-04, DEB-3545 — what a browser costs, measured.* QA's run on prod (DEB-3535, headless Chromium 149 on the hls.js path, a
     1080p top rung at 18 Mb/s on our encoder, a frozen old stream) held the poster for 1373 ms and 1778 ms, with no black frame. A
     lab run in the same Chromium build timed only the browser's own part. It used a synthetic three-rung fMP4 ladder (18 Mb/s 1080p

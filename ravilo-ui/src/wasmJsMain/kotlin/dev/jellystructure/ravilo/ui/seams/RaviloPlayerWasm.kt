@@ -746,9 +746,10 @@ private fun attachSource(video: HTMLVideoElement, url: String, startSec: Double,
                     hls.on(Hls.Events.ERROR, function (ev, d) {
                         // DEB-3213 (FR-4) — any failed segment or playlist of the main video falls to the rung below at once, and the rung
                         // is held out for 15 s (RaviloPlayer.watchTrouble reads _rvFailed). A retry takes the next segment from that rung.
+                        // A level playlist's error names its rung in context.level; it has no `level` of its own (DEB-3543).
                         if (d && /^(fragLoad|levelLoad)/.test(d.details || '')) {
                             video._rvLoad = null;
-                            var lvl = d.frag ? (d.frag.type === 'main' ? d.frag.level : -1) : (d.context && d.context.type === 'level' ? d.level : -1);
+                            var lvl = d.frag ? (d.frag.type === 'main' ? d.frag.level : -1) : (d.context && d.context.type === 'level' ? d.context.level : -1);
                             if (typeof lvl === 'number' && lvl > 0) {
                                 if (video._rvFailed.length < 50) video._rvFailed.push(lvl + '@' + performance.now());
                                 try { hls.nextLoadLevel = hls.nextAutoLevel = lvl - 1; } catch (e) {}

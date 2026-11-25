@@ -211,6 +211,9 @@ services:
     working_dir: /tests
     volumes:
       - ./tests:/tests
+      # DEB-3543 — ravilo-web-level-playlist-fallback.spec.ts runs the vendored hls.js and the player's own ERROR handler, read from its source
+      - ./ravilo-web/src/wasmJsMain/resources/vendor/hls.min.js:/lab/hls.min.js:ro
+      - ./ravilo-ui/src/wasmJsMain/kotlin/dev/jellystructure/ravilo/ui/seams/RaviloPlayerWasm.kt:/lab/RaviloPlayerWasm.kt:ro
       - ${FIXTURE_DIR:-/tmp/jellystructure-fixtures}:${FIXTURE_DIR:-/tmp/jellystructure-fixtures}:ro
     environment:
       APP_URL: http://app:9505
@@ -221,6 +224,8 @@ services:
       # APP_URL_FROM_SCREEN already matches this network's naming, so it's left unset here.
       RAVILO_SCREEN_CAST_URL: http://ravilo-screen-cast:8080
       FIXTURE_DIR: ${FIXTURE_DIR:-/tmp/jellystructure-fixtures}
+      LAB_HLS_JS: /lab/hls.min.js
+      LAB_PLAYER_SRC: /lab/RaviloPlayerWasm.kt
       JELLYFIN_USER: ${JELLYFIN_USER:-admin}
       JELLYFIN_PASS: ${JELLYFIN_PASS:-password}
       # Phase 243 — jellyfin-version.spec.ts asserts the version reaches /api/health AND that the
