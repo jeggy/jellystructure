@@ -1616,3 +1616,45 @@ and they leave the end to `onstreamcompleted` and the next-up path (FR-9). The r
 - **Proof (CI).** Add to `ravilo-screen-qoe.spec.ts`. The fake AVPlay holds `getCurrentTime()` at duration − 1 s for 6 s and
   then fires `onstreamcompleted`. The test asserts no stall, no `/api/tv/playback/restream`, and the normal end. A hold at
   duration − 10 s still restreams at 5 s.
+
+## Amendment 2026-11-25 (DEB-5576) — a title's page that nothing changed on stays still
+
+Owner on DEB-5576: *"On tizen when on a details page and just staying there for a while, then it jumps every now and then.
+Seems like it refreshes. Not a major bug, but ugly to see."* It does refresh, every 20 s or so:
+- The server's playstate cache re-reads each recently seen user every 20 s (`PlaystateCache.REFRESH_INTERVAL_MS`). It pushes
+  `playstate_changed` with what it read whether or not anything differs from the last cycle.
+- FR-31 has the page re-read `getPlaystate` on every `playstate_changed`. The page then redraws even when the answer equals
+  what it already shows.
+- The redraw empties `#shell-body` and builds the page again from nothing. The backdrop is a new image that fades in from
+  0 over 220 ms. The title text sits next to the logo until the logo's `load` hides it, so for a moment the head is taller
+  and everything under it drops, then snaps back. The body's scroll is reset and then set again by `scrollIntoView` while the
+  head is still tall. The episode rail starts again at the left.
+
+FR-31's *"a re-read draws over the page as it stands"* and FR-20's *"a page drawn from what the route already holds does
+neither"* already say the page should not do this. Two rules are added so the code can be held to it.
+
+**FR-31, amended.**
+- **An unchanged answer draws nothing.** A re-read whose answer, for every id the page asked for, equals what the page holds
+  (`CardPlayState` compared by value) keeps the overlay and does not call the redraw. The page's DOM is not touched. This is
+  the case on almost every 20 s push.
+- **A redraw that does happen keeps the page still.** When the answer differs, only what FR-31 lists may change: the primary
+  button's word and episode, each tile's ✓ and bar, *Resume · N min left* and *Start over*, My List and the watched button.
+  These stay as they were:
+  - the backdrop and logo: the same elements, with no new fade and no new `load`;
+  - the head's height: the title text never shows again next to a logo that has already loaded;
+  - `#shell-body`'s scroll position and the episode rail's position;
+  - focus and the season pill, as before.
+
+  Updating those parts in place or keeping the image elements across a rebuild are both fine. What counts is that nothing
+  else on screen moves.
+- **Unchanged.** The page still re-reads on `home_changed`, on `playstate_changed` and after the player. The server's 20 s
+  push stays as it is: the other clients apply it as a patch to what they show, and an equal patch moves nothing
+  there. Changing what the server sends would touch every client for a bug that is the Samsung page's alone. No wire
+  change. An installed `.wgt` keeps its old behaviour until the update reaches it.
+- **Proof (CI).** Add to `ravilo-screen-detail.spec.ts`:
+  - The mock answers the same playstate the page already holds, and `playstate_changed` is pushed three times. A
+    `MutationObserver` on `#shell-body` records no mutation at all, and the mock still sees three reads.
+  - With the page scrolled so the episode rail shows, a push whose answer marks one episode watched shows that tile's ✓.
+    The backdrop `<img>` and the logo are the same nodes as before the push (`===`), the title keeps `hidden`,
+    `#shell-body.scrollTop` is unchanged, and focus and the season pill are where they were.
+  After the tests, a 5-minute idle on a series page goes on the QA queue for the Tizen 5.0 emulator. The page must not move.
