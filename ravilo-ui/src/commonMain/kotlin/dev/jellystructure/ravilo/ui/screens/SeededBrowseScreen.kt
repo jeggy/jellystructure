@@ -43,6 +43,10 @@ import dev.jellystructure.ravilo.ui.components.LoadErrorKind
 import dev.jellystructure.ravilo.ui.components.loadErrorKindOf
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateColorAsState
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -106,6 +110,9 @@ import dev.jellystructure.ravilo.ui.i18n.str
 import dev.jellystructure.ravilo.ui.seams.PrefetchLazyGridEffect
 import dev.jellystructure.ravilo.ui.seams.languageName
 import dev.jellystructure.ravilo.ui.theme.LocalHandset
+import dev.jellystructure.ravilo.ui.theme.LocalReducedMotion
+import dev.jellystructure.ravilo.ui.theme.RaviloColors
+import dev.jellystructure.ravilo.ui.theme.RaviloMotion
 import dev.jellystructure.ravilo.ui.theme.RaviloDimens
 import dev.jellystructure.ravilo.ui.theme.raviloHPad
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
@@ -918,8 +925,34 @@ private fun facetPopoverWidth(store: SeededBrowseStore, values: List<FacetValue>
     return (maxLen * 8 + 110 + flagAllowance).coerceIn(220, 420).dp
 }
 
+/**
+ * DEB-4079 (R187, FR-RV-BROWSE1-5a) — the colours of one row in a browse popover (facet checklist, Maturity range, Sort). A focused
+ * row is inverted the way the TV bar's focused tab is: `colors.text` fill, `colors.background` ink, so nothing on it is drawn in
+ * `accent` on the light fill. [focus] is 0 (resting) to 1 (focused); the three popovers share this, and the test reads it.
+ */
+internal class PopoverRowInk(val fill: Color, val label: Color, val quiet: Color, val count: Color, val mark: Color)
+
+internal fun popoverRowInk(colors: RaviloColors, focus: Float): PopoverRowInk = PopoverRowInk(
+    fill = colors.text.copy(alpha = focus),
+    label = lerp(colors.text, colors.background, focus),
+    quiet = lerp(colors.textSecondary, colors.background, focus),
+    count = lerp(colors.textSecondary, colors.background.copy(alpha = 0.7f), focus),
+    mark = lerp(colors.accent, colors.background, focus),
+)
+
+/** The fill change follows the focus ring's FR-1 timing (DEB-2204): 200 ms on [RaviloMotion.EASE], a jump under reduced motion. */
 @Composable
-private fun FacetPopover(store: SeededBrowseStore, all: List<BrowseCard>, key: BrowseFacetKey, onClose: () -> Unit) {
+private fun rememberPopoverRowInk(focused: Boolean): PopoverRowInk {
+    val focus by animateFloatAsState(
+        if (focused) 1f else 0f,
+        if (LocalReducedMotion.current) snap() else tween(RaviloMotion.FOCUS_RING_MS, easing = RaviloMotion.EASE),
+        label = "popoverRowFocus",
+    )
+    return popoverRowInk(RaviloTheme.colors, focus)
+}
+
+@Composable
+internal fun FacetPopover(store: SeededBrowseStore, all: List<BrowseCard>, key: BrowseFacetKey, onClose: () -> Unit) {
     val colors = RaviloTheme.colors
     val firstRowFR = remember(key) { FocusRequester() }
     LaunchedEffect(key) { firstRowFR.requestFocusAwaiting() }
@@ -947,9 +980,10 @@ private fun FacetPopover(store: SeededBrowseStore, all: List<BrowseCard>, key: B
                         val v = values[i]
                         val selected = v.value in store.selectionFor(key)
                         var focused by rememberFocusVisual()
+                        val ink = rememberPopoverRowInk(focused)
                         Row(
                             Modifier.fillMaxWidth()
-                                .background(if (focused) colors.surface else androidx.compose.ui.graphics.Color.Transparent, RoundedCornerShape(8.dp))
+                                .background(ink.fill, RoundedCornerShape(8.dp))
                                 .dpadFocusable(
                                     focusRequester = if (i == 0) firstRowFR else null,
                                     onFocused = { focused = true }, onBlurred = { focused = false },
@@ -962,7 +996,7 @@ private fun FacetPopover(store: SeededBrowseStore, all: List<BrowseCard>, key: B
                             // R187 fix — no unselected-row bullet; a fixed-width slot keeps the checkmark
                             // from shifting the label when a row becomes (un)selected.
                             Box(Modifier.width(18.dp)) {
-                                if (selected) CheckGlyph(colors.accent, 14.dp)
+                                if (selected) CheckGlyph(ink.mark, 14.dp)
                             }
                             if (key == BrowseFacetKey.AUDIO) {
                                 val flag = LANG_CC[v.value.lowercase()]
@@ -974,8 +1008,8 @@ private fun FacetPopover(store: SeededBrowseStore, all: List<BrowseCard>, key: B
                                     Spacer(Modifier.width(8.dp))
                                 }
                             }
-                            Text(facetValueLabel(key, v.value, store.channelNames, store.peopleNames), color = colors.text, fontSize = 14.sp, fontFamily = Sora, modifier = Modifier.weight(1f))
-                            Text(v.count.toString(), color = colors.textSecondary, fontSize = 13.sp, fontFamily = Sora)
+                            Text(facetValueLabel(key, v.value, store.channelNames, store.peopleNames), color = ink.label, fontSize = 14.sp, fontFamily = Sora, modifier = Modifier.weight(1f))
+                            Text(v.count.toString(), color = ink.count, fontSize = 13.sp, fontFamily = Sora)
                         }
                     }
                 }
@@ -1026,9 +1060,10 @@ private fun MaturityRangePicker(store: SeededBrowseStore, firstRowFR: FocusReque
         Triple(str("browse.maturity.upto"), store.maturity.upTo?.toString() ?: str("browse.maturity.any"), 1),
     ).forEach { (label, value, idx) ->
         var focused by rememberFocusVisual()
+        val ink = rememberPopoverRowInk(focused)
         Row(
             Modifier.fillMaxWidth()
-                .background(if (focused) colors.surface else androidx.compose.ui.graphics.Color.Transparent, RoundedCornerShape(8.dp))
+                .background(ink.fill, RoundedCornerShape(8.dp))
                 .dpadFocusable(
                     focusRequester = if (idx == 0) firstRowFR else upToRowFR,
                     onFocused = { focused = true; row = idx }, onBlurred = { focused = false },
@@ -1044,10 +1079,10 @@ private fun MaturityRangePicker(store: SeededBrowseStore, firstRowFR: FocusReque
                 .padding(horizontal = 10.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(label, color = colors.textSecondary, fontSize = 14.sp, fontFamily = Sora, modifier = Modifier.weight(1f))
-            TriangleGlyph(GlyphDirection.LEFT, colors.textSecondary, 12.dp)
-            Text(value, color = colors.text, fontSize = 16.sp, fontFamily = Sora, fontWeight = FontWeight.SemiBold, modifier = Modifier.width(48.dp), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-            TriangleGlyph(GlyphDirection.RIGHT, colors.textSecondary, 12.dp)
+            Text(label, color = ink.quiet, fontSize = 14.sp, fontFamily = Sora, modifier = Modifier.weight(1f))
+            TriangleGlyph(GlyphDirection.LEFT, ink.quiet, 12.dp)
+            Text(value, color = ink.label, fontSize = 16.sp, fontFamily = Sora, fontWeight = FontWeight.SemiBold, modifier = Modifier.width(48.dp), textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+            TriangleGlyph(GlyphDirection.RIGHT, ink.quiet, 12.dp)
         }
     }
     Text(str("browse.maturity.hint"), color = colors.textSecondary, fontSize = 12.sp, fontFamily = Sora, modifier = Modifier.padding(top = 4.dp))
@@ -1064,10 +1099,11 @@ private fun SortPopover(store: SeededBrowseStore, onClose: () -> Unit) {
             // R317 (FR-R317-4) — Size only once the server sends sizes (an older server sends none).
             SortField.entries.filter { (it != SortField.SOURCE || store.recommendations) && (it != SortField.SIZE || store.hasSizes) }.forEachIndexed { i, opt ->
                 var focused by rememberFocusVisual()
+                val ink = rememberPopoverRowInk(focused)
                 val active = store.sortField == opt
                 Row(
                     Modifier.fillMaxWidth()
-                        .background(if (focused) colors.surface else androidx.compose.ui.graphics.Color.Transparent, RoundedCornerShape(8.dp))
+                        .background(ink.fill, RoundedCornerShape(8.dp))
                         .dpadFocusable(
                             focusRequester = if (i == 0) firstFR else null,
                             onFocused = { focused = true }, onBlurred = { focused = false },
@@ -1087,17 +1123,17 @@ private fun SortPopover(store: SeededBrowseStore, onClose: () -> Unit) {
                 ) {
                     // R187 fix — same no-dot-when-unselected treatment as FacetPopover's checklist.
                     Box(Modifier.width(18.dp)) {
-                        if (active) CheckGlyph(colors.accent, 14.dp)
+                        if (active) CheckGlyph(ink.mark, 14.dp)
                     }
                     Column(Modifier.weight(1f)) {
-                        Text(sortLabel(opt, store.sourceLabel), color = colors.text, fontSize = 14.sp, fontFamily = Sora)
+                        Text(sortLabel(opt, store.sourceLabel), color = ink.label, fontSize = 14.sp, fontFamily = Sora)
                         Text(
                             sortDirLabel(opt, if (active) store.sortDir else defaultDirFor(opt)),
-                            color = colors.textSecondary, fontSize = 12.sp, fontFamily = Sora,
+                            color = ink.count, fontSize = 12.sp, fontFamily = Sora,
                         )
                     }
                     if (active) {
-                        TriangleGlyph(if (store.sortDir == SortDir.DESC) GlyphDirection.DOWN else GlyphDirection.UP, colors.accent, 12.dp)
+                        TriangleGlyph(if (store.sortDir == SortDir.DESC) GlyphDirection.DOWN else GlyphDirection.UP, ink.mark, 12.dp)
                     }
                 }
             }
