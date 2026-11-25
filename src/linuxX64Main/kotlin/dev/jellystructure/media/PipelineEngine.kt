@@ -507,9 +507,10 @@ suspend fun runPipeline(
                     writer == null || !writer.available() -> "this server has no tagger"
                     else -> runCatching {
                         val due = music.store.snapshot().albums.values.filter { it.missingSince == null && it.matchState == dev.jellystructure.model.MusicMatch.MATCHED && (it.matchedAt ?: 0) > (it.tagsWrittenAt ?: 0) }
-                        var written = 0; var seeding = 0; var wma = 0; var failed = 0
-                        for (a in due) { writer.writeAlbum(a.id)?.let { o -> written += o.written; seeding += o.seeding; wma += o.wma; failed += o.failed.size } }
-                        if (due.isEmpty()) "nothing new to write" else dev.jellystructure.music.MusicTagWriter.Outcome(written, seeding, List(failed) { "" }, wma).sentence()
+                        var written = 0; var seeding = 0; var wma = 0; var failed = 0; var skipped = 0; var unsupported = 0
+                        // DEB-5537 (FR-1, FR-4) — the scheduled pass leaves a file that failed before and has not changed; the one INFO line below carries the count.
+                        for (a in due) { writer.writeAlbum(a.id, scheduled = true)?.let { o -> written += o.written; seeding += o.seeding; wma += o.wma; failed += o.failed.size; skipped += o.skipped; unsupported += o.unsupported } }
+                        if (due.isEmpty()) "nothing new to write" else dev.jellystructure.music.MusicTagWriter.Outcome(written, seeding, List(failed) { "" }, wma, skipped, unsupported).sentence()
                     }.onFailure { Logger.warn("write_tags failed: ${it.message}", "music") }.getOrDefault("failed — see the log")
                 }
                 Logger.info("write_tags: $summary", "pipeline")
@@ -527,7 +528,7 @@ suspend fun runPipeline(
                     step.step == dev.jellystructure.config.MusicSteps.LYRICS && !cfgNow.music.fetchLyrics -> "lyrics are off in Settings"
                     else -> runCatching {
                         when (step.step) {
-                            dev.jellystructure.config.MusicSteps.ARTWORK -> music.media.fetchArtwork(scopeAll = step.scope == "all")
+                            dev.jellystructure.config.MusicSteps.ARTWORK -> music.media.fetchArtwork(scopeAll = step.scope == "all", scheduled = true)
                             dev.jellystructure.config.MusicSteps.LYRICS -> music.media.fetchLyrics(scopeAll = step.scope == "all")
                             else -> music.media.writeNfos()
                         }.sentence()

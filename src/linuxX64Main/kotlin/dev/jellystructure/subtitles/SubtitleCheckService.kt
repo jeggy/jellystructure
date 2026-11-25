@@ -89,6 +89,18 @@ class SubtitleCheckService(
 
     fun checksForItem(itemId: String): List<Subtitle_check> = q.checksForItem(itemId).executeAsList()
 
+    /**
+     * DEB-5537 (FR-3) — the video this row names is no longer on disk: its sidecar verdicts go, the way a scan drops a
+     * deleted file's rows, so [isDue] stops answering "stale rows to clean up" for a path no job can ever reach.
+     * Nothing on disk and nothing in Jellyfin is touched. True when a row went.
+     */
+    fun reconcileGone(videoPath: String): Boolean {
+        val rows = q.checksForVideo(videoPath).executeAsList()
+        for (r in rows) q.removeCheck(r.sidecar_path)
+        if (rows.isNotEmpty()) SubtitleVerdicts.updateVideo(videoPath, emptyList())
+        return rows.isNotEmpty()
+    }
+
     /** FR-273-8 — a video is due when a sidecar has no current verdict, or an unsettled verdict could now be settled. */
     fun isDue(videoPath: String, force: Boolean = false): Boolean {
         val sidecars = sidecarsOf(videoPath)

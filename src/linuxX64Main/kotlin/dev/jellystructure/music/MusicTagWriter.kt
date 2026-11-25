@@ -5,6 +5,8 @@ import dev.jellystructure.arr.LidarrClient
 import dev.jellystructure.auth.JellyfinClient
 import dev.jellystructure.config.ConfigStore
 import dev.jellystructure.io.FileIo
+import dev.jellystructure.media.FileIntegrityService
+import dev.jellystructure.media.KnownFailures
 import dev.jellystructure.media.MediaHistory
 import dev.jellystructure.model.MusicAlbum
 import dev.jellystructure.model.MusicArt
@@ -50,6 +52,8 @@ class MusicTagWriter(
     private val jellyfin: JellyfinClient,
     private val history: MediaHistory?,
     private val lidarr: LidarrClient? = null,
+    // DEB-5537 (FR-1) — a file whose write failed for a reason that will repeat is not offered again by the scheduled pass.
+    private val knownFailures: KnownFailures? = null,
 ) {
     @Serializable
     data class FileTags(
@@ -59,20 +63,24 @@ class MusicTagWriter(
     )
 
     @Serializable
-    private data class WriteResult(val path: String, val written: Boolean = false, val error: String? = null)
+    internal data class WriteResult(val path: String, val written: Boolean = false, val error: String? = null)
 
     @Serializable
-    private data class PlanFile(val path: String, val tags: Map<String, String?>, @SerialName("drop_unmanaged") val dropUnmanaged: Boolean = false, val cover: String? = null)
+    internal data class PlanFile(val path: String, val tags: Map<String, String?>, @SerialName("drop_unmanaged") val dropUnmanaged: Boolean = false, val cover: String? = null)
 
     @Serializable
-    private data class Plan(@SerialName("keep_id3_version") val keepId3Version: Boolean, @SerialName("keep_unmanaged") val keepUnmanaged: Boolean, val files: List<PlanFile>)
+    internal data class Plan(@SerialName("keep_id3_version") val keepId3Version: Boolean, @SerialName("keep_unmanaged") val keepUnmanaged: Boolean, val files: List<PlanFile>)
 
-    data class Outcome(val written: Int, val seeding: Int, val failed: List<String>, val wma: Int, val skipped: Int = 0) {
+    /** [skipped] — files the scheduled pass left alone because they failed before and have not changed (DEB-5537 FR-1);
+     *  [unsupported] — files in a container the tagger cannot write, which are neither written nor failed (FR-2). */
+    data class Outcome(val written: Int, val seeding: Int, val failed: List<String>, val wma: Int, val skipped: Int = 0, val unsupported: Int = 0) {
         fun sentence(noun: String = "file"): String = buildString {
             append(if (written > 0) "Tags written into $written $noun${if (written == 1) "" else "s"}" else "Nothing written")
             if (seeding > 0) append(" · $seeding seeding, left alone")
             if (wma > 0) append(" · $wma WMA (ids not readable by Jellyfin)")
             if (failed.isNotEmpty()) append(" · ${failed.size} left as ${if (failed.size == 1) "it was" else "they were"}")
+            if (unsupported > 0) append(" · $unsupported not writable (.m4a/.mp4)")
+            if (skipped > 0) append(" · $skipped skipped, failed before and unchanged")
         }
     }
 
@@ -239,7 +247,7 @@ class MusicTagWriter(
     // ── write (FR-284-3) ──
 
     /** Writes the album's songs; [embedCover] null keeps the album's own choice. Returns the outcome or null for an unknown album. */
-    suspend fun writeAlbum(albumId: String, embedCover: Boolean? = null, removeJunk: Boolean = false, take: String? = null, onFile: suspend (Int) -> Unit = {}, cancelled: () -> Boolean = { false }): Outcome? {
+    suspend fun writeAlbum(albumId: String, embedCover: Boolean? = null, removeJunk: Boolean = false, take: String? = null, onFile: suspend (Int) -> Unit = {}, cancelled: () -> Boolean = { false }, scheduled: Boolean = false): Outcome? {
         var album = store.album(albumId) ?: run { Logger.warn("write_tags: album $albumId is not in the store (${store.snapshot().albums.size} albums, ${store.snapshot().tracks.size} tracks)", "music"); return null }
         if (embedCover != null && embedCover != album.embedCover) { album = album.copy(embedCover = embedCover); store.putAlbum(album) }
         if (take == "file" && album.matchLocked) {
@@ -259,7 +267,7 @@ class MusicTagWriter(
             if (path.endsWith(".wma", true)) wma++
             plan += PlanFile(path, wanted(album, t, tracks), dropUnmanaged = removeJunk, cover = cover)
         }
-        val outcome = run(plan, cfg, onFile, cancelled).let { it.copy(seeding = seeding, wma = wma) }
+        val outcome = run(plan, cfg, onFile, cancelled, scheduled).let { it.copy(seeding = seeding, wma = wma) }
         if (outcome.written > 0) {
             store.putAlbum((store.album(albumId) ?: album).copy(tagsWrittenAt = nowEpochSec(), updatedAt = nowEpochSec()))
             val fields = listOfNotNull("title", "artist", "album artist", "track numbers", album.originalDate()?.let { "year" }, if (album.matchState == MusicMatch.MATCHED) "6 MusicBrainz ids" else null, if (tracks.any { it.trackGainDb != null }) "loudness" else null)
@@ -296,26 +304,60 @@ class MusicTagWriter(
         return run(plan, cfg, onFile, { false }).copy(seeding = seeding)
     }
 
-    private suspend fun run(plan: List<PlanFile>, cfg: dev.jellystructure.config.AppConfig, onFile: suspend (Int) -> Unit, cancelled: () -> Boolean): Outcome {
-        if (plan.isEmpty()) return Outcome(0, 0, emptyList(), 0)
-        val s = script() ?: return Outcome(0, 0, plan.map { "${it.path.substringAfterLast('/')}: no tagger" }, 0)
+    /**
+     * DEB-5537 (FR-2) — containers the tagger cannot write: every `.m4a`/`.mp4` audio file. They never enter the plan,
+     * and they are counted as unsupported, not failed.
+     */
+    internal fun writable(path: String): Boolean = path.substringAfterLast('.', "").lowercase() !in UNWRITABLE_EXTENSIONS
+
+    /** DEB-5537 (FR-1) — the plan without the files the scheduled pass already knows will fail again (same size and mtime, under 7 days). */
+    internal fun withoutKnownFailures(plan: List<PlanFile>): Pair<List<PlanFile>, Int> {
+        val known = knownFailures ?: return plan to 0
+        val kept = plan.filterNot { f -> FileIntegrityService.stampOf(f.path)?.let { known.skip(KnownFailures.WRITE_TAGS, f.path, it.size, it.mtime) } == true }
+        return kept to (plan.size - kept.size)
+    }
+
+    /** The batch's raw answer, one JSON line per file. A seam so the plan that reaches the tagger is testable without python. */
+    internal var sendBatch: (suspend (script: String, plan: Plan) -> String?)? = null
+
+    internal suspend fun run(plan: List<PlanFile>, cfg: dev.jellystructure.config.AppConfig, onFile: suspend (Int) -> Unit, cancelled: () -> Boolean, scheduled: Boolean = false): Outcome {
+        val (writablePlan, unsupportedFiles) = plan.partition { writable(it.path) }
+        val unsupported = unsupportedFiles.size
+        val (toWrite, skipped) = if (scheduled) withoutKnownFailures(writablePlan) else writablePlan to 0
+        if (toWrite.isEmpty()) return Outcome(0, 0, emptyList(), 0, skipped, unsupported)
+        val s = (if (sendBatch != null) "seam" else script()) ?: return Outcome(0, 0, toWrite.map { "${it.path.substringAfterLast('/')}: no tagger" }, 0, skipped, unsupported)
         var written = 0
         val failed = ArrayList<String>()
+        val toWarn = ArrayList<String>()
         // One process per album-sized batch: the plan goes through a temp file, the results come back one line per file.
-        for ((bi, batch) in plan.chunked(60).withIndex()) {
+        for ((bi, batch) in toWrite.chunked(60).withIndex()) {
             if (cancelled()) break
-            val tmp = "/tmp/js-tagplan-${nowEpochSec()}-$bi.json"
-            FileIo.writeText(Path(tmp), json.encodeToString(Plan.serializer(), Plan(cfg.music.keepId3Version, cfg.music.keepUnmanagedFrames, batch)))
-            val text = try { capture("python3 ${q(s)} write < ${q(tmp)} 2>/dev/null") } finally { platform.posix.remove(tmp) }
+            val plan = Plan(cfg.music.keepId3Version, cfg.music.keepUnmanagedFrames, batch)
+            val text = sendBatch?.invoke(s, plan) ?: run {
+                val tmp = "/tmp/js-tagplan-${nowEpochSec()}-$bi.json"
+                FileIo.writeText(Path(tmp), json.encodeToString(Plan.serializer(), plan))
+                try { capture("python3 ${q(s)} write < ${q(tmp)} 2>/dev/null") } finally { platform.posix.remove(tmp) }
+            }
             val results = text?.lineSequence()?.filter { it.isNotBlank() }?.mapNotNull { runCatching { json.decodeFromString(WriteResult.serializer(), it) }.getOrNull() }?.associateBy { it.path }.orEmpty()
             for ((i, f) in batch.withIndex()) {
                 val r = results[f.path]
-                if (r?.written == true) written++ else failed += "${f.path.substringAfterLast('/')}: ${r?.error ?: "no answer from the tagger"}"
+                val name = f.path.substringAfterLast('/')
+                if (r?.written == true) { written++; knownFailures?.forget(KnownFailures.WRITE_TAGS, f.path) }
+                else {
+                    val why = "$name: ${r?.error ?: "no answer from the tagger"}"
+                    failed += why
+                    // FR-1 — only an answer from the tagger is a failure that will repeat; "no answer" may be a crash and is asked again.
+                    // FR-4 — the WARN is for a failure not already on record: a first one, a changed file, or one that aged out.
+                    val stamp = if (r?.error != null) FileIntegrityService.stampOf(f.path) else null
+                    val known = knownFailures
+                    if (known == null || stamp == null) toWarn += why
+                    else if (known.record(KnownFailures.WRITE_TAGS, f.path, stamp.size, stamp.mtime, r?.error.orEmpty())) toWarn += why
+                }
                 onFile(bi * 60 + i + 1)
             }
         }
-        if (failed.isNotEmpty()) Logger.warn("write_tags: ${failed.size} file(s) left as they were — ${failed.take(3).joinToString("; ")}", "music")
-        return Outcome(written, 0, failed, 0)
+        if (toWarn.isNotEmpty()) Logger.warn("write_tags: ${toWarn.size} file(s) left as they were — ${toWarn.take(3).joinToString("; ")}", "music")
+        return Outcome(written, 0, failed, 0, skipped, unsupported)
     }
 
     /** FR-284-4 — a locked album whose files disagree: *Take the file's* makes the files' identity ours. */
@@ -349,6 +391,8 @@ class MusicTagWriter(
     companion object {
         const val SCRIPT_IMAGE = "/app/scripts/tagwrite.py"
         const val SCRIPT_DEV = "scripts/tagwrite.py"
+        /** DEB-5537 (FR-2) — containers the tagger cannot write. */
+        val UNWRITABLE_EXTENSIONS = setOf("m4a", "mp4")
         val ALBUM_COLUMNS = listOf(
             MusicFileColumnGroup("Identity", listOf(MusicFileColumn("title", "Title"), MusicFileColumn("artist", "Artist"), MusicFileColumn("albumartist", "Album artist"), MusicFileColumn("track", "Track"), MusicFileColumn("date", "Year"))),
             MusicFileColumnGroup("Ids", listOf(MusicFileColumn("rec", "Recording"), MusicFileColumn("rel", "Release"))),

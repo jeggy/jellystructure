@@ -1,0 +1,10 @@
+-- DEB-5537 (FR-1) — a failure that will repeat, remembered against its input. Keep this CREATE TABLE and KnownFailure.sq identical.
+CREATE TABLE known_failure (
+    kind TEXT NOT NULL,
+    input TEXT NOT NULL,
+    size INTEGER NOT NULL,
+    mtime INTEGER NOT NULL,
+    reason TEXT NOT NULL,
+    failed_at INTEGER NOT NULL,
+    PRIMARY KEY (kind, input)
+);

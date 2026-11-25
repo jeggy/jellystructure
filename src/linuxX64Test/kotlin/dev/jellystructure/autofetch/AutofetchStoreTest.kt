@@ -113,6 +113,7 @@ class AutofetchStoreTest {
         // …and DEB-3704's 100 creates music_js_tag (its index goes with it).
         raw.execute(null, "DROP TABLE IF EXISTS music_js_tag", 0)
         raw.execute(null, "DROP TABLE IF EXISTS samsung_tv_requests", 0)
+        raw.execute(null, "DROP TABLE IF EXISTS known_failure", 0)
         raw.execute(null, "PRAGMA user_version = $MIGRATION_ROBOTS", 0)
         raw.close()
         val again = AutofetchStore(createDatabase(path))

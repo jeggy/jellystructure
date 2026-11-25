@@ -5,6 +5,8 @@ import dev.jellystructure.config.ConfigStore
 import dev.jellystructure.io.FileIo
 import dev.jellystructure.log.Logger
 import dev.jellystructure.media.ArtworkDownloader
+import dev.jellystructure.media.ArtworkFetch
+import dev.jellystructure.media.KnownFailures
 import dev.jellystructure.media.MediaHistory
 import dev.jellystructure.media.sniffImageSignature
 import dev.jellystructure.model.MusicAlbum
@@ -35,7 +37,13 @@ class MusicMediaService(
     private val jellyfin: JellyfinClient,
     val fanart: FanartTvClient,
     private val history: MediaHistory? = null,
+    // DEB-5537 (FR-1) — a cover the Cover Art Archive answered 404 for is not asked for again by the scheduled pass.
+    private val knownFailures: KnownFailures? = null,
 ) {
+    /** Seams for the covers' tests: the download, and whether the Archive lists no front image for an album. */
+    internal var fetchCover: suspend (url: String, dest: String) -> ArtworkFetch = { url, dest -> artwork.downloadResult(url, dest) }
+    internal var noFrontOnCaa: suspend (MusicAlbum) -> Boolean = { a -> CoverArtArchive.images(a.releaseMbid, a.releaseGroupMbid)?.none { it.kind == "front" } == true }
+
     companion object {
         private val COVER_FILES = listOf("cover.jpg", "cover.jpeg", "cover.png", "folder.jpg", "folder.jpeg", "folder.png", "front.jpg", "front.png")
         private val THUMB_FILES = listOf("folder.jpg", "folder.jpeg", "folder.png", "artist.jpg", "artist.png", "thumb.jpg", "poster.jpg")
@@ -94,26 +102,40 @@ class MusicMediaService(
     /** Phase 278 — the Library's *Fetch covers* on a selection: those albums and their album artists, re-fetched. */
     suspend fun fetchArtworkFor(albumIds: Set<String>): MusicStepSummary = fetchArtwork(scopeAll = true, albumIds = albumIds)
 
-    suspend fun fetchArtwork(scopeAll: Boolean, albumIds: Set<String>? = null): MusicStepSummary {
+    suspend fun fetchArtwork(scopeAll: Boolean, albumIds: Set<String>? = null, scheduled: Boolean = false): MusicStepSummary {
         val snap = store.snapshot()
         val artistIds = albumIds?.let { ids -> ids.mapNotNull { snap.albums[it] }.flatMap { a -> a.albumArtists.map { it.artistId } }.toSet() }
         var covers = 0; var noCover = 0; var pictures = 0; var bios = 0
         val changedAlbums = mutableListOf<MusicAlbum>()
+        val notOnCaa = knownFailures?.pass(KnownFailures.COVER_ART, "covers the Cover Art Archive does not have")
         for (a in snap.albums.values.filter { it.missingSince == null && it.matchState == MusicMatch.MATCHED && it.releaseGroupMbid != null && (albumIds == null || it.id in albumIds) }) {
             val dest = coverPath(a) ?: continue
             if (isLocked(dest)) continue
             if (!scopeAll && a.coverState == MusicArt.FILE) continue
-            val ok = artwork.downloadTo(CoverArtArchive.frontUrl(a.releaseGroupMbid!!), dest)
+            val url = CoverArtArchive.frontUrl(a.releaseGroupMbid!!)
+            // FR-1 — only the scheduled pass leaves a known 404 alone; the Library's Fetch covers is an operator action and asks again.
+            if (scheduled && knownFailures?.skip(KnownFailures.COVER_ART, url, 0, 0, notOnCaa) == true) {
+                if (a.coverMissingOnCaa) noCover++
+                continue
+            }
+            val fetched = fetchCover(url, dest)
+            val ok = fetched == ArtworkFetch.OK
             if (ok) {
+                knownFailures?.forget(KnownFailures.COVER_ART, url)
                 covers++
                 store.putAlbum(a.copy(coverState = MusicArt.FILE, coverSource = "caa", coverMissingOnCaa = false))
                 changedAlbums += a
                 history?.record(a.id, "music_cover", "Cover from the Cover Art Archive")
-            } else if (CoverArtArchive.images(a.releaseMbid, a.releaseGroupMbid)?.none { it.kind == "front" } == true) {
-                noCover++
-                if (!a.coverMissingOnCaa) store.putAlbum(a.copy(coverMissingOnCaa = true))
+            } else {
+                // FR-1 — the Archive's own answer that the image is not there will not change by asking again; the downloader's WARN is the one line.
+                if (fetched == ArtworkFetch.NOT_FOUND) knownFailures?.record(KnownFailures.COVER_ART, url, 0, 0, "HTTP 404")
+                if (noFrontOnCaa(a)) {
+                    noCover++
+                    if (!a.coverMissingOnCaa) store.putAlbum(a.copy(coverMissingOnCaa = true))
+                }
             }
         }
+        notOnCaa?.log()   // FR-4 — one line for the pass, counts only
         val changedArtists = mutableListOf<MusicArtist>()
         for (ar in snap.artists.values.filter { it.missingSince == null && it.matchState == MusicMatch.MATCHED && it.mbid != null && (artistIds == null || it.id in artistIds) }) {
             var updated = ar

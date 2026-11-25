@@ -53,6 +53,9 @@ internal fun sniffImageSignature(bytes: ByteArray): SniffedImage? {
     return null
 }
 
+/** DEB-5537 (FR-1) — how one artwork download ended. [NOT_FOUND] is the remote answering that the image is not there. */
+enum class ArtworkFetch { OK, NOT_FOUND, FAILED }
+
 @Serializable
 data class ArtworkStatus(
     val posterExists: Boolean,
@@ -306,7 +309,11 @@ class ArtworkDownloader(private val tmdbClient: TmdbClient, private val screengr
 
     /** Phase 277 — the same validated download (URL safety, image status/type, magic bytes, atomic rename) for the
      *  music library's own files (`cover.jpg`, an artist's `folder.jpg` / `backdrop.jpg` / `logo.png`). */
-    suspend fun downloadTo(url: String, destPath: String): Boolean = download(url, destPath)
+    suspend fun downloadTo(url: String, destPath: String): Boolean = downloadResult(url, destPath) == ArtworkFetch.OK
+
+    /** DEB-5537 (FR-1) — [downloadTo] with the one distinction a scheduler needs: an answer that will not change
+     *  ([ArtworkFetch.NOT_FOUND], HTTP 404/410) against anything that may (a timeout, a 5xx, a bad body). */
+    suspend fun downloadResult(url: String, destPath: String): ArtworkFetch = downloadChecked(url, destPath)
 
     /** Phase 277 — remove one music image with its `.manual` lock and `.src` sidecar. True when an image was there. */
     suspend fun removeImage(path: String): Boolean {
@@ -320,16 +327,18 @@ class ArtworkDownloader(private val tmdbClient: TmdbClient, private val screengr
         runCatching { SystemFileSystem.delete(Path(manualMarkerPath(imagePath))) }
     }
 
-    private suspend fun download(url: String, destPath: String): Boolean {
+    private suspend fun download(url: String, destPath: String): Boolean = downloadChecked(url, destPath) == ArtworkFetch.OK
+
+    private suspend fun downloadChecked(url: String, destPath: String): ArtworkFetch {
         // Phase 316 (FR-316-2) — never a folder-named image in a library root, whatever asked for it.
-        refuseRootFolderImage(destPath)?.let { Logger.warn("Artwork $it", "artwork"); return false }
+        refuseRootFolderImage(destPath)?.let { Logger.warn("Artwork $it", "artwork"); return ArtworkFetch.FAILED }
         // Security fix (2026-08-02 review, finding M5) — see UrlSafety's doc comment. `source` here can
         // be an admin-pasted URL (the Artwork manager's "pick from URL" flow); without this check the
         // server would fetch and WRITE TO DISK, then re-serve via /api/tv/image/**, whatever an
         // attacker-controlled admin session (or a stolen cookie) pointed it at — a full-read SSRF.
         if (!dev.jellystructure.util.UrlSafety.isSafeExternalUrl(url)) {
             Logger.warn("Refusing to download artwork from disallowed URL: $url", "artwork")
-            return false
+            return ArtworkFetch.FAILED
         }
         return downloadUnchecked(url, destPath)
     }
@@ -339,24 +348,24 @@ class ArtworkDownloader(private val tmdbClient: TmdbClient, private val screengr
     // things wrong, was written to disk as clearlogo.png and stayed there for weeks — nothing after this
     // point ever re-checked it). All three checks must pass before a single byte reaches disk; a reject
     // writes nothing at all, not even a `.tmp`.
-    private suspend fun downloadUnchecked(url: String, destPath: String): Boolean = OutboundHttp.withPermit {
+    private suspend fun downloadUnchecked(url: String, destPath: String): ArtworkFetch = OutboundHttp.withPermit {
         val result = runCatching {
             val response = http.get(url)
             if (!response.status.isSuccess()) {
                 Logger.warn("Rejected artwork download (HTTP ${response.status.value}): $url", "artwork")
-                return@withPermit false
+                return@withPermit if (response.status.value == 404 || response.status.value == 410) ArtworkFetch.NOT_FOUND else ArtworkFetch.FAILED
             }
             val contentType = response.contentType()
             if (contentType?.contentType != "image") {
                 Logger.warn("Rejected artwork download (Content-Type ${contentType ?: "<none>"}): $url", "artwork")
-                return@withPermit false
+                return@withPermit ArtworkFetch.FAILED
             }
             val bytes = response.readRawBytes()
-            if (bytes.isEmpty()) return@withPermit false
+            if (bytes.isEmpty()) return@withPermit ArtworkFetch.FAILED
             val sniffed = sniffImageSignature(bytes)
             if (sniffed == null) {
                 Logger.warn("Rejected artwork download (unrecognized image signature, ${bytes.size} bytes): $url", "artwork")
-                return@withPermit false
+                return@withPermit ArtworkFetch.FAILED
             }
 
             if (sniffed == SniffedImage.SVG && destPath.endsWith(".png")) {
@@ -372,21 +381,21 @@ class ArtworkDownloader(private val tmdbClient: TmdbClient, private val screengr
                 if (!rasterOk) {
                     deleteIfExists(rasterTmp)
                     Logger.warn("Rejected artwork download (SVG rasterise failed): $url", "artwork")
-                    return@withPermit false
+                    return@withPermit ArtworkFetch.FAILED
                 }
                 platform.posix.rename(rasterTmp, destPath)
                 Logger.info("Downloaded + rasterised SVG artwork: $destPath", "artwork")
-                return@withPermit true
+                return@withPermit ArtworkFetch.OK
             }
 
             val tmp = "$destPath.tmp"
             FileIo.writeBytes(Path(tmp), bytes)   // Phase 134: use{}-scoped — no FD leak on a mid-write throw
             platform.posix.rename(tmp, destPath)
             Logger.info("Downloaded artwork: $destPath", "artwork")
-            true
+            ArtworkFetch.OK
         }
         if (result.isFailure) Logger.warn("Failed to download $url: ${result.exceptionOrNull()?.message}")
-        result.getOrDefault(false)
+        result.getOrDefault(ArtworkFetch.FAILED)
     }
 
     fun checkEpisodeStill(episode: Episode): EpisodeStillStatus {

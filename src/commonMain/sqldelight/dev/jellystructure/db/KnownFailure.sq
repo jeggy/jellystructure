@@ -1,0 +1,28 @@
+-- DEB-5537 (FR-1) — a failure that will repeat, remembered against what was tried: a file (path, with its size and
+-- mtime) or a remote fetch (the URL or release-group id, size and mtime 0). The scheduled pass skips an input whose
+-- record still matches and is under 7 days old; an operator action ignores it. Keep this CREATE TABLE and 102.sqm identical.
+CREATE TABLE known_failure (
+    kind TEXT NOT NULL,
+    input TEXT NOT NULL,
+    size INTEGER NOT NULL,
+    mtime INTEGER NOT NULL,
+    reason TEXT NOT NULL,
+    failed_at INTEGER NOT NULL,
+    PRIMARY KEY (kind, input)
+);
+
+byInput:
+SELECT * FROM known_failure WHERE kind = :kind AND input = :input;
+
+put:
+INSERT OR REPLACE INTO known_failure(kind, input, size, mtime, reason, failed_at)
+VALUES (:kind, :input, :size, :mtime, :reason, :failed_at);
+
+remove:
+DELETE FROM known_failure WHERE kind = :kind AND input = :input;
+
+removeAllForInput:
+DELETE FROM known_failure WHERE input = :input;
+
+countByKind:
+SELECT COUNT(*) FROM known_failure WHERE kind = :kind;

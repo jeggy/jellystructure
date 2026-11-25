@@ -196,6 +196,8 @@ class MediaJobQueue(
     private val embeddedSubtitles: dev.jellystructure.tv.EmbeddedSubtitleCache? = null,
     // Phase 261 (FR-261-9) — the enqueue-only steps' per-title record, written when their job finishes.
     val stepRuns: StepRunStore? = null,
+    // DEB-5537 (FR-1) — failures that will repeat, so the scheduled pass stops asking for them every hour.
+    private val knownFailures: KnownFailures = KnownFailures(db),
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -1045,7 +1047,7 @@ class MediaJobQueue(
         when (row.type) {
             FileCheckSchedule.VERIFY_JOB -> {
                 val service = fileIntegrity ?: return Failure("File integrity service not available")
-                service.check(path) ?: return Failure("ffmpeg could not read the file")
+                service.check(path) ?: return unreadableFile(row.type, path, "ffmpeg could not read the file")
             }
             FileCheckSchedule.SUBTITLES_JOB -> {
                 val service = subtitleChecks ?: return Failure("Subtitle check not available")
@@ -1066,11 +1068,22 @@ class MediaJobQueue(
             }
             else -> {
                 val service = trackCoverage ?: return Failure("Track coverage service not available")
-                service.check(path) ?: return Failure("ffprobe could not read the file")
+                service.check(path) ?: return unreadableFile(row.type, path, "ffprobe could not read the file")
             }
         }
+        if (row.type == FileCheckSchedule.VERIFY_JOB || row.type == FileCheckSchedule.LENGTHS_JOB) knownFailures.forget(row.type, path)
         queries.updateProgress(100.0, null, 1L, null, row.id)
         return Success
+    }
+
+    /** DEB-5537 (FR-1, FR-4) — a file the tools cannot read will not become readable by being asked again: remember it
+     *  against its size and mtime, and say so once, here, when the record is made. */
+    private suspend fun unreadableFile(jobType: String, path: String, reason: String): Outcome {
+        val stamp = FileIntegrityService.stampOf(path)
+        if (stamp != null && knownFailures.record(jobType, path, stamp.size, stamp.mtime, reason)) {
+            Logger.warn("$jobType: $reason — $path; the scheduled pass leaves it until the file changes or 7 days pass", "jobs")
+        }
+        return Failure(reason)
     }
 
     /**
@@ -1184,7 +1197,7 @@ class MediaJobQueue(
      * first (priority 0, with segment work), then cadence re-checks (priority −1, behind everything), each
      * group most recently modified first (254's rule). Rows ask to wait while a TV plays (FR-261-1).
      */
-    fun enqueueDueFileChecks(step: PipelineStep, items: List<MediaItem>, shouldStop: () -> Boolean = { false }): FileCheckPass {
+    suspend fun enqueueDueFileChecks(step: PipelineStep, items: List<MediaItem>, shouldStop: () -> Boolean = { false }): FileCheckPass {
         val jobType = FileCheckSchedule.jobTypeFor(step.step) ?: return FileCheckPass(0, 0, 0, false)
         // Phase 317 (FR-317-13) — off means ABSENT: no rows at all, not even the skip rows, so a pipeline
         // run with the sidecar switched off leaves the table exactly as it was.
@@ -1194,11 +1207,15 @@ class MediaJobQueue(
         val nowMs = store.nowMs()
         val currentYear = yearFromEpochMs(nowMs)
         val due = ArrayList<Triple<FileUnit, FileCheckDue, Long>>()
+        val skipped = knownFailures.pass(jobType, "unreadable files")
         for (item in items) for (unit in FileCheckSchedule.units(item)) {
             val stamp = FileIntegrityService.stampOf(unit.path) ?: continue
             val why = FileCheckSchedule.due(stored[unit.path], stamp.size, stamp.mtime, nowMs, item.year, currentYear, step) ?: continue
+            // DEB-5537 (FR-1) — a file this check could not read, unchanged since: not asked again by the scheduled pass.
+            if (knownFailures.skip(jobType, unit.path, stamp.size, stamp.mtime, skipped)) continue
             due += Triple(unit, why, stamp.mtime)
         }
+        skipped.log()
         // DEB-3637 (FR-4) — the verify backfill answers the files a device played in the last 30 days first, newest
         // play first, so what a viewer is watching is checked before the rest of the library; then 254's order.
         val playedAt = if (jobType == FileCheckSchedule.VERIFY_JOB) recentPlays(items, nowMs / 1000) else emptyMap()
@@ -1238,17 +1255,25 @@ class MediaJobQueue(
 
     /** Phase 273 (FR-273-8) — every video with a sidecar that has no current verdict, or an unsettled one a reference
      *  could now settle, queued as a new file (priority 0, waits while a TV plays). */
-    private fun enqueueDueSubtitleChecks(items: List<MediaItem>, shouldStop: () -> Boolean): FileCheckPass {
+    private suspend fun enqueueDueSubtitleChecks(items: List<MediaItem>, shouldStop: () -> Boolean): FileCheckPass {
         val service = subtitleChecks ?: return FileCheckPass(0, 0, 0, false)
         var fresh = 0; var already = 0
+        var gone = 0
         for (item in items) for (unit in FileCheckSchedule.units(item)) {
             if (shouldStop()) return FileCheckPass(fresh, 0, already, true)
+            // DEB-5537 (FR-3) — a file that is gone is not a job: its stored rows end here and nothing is queued.
+            if (FileIntegrityService.stampOf(unit.path) == null) {
+                if (service.reconcileGone(unit.path)) gone++
+                knownFailures.forgetAllFor(unit.path)
+                continue
+            }
             if (!service.isDue(unit.path)) continue
             when (enqueueFileCheck(FileCheckSchedule.SUBTITLES_JOB, unit, FileCheckSchedule.PRIORITY_NEW, defer = true)) {
                 FileEnqueue.INSERTED -> fresh++
                 else -> already++
             }
         }
+        if (gone > 0) Logger.info("check_subtitles: $gone video(s) are no longer on disk — their subtitle rows were dropped, nothing queued", "jobs")
         return FileCheckPass(fresh, 0, already, false)
     }
 
@@ -1256,6 +1281,8 @@ class MediaJobQueue(
      *  video's check, waiting while a TV plays. */
     fun enqueueSubtitleCheck(item: MediaItem, videoPath: String): FileEnqueue {
         val unit = FileCheckSchedule.units(item).firstOrNull { it.path == videoPath } ?: FileUnit(item, videoPath, null)
+        // DEB-5537 (FR-3) — the hook can name a video that has since gone; there is nothing to check.
+        if (FileIntegrityService.stampOf(videoPath) == null) return FileEnqueue.ALREADY_QUEUED
         return enqueueFileCheck(FileCheckSchedule.SUBTITLES_JOB, unit, FileCheckSchedule.PRIORITY_NEW, defer = true)
     }
 

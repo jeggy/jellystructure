@@ -335,6 +335,7 @@ fun main() = runBlocking {
             musicStore, artworkDownloader, configStore, jellyfinClient,
             dev.jellystructure.music.FanartTvClient { configStore.current.apiKeys.fanartTvKey },
             mediaHistory,
+            dev.jellystructure.media.KnownFailures(db),
         ),
         // Phase 280 — audiobooks: the folder is the book.
         audiobooks = dev.jellystructure.audiobooks.AudiobooksScanner(configStore, jellyfinClient, dev.jellystructure.audiobooks.AudiobooksStore(db), tags = musicStore, history = mediaHistory),
@@ -440,7 +441,7 @@ fun main() = runBlocking {
     // Phase 278 (FR-278-7) — music's Convert…, a job on the media lane.
     // Phase 284 — the one tag writer: albums, converted songs and books all go through it (and Lidarr, read-only, beside it).
     val lidarrClient = dev.jellystructure.arr.LidarrClient()
-    val tagWriter = dev.jellystructure.music.MusicTagWriter(musicStore, configStore, seedingGuard, jellyfinClient, mediaHistory, lidarrClient)
+    val tagWriter = dev.jellystructure.music.MusicTagWriter(musicStore, configStore, seedingGuard, jellyfinClient, mediaHistory, lidarrClient, dev.jellystructure.media.KnownFailures(db))
     musicPipeline.tags = tagWriter
     mediaJobQueue.tagWriter = { albumId, onFile, cancelled ->
         val o = tagWriter.writeAlbum(albumId, onFile = onFile, cancelled = cancelled)
