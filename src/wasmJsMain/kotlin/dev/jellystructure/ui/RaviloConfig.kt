@@ -251,12 +251,12 @@ private fun renderFull(container: Element, scope: CoroutineScope) {
 }
 
 private fun buildLoadingShell() = """
-    ${raviloPageBar("Ravilo TV", pagebarAttrs = """ style="position:sticky;top:0;z-index:50;background:var(--bg);border-bottom:1px solid var(--line);margin-bottom:18px"""")}
+    ${raviloPageBar("Ravilo · ${ravTabLabel()}", "app config")}
     <p class="page-sub" style="color:var(--ink-soft)">Loading…</p>
 """.trimIndent()
 
 private fun buildErrorShell(msg: String) = """
-    ${raviloPageBar("Ravilo TV", pagebarAttrs = """ style="position:sticky;top:0;z-index:50;background:var(--bg);border-bottom:1px solid var(--line);margin-bottom:18px"""")}
+    ${raviloPageBar("Ravilo · ${ravTabLabel()}", "app config")}
     <div class="card" style="padding:24px;color:var(--bad)">$msg</div>
 """.trimIndent()
 
@@ -271,6 +271,8 @@ private fun datalistsHtml(): String = buildString {
 /** Which `?tab=` this page is showing — defaults to "layout" (handleRaviloRoute canonicalizes the URL to match). */
 private fun currentRavTab(): String = Router.currentQuery()["tab"]?.takeIf { it in RAVILO_TABS } ?: "layout"
 
+private fun ravTabLabel(): String = when (currentRavTab()) { "requests" -> "Requests"; "preferences" -> "Preferences"; else -> "Layout" }
+
 private fun ravSectionDivHtml(id: String, ownerTab: String, activeTab: String): String {
     val cls = if (ownerTab == activeTab) "rav-tab-section tab-show" else "rav-tab-section"
     return """<div id="$id" class="$cls" data-rtab="$ownerTab"></div>"""
@@ -278,7 +280,7 @@ private fun ravSectionDivHtml(id: String, ownerTab: String, activeTab: String): 
 
 private fun buildShell(): String {
     val tab = currentRavTab()
-    val tabLabel = when (tab) { "requests" -> "Requests"; "preferences" -> "Preferences"; else -> "Layout" }
+    val tabLabel = ravTabLabel()
     return """
     <style>
       /* Sticky section nav (anchored side menu) — mirrors wf.css .navitem, with button-chrome reset. */
@@ -295,7 +297,7 @@ private fun buildShell(): String {
       .rav-tab-section[data-rtab].tab-show { display:block; }
     </style>
     ${datalistsHtml()}
-    ${raviloPageBar("Ravilo · $tabLabel", "app config", actions = """<a href="#/ravilo-users" class="btn sm ghost" style="margin-right:8px">Users &amp; devices</a><span class="badge ok" id="rav-synced">saved · synced</span><button id="rav-save" class="btn primary">Save</button>""")}
+    ${raviloPageBar("Ravilo · $tabLabel", "app config", """<a href="#/ravilo-users" class="btn sm ghost" style="margin-right:8px">Users &amp; devices</a><span class="badge ok" id="rav-synced">saved · synced</span><button id="rav-save" class="btn primary">Save</button>""")}
     <p class="page-sub">
       Lay out the Ravilo home screen your viewers see on their TVs. Ravilo connects only to
       Jellystructure — browsing, search and this layout are served by us; media streams from Jellyfin.
