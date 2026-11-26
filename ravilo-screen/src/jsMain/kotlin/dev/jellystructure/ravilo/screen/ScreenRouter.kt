@@ -203,9 +203,17 @@ internal class ScreenShell(
         // (so Backspace there is not a Back out of the search) and left un-prevented.
         val inField = entries.last().focusId == ScreenSearch.FIELD_ID && entries.last().search != null
         if (inField && (event.key == "Backspace" || event.key == "Enter" || event.key == "ArrowLeft" || event.key == "ArrowRight")) return true
+        // DEB-5685 (FR-57) — Right from the field reaches Clear while it shows.
+        val clear = document.getElementById(ScreenSearch.CLEAR_ID) as? HTMLElement
+        if (inField && event.key == "ArrowRight" && clear != null && !clear.hidden) {
+            focus.focus(clear)
+            event.preventDefault()
+            return true
+        }
         when {
             inField && event.key == "ArrowDown" -> {
-                (document.getElementById("${ScreenSearch.TILE_PREFIX}0") as? HTMLElement)?.let(focus::focus)
+                val first = document.getElementById("${ScreenSearch.TILE_PREFIX}0") ?: document.getElementById(ScreenSearch.RETRY_ID)
+                (first as? HTMLElement)?.let(focus::focus)
             }
             isBackKey(event) -> back()
             event.key == "Enter" -> activate()
@@ -377,7 +385,7 @@ internal class ScreenShell(
     private fun searchChanged() {
         val current = entries.lastOrNull() ?: return
         if (!visible || player || current.search == null) return
-        if (current.focusId.startsWith(ScreenSearch.TILE_PREFIX)) focus.refocus()
+        if (ScreenSearch.isResult(current.focusId)) focus.refocus()
     }
 
     /** A title's page has something new to draw (its facts arrived, or a write-through answered): redraw it if it is still the route. */
@@ -419,6 +427,13 @@ internal class ScreenShell(
             val title = element.getAttribute("data-media-title") ?: element.querySelector(".tile-title, .hero-title")?.textContent ?: element.textContent ?: ""
             val kind = MediaKind.entries.firstOrNull { it.name.lowercase() == element.getAttribute("data-media-kind") } ?: MediaKind.MOVIE
             openTitle(mediaId, kind, title)
+        // DEB-5685 (FR-57) — Clear empties the field and puts focus back in it; a failed search's Retry asks for the same text again.
+        if (current.search != null && element.id == ScreenSearch.CLEAR_ID) {
+            current.search.clear()
+            (document.getElementById(ScreenSearch.FIELD_ID) as? HTMLElement)?.let(focus::focus)
+            return
+        }
+        if (current.search != null && element.id == ScreenSearch.RETRY_ID) { current.search.retry(); return }
             return
         }
         val focused = current.focusId
@@ -443,7 +458,7 @@ internal class ScreenShell(
     private fun back() {
         val current = entries.last()
         // DEB-4662 (FR-8) — Back from the results returns to the field; the typed text is still in it.
-        if (current.search != null && current.focusId.startsWith(ScreenSearch.TILE_PREFIX)) {
+        if (current.search != null && ScreenSearch.isResult(current.focusId)) {
             (document.getElementById(ScreenSearch.FIELD_ID) as? HTMLElement)?.let(focus::focus)
             return
         }

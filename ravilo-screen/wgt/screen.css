@@ -388,6 +388,11 @@
     .lang-flag { box-sizing: border-box; display: block; width: 39px; height: 27px; border-radius: 3px; border: 1px solid rgba(255,255,255,.18); object-fit: cover; }
     .lang-more { font-size: 15px; font-weight: 600; color: rgba(255,255,255,.7); }
     .lang-dot { flex: none; font-size: 14px; color: rgba(255,255,255,.35); }
+    .search-bar { display: flex; align-items: center; margin-top: 18px; }
+    .search-bar .search-field { flex: 1 1 auto; width: auto; margin-top: 0; }
+    .search-clear { flex: 0 0 auto; margin: 0 0 0 16px; }
+    .search-clear[hidden] { display: none; }
+    .search-retry { display: inline-block; margin-top: 18px; }
     .detail-langs + .detail-overview { margin-top: 14px; }
 
     /* DEB-4893 (DEB-4889 FR-20) — every page that loads draws a skeleton, never a word: grey blocks in the places and sizes of
