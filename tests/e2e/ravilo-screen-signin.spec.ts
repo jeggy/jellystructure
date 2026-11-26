@@ -391,8 +391,9 @@ test.describe("an admin removes the open sign-in (DEB-5777, FR-143-5)", () => {
     const userId = profiles.find(p => p.displayName === displayName)!.userId;
     // This screen's own row: other workers sign the same admin in on devices of the same name, so the name picks nobody.
     const deviceId = (await page.evaluate(() => localStorage.getItem("ravilo.screen.deviceId")))!;
-    const devices = await (await request.get(`/api/tv/admin/devices?userId=${encodeURIComponent(userId)}`)).json() as { deviceId: string }[];
-    expect(devices.map(d => d.deviceId), "the screen's own row").toContain(deviceId);
+    expect(deviceId, "the screen keeps its device id").toMatch(/^screen-/);
+    const devices = await (await request.get(`/api/tv/admin/devices?userId=${encodeURIComponent(userId)}`)).json() as { device_id: string }[];   // the wire is snake_case
+    expect(devices.map(d => d.device_id), "the screen's own row").toContain(deviceId);
     const del = await request.delete(`/api/tv/admin/devices/${encodeURIComponent(deviceId)}?userId=${encodeURIComponent(userId)}`);
     expect(del.status(), await del.text()).toBe(200);
     return userId;
