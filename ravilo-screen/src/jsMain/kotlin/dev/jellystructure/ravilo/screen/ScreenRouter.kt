@@ -224,7 +224,6 @@ internal class ScreenShell(
         // DEB-4662 (FR-8) — in the search field the keys that type or move the caret are the field's own: taken here
         // (so Backspace there is not a Back out of the search) and left un-prevented.
         val inField = entries.last().focusId == ScreenSearch.FIELD_ID && entries.last().search != null
-        if (inField && (event.key == "Backspace" || event.key == "Enter" || event.key == "ArrowLeft" || event.key == "ArrowRight")) return true
         // DEB-5685 (FR-57) — Right from the field reaches Clear while it shows.
         val clear = document.getElementById(ScreenSearch.CLEAR_ID) as? HTMLElement
         if (inField && event.key == "ArrowRight" && clear != null && !clear.hidden) {
@@ -232,6 +231,7 @@ internal class ScreenShell(
             event.preventDefault()
             return true
         }
+        if (inField && (event.key == "Backspace" || event.key == "Enter" || event.key == "ArrowLeft" || event.key == "ArrowRight")) return true
         when {
             inField && event.key == "ArrowDown" -> {
                 val first = document.getElementById("${ScreenSearch.TILE_PREFIX}0") ?: document.getElementById(ScreenSearch.RETRY_ID)
@@ -528,6 +528,13 @@ internal class ScreenShell(
         val element = document.getElementById(current.focusId) as? HTMLElement ?: return
         // DEB-4660 (FR-7) — on a title's page OK is the page's own: its actions, a season pill, an episode.
         if (current.detail != null && !current.focusId.startsWith("nav-")) { current.detail.activate(element); return }
+        // DEB-5685 (FR-57) — Clear empties the field and puts focus back in it; a failed search's Retry asks for the same text again.
+        if (current.search != null && element.id == ScreenSearch.CLEAR_ID) {
+            current.search.clear()
+            (document.getElementById(ScreenSearch.FIELD_ID) as? HTMLElement)?.let(focus::focus)
+            return
+        }
+        if (current.search != null && element.id == ScreenSearch.RETRY_ID) { current.search.retry(); return }
         if (element.getAttribute("data-action") == "retry") { retry(current); return }
         val seeAll = element.getAttribute("data-see-all")?.toIntOrNull()
         if (seeAll != null) {
@@ -546,13 +553,6 @@ internal class ScreenShell(
             val title = element.getAttribute("data-media-title") ?: element.querySelector(".tile-title, .hero-title")?.textContent ?: element.textContent ?: ""
             val kind = MediaKind.entries.firstOrNull { it.name.lowercase() == element.getAttribute("data-media-kind") } ?: MediaKind.MOVIE
             openTitle(mediaId, kind, title)
-        // DEB-5685 (FR-57) — Clear empties the field and puts focus back in it; a failed search's Retry asks for the same text again.
-        if (current.search != null && element.id == ScreenSearch.CLEAR_ID) {
-            current.search.clear()
-            (document.getElementById(ScreenSearch.FIELD_ID) as? HTMLElement)?.let(focus::focus)
-            return
-        }
-        if (current.search != null && element.id == ScreenSearch.RETRY_ID) { current.search.retry(); return }
             return
         }
         val focused = current.focusId
