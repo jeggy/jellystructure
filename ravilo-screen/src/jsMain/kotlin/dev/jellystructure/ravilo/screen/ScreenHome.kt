@@ -15,11 +15,9 @@ import org.w3c.dom.HTMLElement
 
 /** DEB-4658 FR-5/FR-14: the server owns every Home section and its order. */
 internal class ScreenHome(private val serverUrl: String, private val showProgress: () -> Boolean = { true }) {
-    private var body: HTMLElement? = null
     private val hero = ScreenHero(::absoluteUrl)
 
     fun render(feed: HomeFeed, mount: HTMLElement, language: String, slide: Int = 0, onSlide: (Int) -> Unit = {}) {
-        body = mount
         mount.textContent = ""
         val home = node("div", "home-feed lane-page")
         if (feed.heroes.isNotEmpty()) {
@@ -83,9 +81,13 @@ internal class ScreenHome(private val serverUrl: String, private val showProgres
      * DEB-5487 FR-42: every tile on screen has its image, whatever the cap. The 60 slots go to the on-screen tiles first;
      * slots left over go to off-screen tiles within one screen of focus, nearest first. An image goes only once its tile
      * has left the screen.
+     *
+     * DEB-5693 FR-62: the page's mount is found here, not remembered from Home's render, so a grid, Search, a person page and
+     * a title's rows load their art when Home failed or was never drawn. A tile whose `<img>` fails draws [fallback] in its
+     * place; it is asked for again once the tile has left the slots and comes back (the holder is emptied on the way out).
      */
     fun updateImages(focusId: String) {
-        val mount = body ?: return
+        val mount = document.getElementById("shell-body") as? HTMLElement ?: return
         val shell = document.getElementById("shell") as? HTMLElement ?: return
         val focus = document.getElementById(focusId) as? HTMLElement ?: return
         val focusBox = ScreenLane.restBox(focus, shell)
@@ -114,9 +116,12 @@ internal class ScreenHome(private val serverUrl: String, private val showProgres
         for ((holder, _) in nearby.sortedBy { it.second }.take(IMAGE_CAP - selected.size)) selected.add(holder)
         for (index in 0 until holders.length) {
             val holder = holders.item(index) as? HTMLElement ?: continue
+            if (holder.getAttribute("data-art-url") == null) continue   // no art to ask for: its letters stay
             if (holder in selected) {
-                if (holder.firstChild == null) holder.getAttribute("data-art-url")?.let(::image)
-                    ?.let { holder.appendChild(ScreenSkeleton.fadeOnLoad(it)) }
+                if (holder.firstChild == null) holder.getAttribute("data-art-url")?.let(::image)?.let { img ->
+                    img.addEventListener("error", { failed(holder) })
+                    holder.appendChild(ScreenSkeleton.fadeOnLoad(img))
+                }
             } else if (holder.firstChild != null) {
                 holder.textContent = ""
             }
@@ -136,9 +141,13 @@ internal class ScreenHome(private val serverUrl: String, private val showProgres
         target.setAttribute("data-media-kind", card.kind.name.lowercase())
         val frame = node("div", "tile-frame")
         val art = node("div", "tile-art")
+        art.style.background = "hsl(${hue(card.title)}, 30%, 18%)"   // R87: a tint of the title's own colour until the poster fades in
+        art.setAttribute("data-fallback", card.title)
+        if (card.watched) target.classList.add("tile-watched")
         val artUrl = if (shape == TileShape.LANDSCAPE) card.backdropUrl ?: card.posterUrl
             else card.posterUrl ?: card.backdropUrl
-        artUrl?.let { art.setAttribute("data-art-url", absoluteUrl(it)) }
+        if (artUrl.isNullOrBlank()) art.appendChild(fallback(card.title))
+        else art.setAttribute("data-art-url", absoluteUrl(artUrl))
         frame.appendChild(art)
         // The badges sit beside the art, not in it: FR-42's image slots empty the art holder when a tile leaves the screen.
         val code = if (isContinue && card.seasonNumber != null && card.episodeNumber != null)
@@ -187,6 +196,22 @@ internal class ScreenHome(private val serverUrl: String, private val showProgres
         target.appendChild(face)
         return target
     }
+
+    /** DEB-5693 FR-62: a tile's art failed. A cast face has no `data-fallback`: its initials already sit under the photo. */
+    private fun failed(holder: HTMLElement) {
+        val title = holder.getAttribute("data-fallback") ?: return
+        holder.textContent = ""
+        holder.appendChild(fallback(title))
+    }
+
+    /** Android TV's `Tile.kt` fallback: a gradient from a hue chosen by the title, and the title's first two letters. */
+    private fun fallback(title: String): HTMLElement {
+        val letters = label("div", "tile-letters", title.take(2).uppercase())
+        letters.style.background = "linear-gradient(to bottom, hsl(${hue(title)}, 38%, 22%), #202431)"
+        return letters
+    }
+
+    private fun hue(title: String): Long = (title.hashCode().toLong() and 0xFFFFFFFFL) % 360L
 
     private fun badge(className: String, text: String): HTMLElement = label("div", "tile-badge $className", text)
 

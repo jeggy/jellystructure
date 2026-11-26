@@ -107,6 +107,8 @@ test("Tizen Home draws server order, unknown kind as CUSTOM, and opens a channel
 });
 
 test("Tizen Home delays distant artwork and keeps at most 60 tile images (DEB-4658 FR-14)", async ({ page }) => {
+  // DEB-5693 FR-62: a tile whose image fails draws its letters, so these tiles are given pictures to keep.
+  await page.route("**/api/tv/image/**", route => route.fulfill({ status: 200, contentType: "image/png", body: PNG }));
   const rows = Array.from({ length: 10 }, (_, row) => ({
     id: `row-${row}`, title: `Shelf ${row}`, kind: "CUSTOM",
     items: Array.from({ length: 12 }, (_, tile) => card(`r${row}-t${tile}`, `Story ${row}-${tile}`)),
@@ -124,6 +126,8 @@ test("Tizen Home delays distant artwork and keeps at most 60 tile images (DEB-46
 });
 
 test("Tizen Home gives deep focused artwork priority in dense rows (DEB-4729, DEB-4658 FR-14)", async ({ page }) => {
+  // DEB-5693 FR-62: a tile whose image fails draws its letters, so these tiles are given pictures to keep.
+  await page.route("**/api/tv/image/**", route => route.fulfill({ status: 200, contentType: "image/png", body: PNG }));
   const rows = Array.from({ length: 20 }, (_, row) => ({
     id: `row-${row}`, title: `Shelf ${row}`, kind: "CUSTOM",
     items: Array.from({ length: 30 }, (_, tile) => card(`r${row}-t${tile}`, `Story ${row}-${tile}`)),
@@ -183,6 +187,8 @@ test("Tizen Down from the hero lands on the leftmost tile of a first row wider t
 });
 
 test("Tizen every on-screen tile keeps its poster while focus moves along a row (DEB-5487, FR-42)", async ({ page }) => {
+  // DEB-5693 FR-62: a tile whose image fails draws its letters, so these tiles are given pictures to keep.
+  await page.route("**/api/tv/image/**", route => route.fulfill({ status: 200, contentType: "image/png", body: PNG }));
   const rows = Array.from({ length: 4 }, (_, row) => ({
     id: `row-${row}`, title: `Shelf ${row}`, kind: "CUSTOM",
     items: Array.from({ length: 30 }, (_, tile) => card(`r${row}-t${tile}`, `Story ${row}-${tile}`)),
@@ -979,4 +985,20 @@ test.describe("Home stays current (DEB-5685 FR-59)", () => {
     seen.push({ type: "config_changed", rev: 2 });
     await expect.poll(() => seen.configReads).toBe(before + 1);
   });
+});
+
+// DEB-5693 (DEB-5685 FR-62): a watched tile is dimmed at rest and at full opacity while it holds focus, as Android TV's is.
+test("Tizen a watched tile is dimmed at rest and at full opacity when focused (DEB-5685, FR-62)", async ({ page }) => {
+  await boot(page, { heroes: [], channels: [], rows: [
+    { id: "shelf", title: "Shelf", kind: "CUSTOM", items: [
+      card("a", "Plain Title"), { ...card("b", "Seen Title"), watched: true }, { ...card("c", "Seen Again"), watched: true }] },
+  ], tile_shape: "POSTER", hero_height_pct: 48, focus_detail: "none" });
+  const opacity = (selector: string) => page.locator(selector).evaluate(e => Number(getComputedStyle(e).opacity));
+  await expect(page.locator("#home-row-0-tile-0")).toHaveClass(/focused/);
+  await expect.poll(() => opacity("#home-row-0-tile-1 .tile-art")).toBeLessThan(0.7);
+  expect(await opacity("#home-row-0-tile-0 .tile-art")).toBe(1);
+  await page.keyboard.press("ArrowRight");
+  await expect(page.locator("#home-row-0-tile-1")).toHaveClass(/focused/);
+  await expect.poll(() => opacity("#home-row-0-tile-1 .tile-art")).toBe(1);
+  await expect.poll(() => opacity("#home-row-0-tile-2 .tile-art")).toBeLessThan(0.7);
 });
