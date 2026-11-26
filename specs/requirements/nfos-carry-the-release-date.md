@@ -100,3 +100,23 @@ forced pass, and two titles still got a Jellyfin refresh every pass. This restor
   six Jellyfin ids each pass. A run of a title that was already stored and wrote nothing (no NFO, no episode NFO, no
   artwork) now sends no closing refresh; a title new to the store still gets it. An episode NFO written under an unchanged
   series NFO now stamps `nfoWrittenAt` too (FR-6's rule, which the `includeEpisodes` path had not followed).
+
+## Amendment 2026-11-26 — the forced-pass acceptance is relative to TMDB (DEB-5807)
+
+Task: DEB-5807. Prod QA of DEB-5479 (DEB-5486, `v1.73-68-gaef8508bf`, which contains `cb69e6557`) read 614 / 1 / 1 / 0 series
+written over four forced `write_nfo` + `sync_jellyfin` passes, and the two single writes were a multi-credit person whose
+`order` and role moved and a second person whose `<thumb>` moved. The credit-string fix held; nothing in the code can move
+those three fields without a TMDB answer that moved.
+
+- **Why a forced pass cannot promise 0 on its own.** `scan_files` is not skippable (`parseSkipSteps` keeps discovery) and a
+  full pass has no freshness filter, so `scanSeries` takes TMDB's aggregate credits for every series on every pass and
+  stores them before `write_nfo` runs. `NfoWriter` is a pure function of that stored cast (`<order>` is the sorted index,
+  `<role>` the stored `character`, `<thumb>` the `profilePath`). A 2026 show whose credits TMDB edits during the 14 minutes of
+  a pass is rewritten once, with only the files that really changed, and refreshed once. That is correct, not a defect.
+- **FR-5 acceptance, restated.** Two consecutive forced passes write 0 NFO files and send 0 refreshes **for every series
+  whose TMDB credits did not change between them**. A series that does write must have a matching log line from the first
+  pass (below); a write with no such line is a defect.
+- **FR-7 (new, log only).** When a scan stores a cast that differs from the stored one, it logs
+  `Credits changed from TMDB: <n> person(s) (<k> role, <k> order, <k> thumb, <k> added, <k> removed)` under category `media`
+  with the item id. A scan whose cast is equal logs nothing. No DTO, route or behaviour change.
+- QA rows for this acceptance report a mover as "TMDB moved" when its pass log carries that line, and as a failure when not.

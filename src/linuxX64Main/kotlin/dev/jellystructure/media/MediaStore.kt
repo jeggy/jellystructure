@@ -923,6 +923,9 @@ class MediaStore(
         // Phase 196 (FR-196-2) — this is THE scan write path (runScan's per-item store, and the targeted
         // per-item sync): the Scanner has just probed this title's files on disk. One of only two places
         // allowed to advance the freshness clock.
+        // DEB-5807 (FR-7): a scan that stores a different cast says so, so a forced write_nfo pass that
+        // rewrites a series can be told apart from one that rewrote it for no reason.
+        old?.let { castChangeSummary(it.cast, merged.cast) }?.let { Logger.info("Credits changed from TMDB: $it", "media", merged.id) }
         upsertItem(merged, examined = true)
         // Phase 204 (FR-204-1) — a scan re-finding a title with no real content change must not discard
         // every user's Home feed; `changed` is the same content-signature comparison stampTimestamps
