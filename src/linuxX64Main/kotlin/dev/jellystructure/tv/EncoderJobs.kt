@@ -137,8 +137,15 @@ class EncoderJobs(
     private val streams = mutableMapOf<String, Stream>()
     /** DEB-3629 (FR-313-12) — the CUDA cards that have written a segment since this process started: their next first job is not cold. */
     private val warmCards = mutableSetOf<Int>()
-    private val dispatcher = newFixedThreadPoolContext(MAX_JOBS + 1, "encoder-jobs")
+    /**
+     * DEB-5702 (FR-313-25) — the idle sweep, the first-segment watchers and `removeTree` run on a small pool of their own, so they run
+     * whatever the jobs are doing. Each job's ffmpeg reader blocks in `fgets` for the job's life (a SIGSTOPped one too): it runs on
+     * [readers], sized for blocking reads, and never holds this pool.
+     */
+    private val dispatcher = newFixedThreadPoolContext(CONTROL_THREADS, "encoder-control")
     private val scope = CoroutineScope(SupervisorJob() + dispatcher)
+    private val readers = newFixedThreadPoolContext(READER_THREADS, "encoder-readers")
+    private val readerScope = CoroutineScope(SupervisorJob() + readers)
 
     init {
         mkdirs(root)
@@ -365,7 +372,7 @@ class EncoderJobs(
         Logger.info("encoder $streamId: ${if (side) "side job" else "start"} at segment $k — ${plan.codec} ${plan.rungs.size} rungs ${plan.rungs.joinToString("/") { "${it.height}p@${it.videoBps / 1000}k" }}, " +
             "${plan.audio.size} audio, ${plan.mux}, card ${plan.cudaDevice ?: "cpu"}${if (plan.tonemaps) ", tone-mapped" else ""}${if (plan.burnSubtitleOrder != null) ", burn-in" else ""}", "tv")
         if (canRefuse) scope.launch { watchFirstSegment(streamId, job, deadlineMs) }
-        scope.launch {
+        readerScope.launch {
             memScoped {
                 val pipe = popen("echo \$\$; ${envPrefix()} exec $cmd 2>${"'" + dir + "/ffmpeg.log'"}", "r")
                 if (pipe == null) { job.exited = true; return@memScoped }
@@ -527,6 +534,10 @@ class EncoderJobs(
 
     companion object {
         const val MAX_JOBS = 8
+        /** DEB-5702 (FR-313-25) — the pool the idle sweep, the first-segment watchers and `removeTree` share; none of them blocks. */
+        const val CONTROL_THREADS = 3
+        /** DEB-5702 (FR-313-25) — threads for the ffmpeg readers, each blocked in `fgets` for its job's life; above [MAX_JOBS] with room for side jobs and kept-warm streams. */
+        const val READER_THREADS = 64
         const val PAUSE_AHEAD = 20       // 40 s of 2 s segments
         const val RESUME_AHEAD = 10      // 20 s
         const val REACH_AHEAD = 10       // a request up to 20 s past what exists waits for this job
