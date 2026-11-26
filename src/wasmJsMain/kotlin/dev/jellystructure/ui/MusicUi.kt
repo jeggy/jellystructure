@@ -87,7 +87,10 @@ internal fun muWireMenus(root: Element) {
             ev.stopPropagation()
             val open = w.classList.contains("open")
             muCloseMenus()
-            if (!open) w.classList.add("open")
+            if (!open) {
+                w.classList.add("open")
+                muPlaceInScroller(w)
+            }
         }
         val items = w.querySelectorAll(".menu-item")
         for (j in 0 until items.length) (items.item(j) as? HTMLElement)?.addEventListener("click") { muCloseMenus() }
@@ -96,12 +99,33 @@ internal fun muWireMenus(root: Element) {
         muMenusGlobal = true
         document.addEventListener("click") { ev -> if ((ev.target as? Element)?.closest(".menu-wrap, .split") == null) muCloseMenus() }
         document.addEventListener("keydown") { ev -> if ((ev as? KeyboardEvent)?.key == "Escape") muCloseMenus() }
+        // A fixed menu would stay put while its row scrolls away; capture so a sideways scroll of the table counts.
+        document.addEventListener("scroll", { muCloseMenus() }, true)
+        window.addEventListener("resize") { muCloseMenus() }
     }
+}
+
+/** DEB-3907 FR-9 — a menu inside a `.mu-scroll` is cropped by it (`overflow-x:auto` makes `overflow-y` auto), so it
+ *  opens `position:fixed` at [fixedMenuPlacement]'s spot. [muCloseMenus] puts the four properties back. */
+private fun muPlaceInScroller(w: HTMLElement) {
+    if (w.closest(".mu-scroll") == null) return
+    val menu = w.querySelector(".menu") as? HTMLElement ?: return
+    val btn = w.querySelector(".menu-btn") as? HTMLElement ?: return
+    val r = btn.getBoundingClientRect()
+    val (left, top) = fixedMenuPlacement(
+        r.left, r.top, r.bottom, menu.offsetWidth.toDouble(), menu.offsetHeight.toDouble(),
+        window.innerWidth.toDouble(), window.innerHeight.toDouble(),
+    )
+    menu.style.position = "fixed"; menu.style.top = "${top}px"; menu.style.left = "${left}px"; menu.style.right = "auto"
 }
 
 internal fun muCloseMenus() {
     val open = document.querySelectorAll(".menu-wrap.open, .split.open")
-    for (i in 0 until open.length) (open.item(i) as? HTMLElement)?.classList?.remove("open")
+    for (i in 0 until open.length) {
+        val w = open.item(i) as? HTMLElement ?: continue
+        w.classList.remove("open")
+        (w.querySelector(".menu") as? HTMLElement)?.style?.let { it.removeProperty("position"); it.removeProperty("top"); it.removeProperty("left"); it.removeProperty("right") }
+    }
 }
 
 /** A multipart upload (`file`) through the browser; [done] gets whether the server said yes. */
