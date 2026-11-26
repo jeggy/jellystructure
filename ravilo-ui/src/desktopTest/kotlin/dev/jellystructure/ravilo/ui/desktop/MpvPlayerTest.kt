@@ -1,8 +1,12 @@
 package dev.jellystructure.ravilo.ui.desktop
 
+import java.io.ByteArrayOutputStream
+import java.io.PrintStream
+import java.lang.reflect.Proxy
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNotEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -57,5 +61,64 @@ class MpvPlayerTest {
         assertNull(p.takeFrame())
         assertEquals(MacPlayerState.EMPTY, p.state)
         p.release()
+    }
+    // ── DEB-5764 (FR-R335-12) — libmpv refuses a desktop session's locale, and a player that cannot start says so ──
+
+    /** A session's locale: glibc's built-in `C.UTF-8` is not "C", which is all libmpv's check needs; null where libc has none. */
+    private fun asDesktopSession(): String? = listOf("en_US.UTF-8", "de_DE.UTF-8", "C.UTF-8").firstNotNullOfOrNull { l -> Mpv.setNumericLocale(l)?.takeIf { it != "C" } }
+
+    @Test
+    fun `the numeric locale is C before libmpv is made, whatever the session set`() {
+        if (DesktopPaths.isMac) return
+        val before = Mpv.numericLocale() ?: return
+        try {
+            asDesktopSession() ?: return   // a libc with no such locale installed: nothing to undo
+            assertNotEquals("C", Mpv.numericLocale())
+            assertEquals("C", Mpv.useCNumericLocale())
+            assertEquals("C", Mpv.numericLocale())
+        } finally { Mpv.setNumericLocale(before) }
+    }
+
+    @Test
+    fun `with libmpv present a desktop session's locale still gets a player`() {
+        if (DesktopPaths.isMac || Mpv.lib == null) return   // the integration where libmpv exists (the lab, a Linux desktop); elsewhere it skips
+        val before = Mpv.numericLocale() ?: return
+        val p = MpvPlayer(audioOnly = true)
+        try {
+            asDesktopSession() ?: return
+            p.load("file:///nowhere.mp3")
+            assertTrue(p.loaded)
+            assertFalse(p.error()?.contains("mpv_create") == true, "mpv_create must not fail under the session's locale: ${p.error()}")
+        } finally { p.release(); Mpv.setNumericLocale(before) }
+    }
+
+    /** A libmpv whose every call answers nothing: `mpv_create` is NULL, as it is under a locale it refuses. */
+    private fun libmpvThatCannotCreate(): MpvLib = Proxy.newProxyInstance(MpvLib::class.java.classLoader, arrayOf(MpvLib::class.java)) { _, m, _ ->
+        when (m.returnType) {
+            java.lang.Long.TYPE -> 0L
+            Integer.TYPE -> 0
+            java.lang.Double.TYPE -> 0.0
+            java.lang.Boolean.TYPE -> false
+            else -> null
+        }
+    } as MpvLib
+
+    @Test
+    fun `a player that cannot be made is a failed item with a line in the log, never silence`() {
+        val log = ByteArrayOutputStream()
+        val out = System.out
+        System.setOut(PrintStream(log, true))
+        try {
+            val p = MpvPlayer(audioOnly = true, lib = libmpvThatCannotCreate())
+            p.load("https://example.invalid/song.mp3")
+            assertTrue(p.loaded, "the caller's monitor keeps reading until it sees the failure")
+            assertTrue(p.state.failed)
+            assertTrue(p.error()?.contains("mpv_create failed") == true, p.error())
+            assertFalse(p.networkFailure(), "not the network: the song is not retried as one")
+            val line = log.toString().lines().single { it.isNotBlank() }
+            assertTrue("mpv: could not start the player (mpv_create failed" in line && "song" in line, line)
+            p.release()
+            assertFalse(p.loaded)
+        } finally { System.setOut(out) }
     }
 }

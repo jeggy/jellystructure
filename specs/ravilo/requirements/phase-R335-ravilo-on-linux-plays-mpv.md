@@ -4,13 +4,10 @@
 > the specs and then start implementing, so we can have full proper 4k support (on devices that have 4k support) on
 > linux machines"*.
 
-## Status
+## Scope
 
-`⚠ Partial` — **built 2026-09-30; the engine and the Flatpak are verified in the Fedora container (software decode, 1080p
-and 4K HEVC at their frame rate through the ring, inside the sandbox too); a real GPU, a real 4K display, HDR's look and
-path (b) are unverified** (§Build notes). Written
-2026-09-30 (dev-authored) from `research-reports/ravilo-linux-flatpak-2026-09-29.md` §5. Number verified free:
-`origin/main` tops at R332, local `main` at R334.
+Written 2026-09-30 (dev-authored) from `research-reports/ravilo-linux-flatpak-2026-09-29.md` §5. What was verified where, and
+what is owed (a real GPU, a 4K display, HDR's look, path (b)), is in §Build notes and §Triage.
 
 **Builds on** R328 (the desktop app; on Linux every seam but the player already answers), R329 (the player seam's
 shape on the desktop: an engine behind `RaviloPlayer`/`MusicEngine`, frames copied into a three-buffer ring Skia
@@ -122,6 +119,24 @@ checksum, FFmpeg from `org.freedesktop.Platform.ffmpeg-full` declared in `add-ex
 JSON → tracks mapping, the state mapping (`MpvState` from property values), the render-param packing, and — where
 `libmpv` exists (the container) — one integration test that plays a generated file headlessly and sees frames;
 elsewhere it skips, saying so.
+
+**Amendment 2026-11-26 (DEB-5764) — FR-R335-12 — The engine starts under the viewer's own locale, and never fails without a word.**
+Found on the 1.73 Flatpak in the QA lab (DEB-5754): a song loaded in the player bar and stayed at 0:00, no audio stream opened,
+and `ravilo.log` said nothing. Reproduced in a container with the release bundle: libmpv refuses to start — `mpv_create`
+returns NULL, `Non-C locale detected. This is not supported.` — while the process's `LC_NUMERIC` is not "C", and a desktop
+session's `LANG` (`en_US.UTF-8`, `da_DK.UTF-8`, `de_DE.UTF-8`) puts it there. Only `C.UTF-8` or an unset locale worked, which
+is every container this phase was verified in. Films failed the same way. This restores FR-R335-2, FR-R335-8 and FR-R335-9
+(music and films play on a Linux desktop, a failure is R237's card); what it adds is:
+1. **The numeric locale is "C" before every `mpv_create`.** `Mpv.useCNumericLocale()` calls libc's `setlocale(LC_NUMERIC, "C")`
+   through JNA on each create, not once at load: a toolkit that starts later restores the session's.
+2. **A player that cannot be made is a failed item and a log line.** `MpvPlayer.load` writes one stamped line to `ravilo.log`
+   (`mpv: could not start the player (<cause>) — the song|film cannot play`) and reports the item failed, so R237's card (films)
+   or R322's sheet (music) shows; the monitors keep reading until they see it. Before this, `load` returned silently, the
+   state stayed empty and `loaded` stayed false, so no freeze watch, no sheet and no line could ever fire. Without libmpv at
+   all (`available == false`) nothing changes: FR-R335-7's honest absence.
+Tests: `MpvPlayerTest` — the locale helper turns a non-"C" `LC_NUMERIC` back to "C"; a `MpvLib` whose `mpv_create` is NULL gives
+a failed item, `loaded` true, a non-network error and the log line; where libmpv exists, a player is made under the session's
+locale. On-device: a Linux desktop in a regional locale plays a song with the position moving (QA).
 
 ## Out of scope
 

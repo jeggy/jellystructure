@@ -33,6 +33,25 @@ internal object Mpv {
         return null
     }
 
+    /**
+     * DEB-5764 (FR-R335-12) — libmpv will not start (`mpv_create` returns NULL, "Non-C locale detected") while the process's
+     * `LC_NUMERIC` is not "C", and a desktop session's locale (`en_US.UTF-8`, `da_DK.UTF-8`) is exactly that: the JVM and the
+     * toolkit call `setlocale(LC_ALL, "")`. So the engine asks for "C" before every `mpv_create` — once is not enough, a
+     * toolkit that starts later puts the session's back. Returns the category's locale after the call ("C"), or null where
+     * libc has no `setlocale` to ask.
+     */
+    fun useCNumericLocale(): String? = runCatching { libc.setlocale(LC_NUMERIC, "C") }.getOrNull()
+
+    /** The category's current locale, without changing it. */
+    internal fun numericLocale(): String? = runCatching { libc.setlocale(LC_NUMERIC, null) }.getOrNull()
+
+    /** Sets the category to [locale] — a test's way to be a desktop session. Null: libc refused it (the locale is not installed). */
+    internal fun setNumericLocale(locale: String): String? = runCatching { libc.setlocale(LC_NUMERIC, locale) }.getOrNull()
+
+    private const val LC_NUMERIC = 1   // glibc and musl agree
+    private val libc: LibC by lazy { Native.load("c", LibC::class.java) }
+    internal interface LibC : Library { fun setlocale(category: Int, locale: String?): String? }
+
     // ── client.h ──
     const val FORMAT_STRING = 1
     const val FORMAT_FLAG = 3

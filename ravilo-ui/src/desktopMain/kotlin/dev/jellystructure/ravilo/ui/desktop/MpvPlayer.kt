@@ -30,8 +30,7 @@ import kotlin.math.roundToInt
  * Every call comes from Compose's thread except the event loop, which runs on its own daemon thread and only writes
  * the few flags [state] reads. mpv's own property reads are thread-safe.
  */
-internal class MpvPlayer(private val audioOnly: Boolean) : DesktopEngine {
-    private val lib = Mpv.lib
+internal class MpvPlayer(private val audioOnly: Boolean, private val lib: MpvLib? = Mpv.lib) : DesktopEngine {
     private var handle: Pointer? = null
     private var render: Pointer? = null
     /** Path (b), FR-R335-4: the X11 window mpv draws into itself (`vo=gpu-next`); 0 = path (a), the ring. */
@@ -45,6 +44,8 @@ internal class MpvPlayer(private val audioOnly: Boolean) : DesktopEngine {
     @Volatile private var lastErrorCode = 0
     @Volatile private var firstFrame = false
     @Volatile private var lastWarning: String? = null
+    /** DEB-5764 (FR-R335-12) — libmpv is there but a player could not be made: the item is failed, with [lastError] the cause. */
+    @Volatile private var startFailed = false
 
     private var readAtNs = 0L
     private var cached = MacPlayerState.EMPTY
@@ -56,13 +57,14 @@ internal class MpvPlayer(private val audioOnly: Boolean) : DesktopEngine {
     private var subScale = 1f
 
     override val available: Boolean get() = lib != null
-    override val loaded: Boolean get() = handle != null && item != 3
+    override val loaded: Boolean get() = (handle != null || startFailed) && item != 3
     override val decoderName: String get() = "mpv"
     override val rendersSubtitles: Boolean get() = true
 
     private fun create(): Pointer? {
         val l = lib ?: return null
-        val h = l.mpv_create() ?: run { lastError = "mpv_create failed"; return null }
+        Mpv.useCNumericLocale()   // FR-R335-12: libmpv refuses a session's own locale
+        val h = l.mpv_create() ?: run { lastError = "mpv_create failed (LC_NUMERIC ${Mpv.numericLocale() ?: "?"})"; return null }
         fun opt(name: String, value: String) { l.mpv_set_option_string(h, name, value) }
         opt("terminal", "no")
         opt("input-default-bindings", "no")
@@ -136,12 +138,20 @@ internal class MpvPlayer(private val audioOnly: Boolean) : DesktopEngine {
 
     override fun load(url: String, mime: String, startMs: Long) {
         val l = lib ?: return
-        val h = handle ?: create()?.also { handle = it } ?: return
+        val h = handle ?: create()?.also { handle = it } ?: return failToStart()
+        startFailed = false
         item = 0; firstFrame = false; lastError = null; lastErrorCode = 0; stalls = 0; wasStalled = false
         l.mpv_set_property_string(h, "start", if (startMs > 0) "%.3f".format(java.util.Locale.ROOT, startMs / 1000.0) else "none")
         l.mpv_set_property_string(h, "pause", "no")
         l.mpv_command(h, StringArray(arrayOf("loadfile", url, "replace")))
         readAtNs = 0L
+    }
+
+    /** DEB-5764 (FR-R335-12) — no player could be made: the log says why, once per try, and the item is failed so the caller's sheet shows. */
+    private fun failToStart() {
+        startFailed = true; item = 2; firstFrame = false; lastErrorCode = 0
+        readAtNs = 0L; cached = MacPlayerState.EMPTY
+        DesktopLog.note("mpv: could not start the player (${lastError ?: "unknown"}) — the ${if (audioOnly) "song" else "film"} cannot play")
     }
 
     override fun setHlsBitrate(bps: Long?) {
@@ -222,7 +232,7 @@ internal class MpvPlayer(private val audioOnly: Boolean) : DesktopEngine {
     override val state: MacPlayerState
         get() {
             val l = lib ?: return MacPlayerState.EMPTY
-            val h = handle ?: return MacPlayerState.EMPTY
+            val h = handle ?: return if (startFailed) MacPlayerState.EMPTY.copy(item = 2) else MacPlayerState.EMPTY
             val now = System.nanoTime()
             if (now - readAtNs < STATE_TTL_NS) return cached
             readAtNs = now
@@ -334,6 +344,7 @@ internal class MpvPlayer(private val audioOnly: Boolean) : DesktopEngine {
     }
 
     override fun release() {
+        startFailed = false
         val l = lib ?: return
         val h = handle ?: return
         running.set(false)
