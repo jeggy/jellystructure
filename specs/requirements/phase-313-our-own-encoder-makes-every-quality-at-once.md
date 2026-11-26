@@ -1190,3 +1190,139 @@ set's median `first_frame_ms` on our encoder, against 5.1 s.
 
 Build order: FR-313-19 and FR-313-20 are one piece. FR-313-21 is a second piece, `blocked` by the first, because both
 change `Encoder.kt` and `EncoderJobs.kt`.
+
+## Amendment 2026-11-26 (DEB-5685) — a warm stream that is adopted stays warm, and a busy card is shared in order
+
+> Owner on DEB-5620, 2026-11-26: *"He finished a lot. Let's give him way more tasks again."* DEB-5685's theme 2, QoE,
+> buffering and cache, building on what DEB-5645 to DEB-5648 shipped. Found by reading `Encoder.kt`, `EncoderJobs.kt`
+> and `PlaybackService.kt` on `main` at `2c207f2c9`. Each one is provable with the fake ffmpeg the encoder tests already
+> use. No wire change, no schema, no client change.
+
+**What the code does today.**
+1. **A kept-warm stream loses FR-313-20 when it is adopted.** `Stream.headStart` / `headServed` are set by the stream's
+   first job only. `adoptPrewarm` re-keys the entry and leaves `headServed` true from the first play. So Back, then Play
+   again on the Samsung (FR-313-21's own case) adopts the stream at segment S, AVPlay's `prepareAsync` reads segment 0,
+   and `segment()` takes the read as a seek: it kills the paused job at S, runs a job at 0 that nobody watches, and the
+   play restarts cold once the kept files run out. FR-313-21's QA line (*"no `start at segment 0`"*) cannot pass. And an
+   adopted entry whose job had idled out gets no eager start (`withRenditions` calls `startWithTicket` only when nothing
+   was adopted).
+2. **The budget counts a play's own warm job against it, trims before it evicts, then evicts everything.** `place` sums
+   every running job, this device's prewarm for this item included. `planFor` evicts only when nothing fits; a partial fit
+   goes straight to `trimRungs`. And `stopPrewarms` stops every prewarm on every device at once.
+3. **A prewarm can evict.** `prewarmPlayback` calls the same `planFor`, so a page dwell or a Continue Watching hold on one
+   TV stops another TV's kept-warm stream and its side job. Two pages re-posting every 30 s evict each other in turn.
+4. **Placement has no reservation.** `place` reads jobs that exist. Two starts at once, or every play re-asking a second
+   after a deploy (`restartFor`), each see an empty card, and `cards()`' session count is 5 s old.
+5. **The job pool can run out.** `EncoderJobs`' dispatcher has `MAX_JOBS + 1` (9) threads. Each job's `popen`/`fgets`
+   loop holds a thread for its whole life, a paused (SIGSTOPped) one too, and the idle sweeper, `watchFirstSegment` and
+   `removeTree` share the same pool. One-rung jobs cost 0.125, side jobs skip placement, and kept-warm streams add to the
+   count, so ten live jobs are reachable. The tenth job's reader then never runs (its first read is a 503 after 15 s), and
+   the idle sweep stops.
+6. **An unread warm job runs 40 s ahead.** Before any read, `furthestRequest` is the start, so a prewarm or an eager
+   ticket job pauses only at `PAUSE_AHEAD` (20 segments): every rung, 40 s, at full speed, for a dwell the viewer may
+   walk away from.
+7. **Adoption asks for the same start rung, which the job never uses.** `samePlay` compares `startRung`, but
+   `encoderCommand` never reads it: only the master's order does. The take moves whenever a QoE report lands (the
+   Samsung's FR-25 posts every 120 s and at the end), so a start rung that moved inside the same rung set throws a warm
+   stream away and starts cold.
+
+### FR-313-22 — An adopted stream protects its opening read again
+
+- When a play adopts a prewarm or a kept-warm stream (`adoptPrewarm`), the stream's head is re-armed at the adopted
+  start: `headStart` = the start segment and `headServed` = (start == 0). FR-313-20 then applies to the adopting play's
+  opening read exactly as to a fresh stream: a read before the start is a side job, and the job at the start keeps
+  running.
+- A play that adopts an entry whose job is gone (stopped by idle or by the budget, the entry still there) starts it with
+  the ticket, at the adopted start, as FR-313-19 does for a stream with nothing adopted.
+- Everything else in FR-313-20 and FR-313-21 is unchanged.
+
+### FR-313-23 — Warm jobs give way one at a time, and only to a play
+
+- **A play's own warm job is not counted against it.** When a play is placed, the load of the warm stream for the same
+  (device, item), the one it may adopt, is left out.
+- **A play that does not fit with all its rungs stops warm jobs before it trims.** One at a time, then it is placed
+  again: first other devices' page prewarms (oldest post first), then kept-warm streams (FR-313-21, oldest stop first),
+  then side jobs (FR-313-20). It stops when the play fits with every rung, and trims only when none is left. This
+  replaces the stop-all in `stopPrewarms` and FR-313-8's *"a prewarm job is the first stopped when slots run out"* reads
+  this way.
+- **A prewarm never stops anything.** A prewarm post that does not fit is answered `none` (`"no encoder slot free"`),
+  and nothing running is touched. It never trims either: a prewarm is made with the plan a play would get, or not at all.
+- A download keeps its own order (`cardsLastFirst`) and is a play for this rule.
+
+### FR-313-24 — Placement counts what it has just placed
+
+- Placing a job and registering its stream are one step under one lock, so two plays placed at the same moment see each
+  other.
+- A registered stream with no job yet (its ticket is out and its first job has not started) counts at its plan's load
+  for 15 s after it is registered, or until its job starts.
+- Each placement adds its sessions to the card's cached session count until the next `nvidia-smi` read, so the 2060
+  SUPER's session rule (`placeJob`) sees them.
+- `restartFor` (the plays re-asking after a deploy) goes through the same step, so the re-asks after a restart are
+  placed one after the other.
+
+### FR-313-25 — A job's reader never holds the pool
+
+- Each job's ffmpeg reader runs on a thread of its own, or on a dispatcher sized for blocking reads (at least 64), never
+  on the pool the sweeper and the watchers use. A paused job's reader blocking on `fgets` holds only its own thread.
+- The idle sweep, `watchFirstSegment` and `removeTree` run on a small dispatcher of their own, so they run whatever the
+  jobs are doing.
+- `MAX_JOBS` stays the budget's figure. Nothing here changes how many jobs placement allows.
+
+### FR-313-26 — A warm job nobody reads yet runs 10 s ahead, not 40 s
+
+- A job started by a prewarm, a kept-warm stop or a ticket (FR-313-19) is *warm-only* until its first read that is not a
+  prewarm's own. While it is warm-only it pauses at `WARM_AHEAD` = 5 segments (10 s) ahead of its start, instead of
+  `PAUSE_AHEAD` (40 s).
+- The first real read ends warm-only. The job then runs and pauses under FR-313-1 as today, and `touch`'s
+  `RESUME_AHEAD` resumes it when it is paused.
+- A prewarm re-post (every 30 s) does not end warm-only.
+
+### FR-313-27 — Adoption does not ask for the same start rung
+
+309's adoption rule (*"same plan, start within one segment"*) and FR-313-21's *Not changed* are amended: the plan
+compared for adoption leaves out `startRung`. When the rung set, codec, audio, subtitles, burn-in and muxing match, the
+play adopts the warm stream, and the stream takes the play's start rung: its master lists that rung first from then on,
+and the ticket's `startVariantBps` is the play's own. The job is not restarted, because its command does not depend on the
+start rung. A play whose rung set differs (the take moved past a rung boundary, a budget trim) still does not adopt.
+
+### Not changed
+
+The plan, the rungs, `trimRungs`' order (which rung a trim keeps is the owner's call, see *Open* below), the 2 s segments,
+FR-313-1's pause and resume figures for a job that is being read, FR-313-9's disk rules, and every client.
+
+**Open, for the owner (not built here).** Under a budget trim, `trimRungs` keeps the start rung, then the one below, then
+the one above. With DEB-5645's floor-first ladder `720/480/360/240` (start 480) a two-slot card keeps `480/360`, so the
+climb rung DEB-5645 added is the first thing a busy card drops. Keeping the rung below is what *a thin path always has a
+lower rung* asks for, and it is the recommendation: no change.
+
+### Tests
+
+All with the fake ffmpeg and `cardsOverride` the encoder tests use today (`EncoderEagerStartTest`, `EncoderWarmStopTest`).
+- **FR-313-22** (`EncoderWarmStopTest`): play at 30, stop with a resume point, adopt at 31, read segment 0. A side job
+  answers it, the job at 31 is still running, and no job starts at 0 as the current one. An adopted entry whose job
+  idled out (`idleTimingMs`) starts a job at its start with the ticket.
+- **FR-313-23** (new `EncoderBudgetTest`, one card): a play whose own prewarm is on the card gets every rung and adopts
+  it; a full card with two other devices' prewarms stops one and places the play with every rung; a prewarm post on a
+  full card with a kept-warm stream for another device is answered `none` and the kept stream is still there.
+- **FR-313-24** (`EncoderBudgetTest`, `kickJobs = false`): two `planFor` + `register` calls on one card; the second sees
+  the first's load. Restored streams (`StreamPlanStore`, as `StreamPlansSurviveTest`) read concurrently are placed one
+  after the other.
+- **FR-313-25** (new `EncoderJobsThreadsTest`, `cudaDevice = null`): ten streams started with their tickets, all paused;
+  an eleventh stream's first segment arrives in under 3 s, and an idle stream is still swept.
+- **FR-313-26** (`EncoderEagerStartTest`): after a prewarm, the job is paused with at most 5 segments past its start; a
+  real read resumes it and it keeps up to 20 ahead; a re-post leaves it at 5.
+- **FR-313-27** (`EncoderWarmStopTest`): kept warm with start rung 0, a play with the same rungs and start rung 1 adopts
+  the same stream id, and its `master()` lists the play's rung first; a play whose rung set differs does not adopt.
+
+### Proof (QA, parked on DEB-4608; does not block the build)
+
+On the `tizen-emulator` row: Back, then Play again within 30 s, logs `play adopted the prewarm` and then the side job's
+line for segment 0, with no `start at segment 0` (FR-313-22). The log of a prewarm shows it paused 10 s ahead (FR-313-26).
+
+### Build order
+
+- FR-313-22 first.
+- FR-313-27 follows it (both change `adoptPrewarm`).
+- FR-313-23 and FR-313-24 are one piece: both change `place` and `planFor`.
+- FR-313-25 stands alone.
+- FR-313-26 follows FR-313-25 (both change `EncoderJobs.start`).

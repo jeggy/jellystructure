@@ -1978,3 +1978,217 @@ picker, trailers (a YouTube frame on Tizen is unproven), and the focus-detail pa
 - FR-53 follows FR-51, in the same `ScreenDetail.kt`.
 - FR-52 and FR-54 stand alone. FR-54's changes to `Screen.kt` are in the key handling and the chrome, not in the parts
   DEB-5629 and DEB-5630 changed.
+
+## Amendment 2026-11-26 (DEB-5685) — See all, the rest of a title's header, and Search's empty field
+
+> Owner on DEB-5620, 2026-11-26: *"He finished a lot. Let's give him way more tasks again."* The parity items the
+> sixth amendment of 2025-11-25 put off (*Not in this amendment*), taken in the order a viewer meets them. Each one
+> reaches the Samsung only through this amendment (*Parity* non-goal), copies Android TV's look into `screen.css`, and
+> needs no design round. Every string is one Android TV already uses, in `ravilo-i18n`. No wire change.
+
+**FR-55 · A row that has more ends in *See all*, and the grid behind it is the row's whole list.** Android TV's
+`SeeAllTile` (`components/Tile.kt`) at the end of `ContentRowItem` (`screens/HomeScreen.kt`, `canSeeAll`;
+`ChannelScreen.kt` the same) and its `SeededBrowse` destination (`screens/SeededBrowseScreen.kt`,
+`SeededBrowseStore.load`).
+- **Which rows.** A Home or channel row for which `Row.offersSeeAll()` (`shared`, Models.kt) is true. Not FR-51's
+  *More like this*, not a grid, not the cast row.
+- **The tile.** The row's last tile, the row's tile size, the arrow and `browse.see_all_short`, in Android TV's look. It
+  is a tile under FR-4, FR-39 and FR-41: it grows when focused and focus memory keeps it like any tile. It has no image,
+  so it takes none of FR-42's slots.
+- **OK on it** pushes a seeded grid, FR-49's page generalised (`ScreenBrowse` with a seed that is a row, not a person):
+  - The heading is the row's title, then the count line (`browse.titles` / `browse.title_one`). No breadcrumb.
+  - It reads once, the whole set, the way `SeededBrowseStore.load` chooses: `recommendations(channelId)` for a
+    `recommendations` row, `continueAll(channelId)` for the `RowKind.CONTINUE` row (its `MediaCard`s wrapped as
+    `BrowseCard`), else `browseSeeded(row.seedQuery, row.seedMediaKind)`. `channelId` is the channel page's, or null on
+    Home.
+  - Its order is the one Android TV opens the same row in: `initialBrowseSort(row.sortBy, row.sortDescending)`, applied
+    with `browseOrder`. `SortField`, `SortDir`, `initialBrowseSort` and `browseOrder` move from `ravilo-ui` to `shared`
+    (pure Kotlin on `BrowseCard`), and `ravilo-ui`'s callers keep their behaviour. There are no sort controls (FR-6).
+  - Its tiles are FR-52's, and a Continue Watching grid's tiles draw FR-5's progress bar under the same switch.
+  - It draws FR-20's skeleton and failure as a grid does. An empty answer draws the Android TV empty line.
+- **Back** returns to the row with focus on the *See all* tile.
+
+**FR-56 · A title's header carries Android TV's facts, and the overview opens.** FR-7 is amended. Copied from
+`MovieDetailScreen.kt` and `SeriesDetailScreen.kt` (the header column), `components/ImdbChip.kt`,
+`components/DetailSynopsis.kt`, `components/AboutSection.kt` and `components/SeasonPicker.kt`:
+- **The meta line** gains, after today's year, runtime and rating badge: the IMDb chip when `imdbRating` is present (the
+  rating as `ImdbChip` prints it, one decimal, `imdb.a11y` as its label), then the ✓ `action.watched` chip when the card
+  is watched.
+- **The genres** (`genres`) as a text line under the meta line: the first three, then `+N`. They are not focus targets
+  in this amendment.
+- **The overview** is a focus target between the header and the actions, as `DetailSynopsis`. Collapsed it keeps
+  today's clamp. OK opens it to its full length and OK again closes it. A text that fits shows no chevron. The focus ring
+  is FR-38's, with no movement of the page.
+- **About.** After the episodes or the overview, before the cast row, an *About* block (`about.title`) with the rows
+  `aboutRows(about, series)` makes, in its order. `aboutRows`, `aboutDate` and `countryName` (`seams/CountryNames.kt`)
+  move to `shared`, with the string lookup passed in, and `ravilo-ui`'s `AboutSection` passes its own. No `about`, no
+  block. It is text only, so focus skips it.
+- **A series, in addition:** the next-airing line under the meta line when `nextAiring` is present (`sonarr.next_ep`,
+  as Android TV words it); and the season pills carry a ✓ when every counted episode of that season is watched, from the
+  page's overlay (`SeasonPicker`'s `watchedSeasons`).
+- Everything here is in `MovieDetail` and `SeriesDetail` today. No wire change.
+
+**FR-57 · Search's empty field shows suggestions, the field can be cleared, and a failed search says so.** FR-8 is
+amended. Copied from `SearchScreen.kt` (`SearchStore.onQuery`, `loadSuggestions`, the Clear button):
+- **Suggestions.** With the field empty, the page asks `search("")` once per visit and draws the answer's movies and
+  series under `search.suggestions_label` as today's result grid. A failed or empty answer keeps today's hint line.
+- **Clear.** Right from the field reaches a *Clear* button (`search.clear`) at the field's end, shown only while the
+  field holds text. OK empties the field, puts focus back in it, and shows the suggestions. Left returns to the field.
+- **A failed search.** A query whose answer fails no longer leaves the previous query's results on screen
+  (`ScreenSearch.typed`, today's `getOrNull() ?: return@launch`). The results are replaced by `error.generic` and a
+  *Retry* button (`action.retry`) that asks for the same text again. A later keystroke asks as today.
+- Down from the field still enters the results, and Back from them still returns to the field with its text (FR-8).
+
+**Proof (CI),** Playwright on `ravilo-screen`, with the existing mocks extended:
+- **FR-55,** `ravilo-screen-home.spec.ts`: a seeded row of 9 items ends in a *See all* tile and one of 8 does not; OK on
+  it posts `/api/tv/browse/seeded` with the row's `seedQuery` and draws the heading and `9 titles`; a Continue Watching
+  row's tile reads `/api/tv/continue/all`; a row with `sort_by: "title"` opens A–Z; Back lands on the *See all* tile.
+  `:shared:desktopTest` covers the moved sort functions, and `ravilo-ui`'s tests for them stay green.
+- **FR-56,** `ravilo-screen-detail.spec.ts`: a film with `imdb_rating` 7.84 shows `7.8`; a watched film shows the ✓
+  chip; `genres` of five show three and `+2`; OK on the overview opens it and OK closes it; `about` with a director and a
+  country draws those two rows in `aboutRows`' order; a series with `next_airing` shows the line; a season whose counted
+  episodes are all watched has a ✓ on its pill. `:shared:desktopTest` for the moved `aboutRows`.
+- **FR-57,** `ravilo-screen-search.spec.ts`: the empty field requests `/api/tv/search?q=` and shows the suggestions;
+  typing shows Clear, → then OK empties the field and focuses it; a query answered 500 after a query that succeeded shows
+  no tiles and `error.generic`, and Retry asks again.
+- `check-tizen-bundle.sh` and FR-13's CSS guard stay green. The look on the set goes on each build's QA ticket, parked on
+  DEB-4608.
+
+**Build order.** FR-55 and FR-57 stand alone. FR-56 follows DEB-5651 (FR-53), which is building in the same
+`ScreenDetail.kt` header and episode code.
+
+## Amendment 2026-11-26, second (DEB-5685) — a TV that keeps working when the network or the server does not
+
+> Same ask (DEB-5620). Theme 3 of DEB-5685: error and empty states, recovering from a lost network, the app's own start,
+> and memory on a long session, each provable in CI. Most of these are what Android TV already does
+> (`RaviloRootActuals`, `HomeStore`, `LoadError.kt`, `ReconnectBackoff`, `EventsCatchUp`, `HomeSnapshotCache`,
+> `PlayerStore`), and the Samsung never got them because v1 was screens first.
+
+**Why.** The Samsung's `HttpClient(Js)` has no timeout at all (`Screen.kt`, the `TvApiClient` construction), so a request
+on a half-open connection never ends: Home, a title's page or a grid then shows FR-20's skeleton forever, which FR-20
+says it must never do. Home is read once (`ScreenRouter.loadFeed`) and never again, so Continue Watching is stale after
+every play. Every failure reads *Couldn't reach the server*, a revoked token included. A play that loses the network after
+its first picture ends, and its stop is sent once and lost.
+
+**FR-58 · Every request has a deadline.** The app's client installs Android TV's bound (`RaviloRootActuals.kt`, Android
+and wasm): `HttpTimeout` with connect 5 s, request 10 s, socket 10 s. The events socket and the long-poll calls that
+`TvApiClient` already exempts (`timeout { … INFINITE_TIMEOUT_MS }`) stay exempt. A timeout is a failure like any other,
+so each page's existing failure path takes it: FR-20's failure and Retry on Home and grids, DEB-4660's line on a title's
+page, FR-2's failed poll count on sign-in, R237's copy on a start.
+
+**FR-59 · Home stays current.** Android TV's `HomeStore.onReturn` / `onHomeChanged` (silent refresh), `HomeLoadPolicy`'s
+quiet retry, `EventsCatchUp` and `ReconnectBackoff`. FR-5 is amended.
+- **A silent re-read.** Home's and a channel's feed are read again, keeping the feed on screen until the new one lands:
+  - when the player closes back onto Home or a channel (`returnFromPlayer`);
+  - on `home_changed` and `playstate_changed` from the events socket (today they refresh only title pages);
+  - when the socket opens after being down for more than 30 s (`EventsCatchUp.onOpen`'s `refreshHome`), and on
+    `config_changed` the config is read again too (`refreshConfig`; today `onEvent = {}` drops it).
+  - A route under the top one is marked stale instead and is read again when it shows. Several triggers inside 1 s make
+    one read.
+- **What the redraw keeps.** The focused tile by its media id (by its index in the row if the id has gone, the row's
+  first tile if the row has gone), each row's focus memory, the hero slide and the rail's scroll. No skeleton and no fade:
+  this is a redraw, not a load. A re-read that fails leaves the feed as it is, with nothing shown.
+- **A quiet retry behind a failure.** A Home or channel feed that failed is asked again every 5 s while its failure
+  shows (`HomeLoadPolicy.quietRetryMs`), and draws when an answer comes, with focus on its first target. Retry still asks
+  at once.
+- **The socket's backoff is R293's.** `ReconnectBackoff` (base 1 s, cap 60 s, ±20 % jitter, healthy only after 5 min
+  open) and `EventsCatchUp` move from `ravilo-ui/seams` to `shared`, and `Screen.eventLoop` uses them in place of its
+  2 s / 30 s doubling that resets on every open. `ravilo-ui`'s callers keep their behaviour.
+
+**FR-60 · A failure says its cause and offers what fixes it.** Android TV's `LoadError.kt`: `classifyLoadFailure`,
+`loadErrorTitleKey`, `loadErrorBodyKey`, `loadErrorOffersRetry`. FR-20's failure is amended.
+- **One failure view** (`ScreenSkeleton.failure(kind)`) for Home, a channel, a grid, FR-55's grid, a person page and a
+  title's page, with the title and body keys of Android TV's table for the kind:
+  - **401 or 409** (the sign-in is gone): `error.load.reauth.title` / `.body`, and a **Sign in** button
+    (`action.sign_in`). OK removes this profile (`unpair`, best effort) and opens FR-2 with *Add user*'s path; the other
+    profiles stay (FR-3).
+  - **403:** `error.load.forbidden.title` / `.body`, with **Back** (`action.back`).
+  - **404 / 410:** `error.load.gone.title`, with **Back**.
+  - **Anything else, a timeout (FR-58) included:** today's `error.play.unreachable.*` with **Retry**, and FR-59's quiet
+    retry on a feed.
+- **A title's page** gets the view too, replacing DEB-4660's bare line: its Retry runs the page's `load()` again (today a
+  failed page never loads again, and the router's OK on a page never reaches `retry`), and its Back is FR-4's.
+- **The server ending this sign-in.** The events socket's `signed_out` (passed as `connectEvents`' `onSignedOut`, which
+  `eventLoop` does not pass today) removes this profile and opens the picker, or FR-2 when it was the last one, with the
+  socket stopped for that token. A start answered 401 (`negotiate`) does the same, with the reauth line shown for 3 s
+  first instead of silently.
+- No new string: every key is in `ravilo-i18n` today.
+
+**FR-61 · Home opens from the last feed it drew.** Android TV's R212 (`screens/HomeSnapshotCache.kt`: one snapshot per
+user, fresh for 7 days, 2 MB at most; `HomeStore`'s `seedFeed`). FR-14's cold start is amended.
+- Each Home feed that draws from the network is saved in `localStorage` under the profile's user id, with the time
+  (`HomeSnapshot`'s fields that `HomeFeed` needs; `RaviloWireJson`). A feed over 2 MB encoded is not saved. A channel's
+  feed is not saved.
+- At start, and on a profile switch, Home draws the profile's snapshot at once when it is fresh (`isSnapshotFresh`,
+  moved to `shared`), with no skeleton, and reads the network as FR-59's silent re-read does. The answer replaces it in
+  place.
+- While Home shows a snapshot and its read has failed, a line under the bar says `home.showing_saved`. It goes when an
+  answer draws.
+- Signing a profile out (FR-3, FR-60) deletes its snapshot. *Change server* deletes all of them (FR-11).
+- A play from a snapshot tile is a normal open of the title's page, so nothing stale is played.
+
+**FR-62 · Every tile shows a picture or its letters, on every page.**
+- `ScreenHome.updateImages` stops depending on Home having drawn (`val mount = body ?: return`): it finds the page's
+  mount itself, so a grid, Search, a person page, FR-55's grid and a title's rows load their art when Home failed or was
+  never opened.
+- **No art, or art that fails.** A tile with no image URL, or whose `<img>` fires `error`, draws Android TV's fallback
+  (`components/Tile.kt`): a gradient from a colour chosen by the title, and the title's first two letters. A failed image
+  is asked for once more when the tile next comes into view (today the `holder.firstChild == null` check never asks again).
+- **Watched tiles** dim at rest as Android TV's do, and come to full opacity when focused (opacity only, FR-14).
+
+**FR-63 · A play that loses the network after its first picture picks up where it was.** FR-33 is amended. Android TV's
+`PlayerStore.streamRecovery` and its Phase 180 stop retry.
+- **An AVPlay error after the first frame** on our encoder's stream (`ticket.encoder == "ours"`) is not the end of the
+  play. Under the buffering view, the app restreams at the position (`restream`, the current audio and subtitle), once.
+  When the restream call itself fails it is asked again at 2 s, 4 s and 8 s (each under FR-58's deadline), and the play
+  goes on from the answer. If none answers, or the new stream errors again before its position moves, the play ends on
+  R237's copy.
+- **A stream that is not ours, or a direct play,** ends on the error as today, now with its stop (below).
+- **Every end sends its stop with the position**, retried: one helper sends `stopPlayback(id, position)` up to three
+  times, 1 s then 2 s apart, used by `stopAndIdle`, `endHere`, `playNext` and the rail's pick. `failPlay` after a first
+  frame now sends a stop at the position too (today it sends none, and the server's watchdog closes the session).
+- **Progress** that fails to post is not queued. The next tick carries the newer position.
+- FR-33's rule before the first frame is unchanged. Its test *"an error after the first frame makes no second start"*
+  still holds, since a restream is not a start.
+
+**FR-64 · A long session stays light.** FR-14 is amended.
+- **The back stack holds at most 12 routes.** A push past that drops the oldest route above Home. Home stays at the
+  bottom, so Back always ends there.
+- **A covered page keeps its data, not its DOM.** A title's page that another route covers drops its drawn nodes
+  (`drawn`, `backdrop`, `logo`, `titleNode`) and draws again from its data when it shows, with no skeleton (FR-20: a page
+  drawn from held data does not fade).
+- **Only what shows reads again.** `stateChanged` refreshes the top route's title page now. A title page under it is
+  marked stale and reads when it shows (FR-31 then decides whether it redraws).
+- **Grids grow by appending.** A grid's next page appends its tiles and leaves the drawn ones in place
+  (`ScreenBrowse.render` rebuilds every tile today). A grid keeps the rows within three screens of the focused row in
+  the DOM, and empty boxes of the same height hold the place of the others, so the scroll position and FR-4's spatial
+  moves do not change. A box draws its tiles again when it comes within range.
+
+**Proof (CI),** Playwright on `ravilo-screen` with route interception and `page.clock`:
+- **FR-58,** `ravilo-screen-loading.spec.ts`: `/api/tv/home` that never answers shows the failure after 10 s (fast-forward
+  11 s), and the same for a title's page and a grid.
+- **FR-59,** `ravilo-screen-home.spec.ts`: a `home_changed` push while Home shows requests `/api/tv/home` again and
+  draws the new tile, with focus on the same media id; Back from the player onto Home requests it again; a 500 then a 200
+  draws Home after 5 s with no key pressed; a socket closed right after each open reconnects at growing delays, not every
+  2 s; a `config_changed` push reads `/api/tv/config` again. `:shared:desktopTest` for the moved `ReconnectBackoff` and
+  `EventsCatchUp`.
+- **FR-60,** `ravilo-screen-home.spec.ts` and `ravilo-screen-detail.spec.ts`: Home answered 401 shows the reauth lines
+  and Sign in, which opens the sign-in screen; a title's page answered 500 then 200 draws after OK on Retry; 404 shows
+  the gone line and Back; `ravilo-screen-signin.spec.ts`: a `signed_out` push opens the picker.
+- **FR-61,** `ravilo-screen-home-warm.spec.ts`: after one Home, a reload with `/api/tv/home` held shows the tiles before
+  any skeleton, and the released answer replaces them; another profile does not see the first's snapshot; a held then
+  failed read shows `home.showing_saved`.
+- **FR-62,** `ravilo-screen-browse.spec.ts`: Home answered 500, then Movies, draws posters (`.tile-art img` count > 0);
+  a tile with no `poster_url` draws its letters; an image answered 404 draws the fallback.
+- **FR-63,** `ravilo-screen-player.spec.ts`: after the first frame, `PLAYER_ERROR_CONNECTION_FAILED` on our stream posts
+  one `/api/tv/playback/restream` with `position_ms` > 0 and plays on; a restream answered 500 three times then 200 plays
+  on; four failures end with a `/api/tv/playback/stop` at the position; a stop answered 500 twice is sent a third time.
+- **FR-64,** `ravilo-screen-detail.spec.ts`: 20 *More like this* opens leave 12 routes, and Back 11 times reaches Home;
+  one `home_changed` with 5 title pages stacked requests one `/api/tv/playstate`; a covered page's Back draws with no
+  skeleton. `ravilo-screen-browse.spec.ts`: a grid of 10 pages keeps the first tile node connected through each append
+  and holds at most the windowed rows' tiles in the DOM.
+- `check-tizen-bundle.sh` and FR-13's guard stay green. Each build's on-set check goes on its QA ticket, parked on DEB-4608.
+
+**Build order.** FR-58, FR-62 and FR-63 stand alone. FR-60 follows FR-59 (both change `ScreenRouter.loadFeed` and
+`Screen.eventLoop`), and FR-61 follows FR-60 (the same `loadFeed`). FR-64 follows FR-59 (`stateChanged`) and FR-55
+(`ScreenBrowse.render`).
