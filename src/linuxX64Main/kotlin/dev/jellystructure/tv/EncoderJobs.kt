@@ -177,6 +177,13 @@ class EncoderJobs(
         side.size
     }
 
+    /** DEB-5685 (FR-313-23) — the oldest running side job is stopped (its segments are kept); false when there is none. */
+    internal suspend fun stopOneSideJob(): Boolean = mutex.withLock {
+        val j = streams.values.flatMap { s -> s.retired.filter { it.side && !it.stopped } }.minByOrNull { it.startedAtMs } ?: return@withLock false
+        j.stopped = true; kill(j)
+        true
+    }
+
     /**
      * The file holding segment [k] of [variant] (`s<k>.m4s` / `.ts`), made on demand; null when it could not be made in
      * [SEGMENT_WAIT_MS]. [plan] is the stream's (fixed) plan.

@@ -910,6 +910,7 @@ class PlaybackService(
                 takeBps = take, noRecord = take == null, sourceVideoRange = sourceVideoRange,
                 burnSubtitleOrder = burnSubtitleOrder, burnRequested = burnRequested || (ticket.burnedSubtitleIndex != null && burnSubtitleOrder == null),
                 subtitles = encoderSubtitlesOf(ticket, jellyfinBase, jellyfinId, token), platform = device?.platform,
+                forDevice = device?.deviceId, forItem = jellyfinId,
                 belowBandwidthBps = belowBandwidthBps, audioBps = audioBps, stallCapped = stallCappedOf(device), boxLimit = boxLimit, stallHold = stallHold, emptyStreams = ghosts)
             if (plan != null) {
                 val startSegment = (ticket.startPositionMs / ENCODER_SEGMENT_MS).toInt()
@@ -1697,7 +1698,8 @@ class PlaybackService(
             takeBps = take, noRecord = take == null, sourceVideoRange = video?.videoRangeType, emptyStreams = ghosts.empty,
             subtitles = encoderSubtitlesOf(ticketLike, jellyfinBase, jellyfinId, token), platform = target.platform,
             audioBps = audioBitratesOf(itemDetail, null), stallCapped = stallCappedOf(target), stallHold = stallHoldOf(target),
-            boxLimit = sizeCapRungBox(master, video?.codec, video?.videoRangeType, video?.width, video?.height, caps.maxH264Width, caps.maxH264Height))
+            boxLimit = sizeCapRungBox(master, video?.codec, video?.videoRangeType, video?.width, video?.height, caps.maxH264Width, caps.maxH264Height),
+            evict = false, forDevice = target.deviceId, forItem = jellyfinId)   // DEB-5685 (FR-313-23) — a prewarm stops nothing and is never trimmed
         plan ?: return none(why)
         encoder.prewarm(plan, target.deviceId, jellyfinId, (startPositionMs / ENCODER_SEGMENT_MS).toInt(), nowMs() + PREWARM_TTL_MS)
         return dev.jellystructure.shared.tv.PrewarmResult("warm")

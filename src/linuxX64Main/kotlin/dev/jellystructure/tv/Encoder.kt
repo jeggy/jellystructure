@@ -78,7 +78,11 @@ class Encoder(
                         /** DEB-4062 (DEB-3995 FR-6) — a download stream, not a play: [downloadOwner] is the phone that holds it, [lastReadMs] its last segment request. */
                         var downloadOwner: String? = null, var lastReadMs: Long = 0,
                         /** DEB-5647 (FR-313-21) — a stopped play's stream kept as the device's prewarm ([keepWarm]); false again once a play adopts it. */
-                        var keptWarm: Boolean = false) {
+                        var keptWarm: Boolean = false,
+                        /** DEB-5685 (FR-313-23) — when this prewarm was last posted, or its play stopped (a kept-warm stream): the older goes first when a play needs the room. */
+                        var warmAtMs: Long = 0,
+                        /** DEB-5685 (FR-313-24) — a placement that has no job yet: the card, its load and when it was made. It counts for [PENDING_MS], or until a job has the stream. */
+                        var pendingCard: Int? = null, var pendingLoad: Double = 0.0, var pendingAtMs: Long = 0) {
         val download: Boolean get() = downloadOwner != null
     }
 
@@ -124,6 +128,16 @@ class Encoder(
 
     private var cardsCache: Pair<Long, List<EncoderCard>>? = null
 
+    /** DEB-5685 (FR-313-24) — sessions each placement has added to its card since the last `nvidia-smi` read (the cached count is up to 5 s old). */
+    private val sessionBumps = mutableMapOf<Int, Int>()
+
+    /** Serialises placements: the one that is deciding sees every earlier one (a reservation or a registered stream), not an empty card. Taken before [mutex], never inside it. */
+    private val placementMutex = Mutex()
+
+    /** DEB-5685 (FR-313-24) — a plan [planFor] has placed that no stream holds yet; [register] (or an adoption) turns it into the stream's own pending load. */
+    private class Reservation(var plan: EncoderPlan?, val card: Int, val load: Double, val atMs: Long)
+    private val reservations = mutableListOf<Reservation>()
+
     val ffmpegPath: String get() = "${cfg.ffmpegDir}/ffmpeg"
     fun ffmpegReady(): Boolean = testFfmpeg ?: ffmpegOverride?.invoke() ?: (access(ffmpegPath, X_OK) == 0)
 
@@ -135,12 +149,15 @@ class Encoder(
     suspend fun cards(): List<EncoderCard> {
         testCards?.let { return it }
         cardsOverride?.let { return it() }
-        cardsCache?.let { (at, c) -> if (clock() - at < 5_000) return c }
+        cardsCache?.let { (at, c) -> if (clock() - at < 5_000) return c.withBumps() }
         val out = withContext(Dispatchers.IO) { run("nvidia-smi --query-gpu=index,name,encoder.stats.sessionCount --format=csv,noheader 2>/dev/null") }
         val c = parseNvidiaSmi(out)
         cardsCache = clock() to c
+        sessionBumps.clear()
         return c
     }
+
+    private fun List<EncoderCard>.withBumps(): List<EncoderCard> = map { c -> sessionBumps[c.index]?.let { c.copy(liveSessions = c.liveSessions + it) } ?: c }
 
     /**
      * FR-313-1..-8/-12 — the plan for one play, or the reason Jellyfin does it. [audio] is Jellyfin's audio list for
@@ -170,6 +187,10 @@ class Encoder(
         emptyStreams: Set<Int> = emptySet(),
         /** DEB-4256 (DEB-3995 FR-6) — a download stream's plan: the cards are tried in the reverse of a play's order, so the card plays prefer keeps its room. */
         cardsLastFirst: Boolean = false,
+        /** DEB-5685 (FR-313-23) — false for a prewarm: nothing running is stopped for it and it is never trimmed (answered "no encoder slot free" instead). */
+        evict: Boolean = true,
+        /** …and the (device, item) the plan is for: the warm stream it may adopt is not counted against it. */
+        forDevice: String? = null, forItem: String? = null,
     ): Pair<EncoderPlan?, String> {
         val source = encoderSourceOf(path, durationMs, tracks, sourceVideoRange, emptyStreams)
         val cards = if (cfg.enabled) cards() else emptyList()
@@ -212,11 +233,24 @@ class Encoder(
         // Dev review item 8 / owner Q1 — a player that does not adapt (Ravilo 1.50) gets one quality: the start rung.
         if (!caps.hlsAdaptive) { rungs = listOf(rungs[start]); start = 0 }
         val tryOrder = if (cardsLastFirst) cards.reversed() else cards
-        var placement = place(tryOrder, codec, rungs)
-        if (placement == null && stopPrewarms(if (cardsLastFirst) "a download stream needs the slot" else "a play needs the slot") > 0) placement = place(tryOrder, codec, rungs)
-        // DEB-5646 (FR-313-20) — a side job (a few seconds of a player's opening read) goes next after the prewarms.
-        if (placement == null && stopSideJobs() > 0) placement = place(tryOrder, codec, rungs)
-        placement ?: return null to "no encoder slot free on any card"
+        val own = if (forDevice != null && forItem != null) forDevice to forItem else null
+        var reserved: Reservation? = null
+        val placement = placementMutex.withLock {
+            // DEB-5685 (FR-313-23) — a play that does not fit with every rung stops warm jobs one at a time before it is trimmed; a prewarm stops none.
+            var snap = loadSnapshot(own)
+            var p = placeJob(tryOrder, snap.load, codec, rungs[0].boxHeight, rungs.size)
+            while (evict && (p == null || p.rungs < rungs.size) && evictOne(snap, if (cardsLastFirst) "a download stream needs the slot" else "a play needs the slot")) {
+                snap = loadSnapshot(own)
+                p = placeJob(tryOrder, snap.load, codec, rungs[0].boxHeight, rungs.size)
+            }
+            if (!evict && p != null && p.rungs < rungs.size) p = null
+            if (p != null) mutex.withLock {
+                // The sessions the card's cached count has not seen yet, and the load nobody holds until [register] makes it the stream's.
+                sessionBumps[p.card] = (sessionBumps[p.card] ?: 0) + p.rungs
+                reserved = Reservation(null, p.card, jobLoad(codec, rungs[0].boxHeight, p.rungs), clock()).also { reservations += it }
+            }
+            p
+        } ?: return null to "no encoder slot free on any card"
         if (placement.rungs < rungs.size) {
             val kept = trimRungs(rungs, start, placement.rungs)
             start = kept.indexOf(rungs[start]).coerceAtLeast(0)
@@ -232,13 +266,56 @@ class Encoder(
             burnSubtitleOrder = burnSubtitleOrder, subtitles = if (caps.hlsSubtitles) subtitles else emptyList(),
             heldBy = heldBy,
         )
+        reserved?.plan = plan   // the stream [register] makes for this plan takes the reservation over
         return plan to "ours"
     }
 
-    /** FR-313-8 — the card a job of [rungs] would go to, counting every running job (prewarms included). */
-    private suspend fun place(cards: List<EncoderCard>, codec: EncoderCodec, rungs: List<EncoderRung>): EncoderPlacement? {
-        val load = running().groupBy { it.plan.cudaDevice ?: -1 }.mapValues { (_, js) -> js.sumOf { jobLoad(it.plan.codec, it.plan.rungs[0].boxHeight, it.plan.rungs.size) } }
-        return placeJob(cards, load, codec, rungs[0].boxHeight, rungs.size)
+    /** What the budget counts: [load] per card, the streams behind it ([counted]) and the warm stream of the play being placed ([ownIds]), which is left out. */
+    private class LoadSnapshot(val load: Map<Int, Double>, val counted: Set<String>, val ownIds: Set<String>)
+
+    /**
+     * FR-313-8 / DEB-5685 (FR-313-23, -24) — every running job's load, plus a stream registered or restarted in the last [PENDING_MS] whose job has not
+     * started, plus a plan placed that no stream holds yet. The warm stream of [own] (device, item), the one the play may adopt, counts for nothing.
+     */
+    private suspend fun loadSnapshot(own: Pair<String, String>?): LoadSnapshot {
+        val js = running()
+        val now = clock()
+        val (ownIds, pending, held) = mutex.withLock {
+            reservations.removeAll { now - it.atMs >= PENDING_MS }
+            val ownIds = if (own == null) emptySet() else entries.filter { (_, e) -> e.prewarmSegment != null && e.deviceId == own.first && e.itemId == own.second }.keys.toSet()
+            Triple(ownIds, entries.filter { (id, e) -> e.pendingCard != null && now - e.pendingAtMs < PENDING_MS && id !in ownIds }.toList(), reservations.toList())
+        }
+        val load = mutableMapOf<Int, Double>()
+        val counted = mutableSetOf<String>()
+        for (j in js) {
+            if (j.streamId in ownIds) continue
+            counted += j.streamId
+            load.add(j.plan.cudaDevice ?: -1, jobLoad(j.plan.codec, j.plan.rungs[0].boxHeight, j.plan.rungs.size))
+        }
+        for ((id, e) in pending) {
+            if (id in counted) continue   // its job is running: counted above (between a job's stream and its process the stream's pending load is the only count)
+            counted += id
+            load.add(e.pendingCard!!, e.pendingLoad)
+        }
+        for (r in held) load.add(r.card, r.load)
+        return LoadSnapshot(load, counted, ownIds)
+    }
+
+    private fun MutableMap<Int, Double>.add(card: Int, by: Double) { this[card] = (this[card] ?: 0.0) + by }
+
+    /**
+     * DEB-5685 (FR-313-23) — stops ONE warm job for a play that does not fit: another device's page prewarm (the oldest post first), else a kept-warm
+     * stream (the oldest stop first), else a side job. False when none is left. Only streams the budget counts are stopped: one that holds nothing frees nothing.
+     */
+    private suspend fun evictOne(snap: LoadSnapshot, why: String): Boolean {
+        val (prewarms, kept) = mutex.withLock {
+            val warm = entries.filter { (id, e) -> e.prewarmSegment != null && id in snap.counted && id !in snap.ownIds }.values.sortedBy { it.warmAtMs }
+            warm.filter { !it.keptWarm }.map { prewarmKey(it.deviceId, it.itemId) } to warm.filter { it.keptWarm }.map { prewarmKey(it.deviceId, it.itemId) }
+        }
+        prewarms.firstOrNull()?.let { stopFor(it); Logger.info("encoder: stopped 1 prewarm(s) — $why (313/309, DEB-5685 FR-313-23)", "tv"); return true }
+        kept.firstOrNull()?.let { stopFor(it); Logger.info("encoder: stopped 1 kept-warm stream(s) — $why (DEB-5685 FR-313-23)", "tv"); return true }
+        if (jobs.stopOneSideJob()) { Logger.info("encoder: stopped 1 side job(s) — $why (DEB-5685 FR-313-23)", "tv"); return true }
+        return false
     }
 
     /** Registers [plan] behind a new stream id (the capability, FR-313-7); a play's job starts with its ticket ([startWithTicket], DEB-5646), a stream with no ticket kick when a player reads it. */
@@ -249,12 +326,20 @@ class Encoder(
             entries.entries.removeAll { it.value.expiresAt < now }
             val e = Entry(plan, jellyfinPlaySessionId, expiresAt, deviceId, itemId, startMs = startMs.coerceIn(0, plan.source.durationMs), qoeKey = qoeKey)   // DEB-3642 (FR-7) — a start past the content end is at it
             entries[id] = e
+            takePending(e, plan, now)
             byPlay.getOrPut(jellyfinPlaySessionId) { mutableListOf() }.add(id)
             // A prewarm nobody has pressed Play on is memory-only; the play that adopts it stores it ([adoptPrewarm]).
             if (!jellyfinPlaySessionId.startsWith(PREWARM_PREFIX)) persist(id, e, now)
             if (plans != null && now - lastSweepMs > 3_600_000L) { lastSweepMs = now; plans.sweep(now) }
         }
         return id
+    }
+
+    /** DEB-5685 (FR-313-24) — the reservation [planFor] made for [plan] becomes [e]'s own pending load (its job has not started yet). Called with the lock held. */
+    private fun takePending(e: Entry, plan: EncoderPlan, now: Long) {
+        val r = reservations.firstOrNull { it.plan === plan } ?: return
+        reservations.remove(r)
+        e.pendingCard = r.card; e.pendingLoad = r.load; e.pendingAtMs = now
     }
 
     // ── 309 (FR-309-6, owner 2026-10-07/08) — the early encode on a detail page ───────────────────────────────────
@@ -273,14 +358,14 @@ class Encoder(
         if (existing != null) {
             val (id, e) = existing
             if (samePlay(e.plan, plan) && kotlin.math.abs((e.prewarmSegment ?: 0) - startSegment) <= 1) {
-                mutex.withLock { e.expiresAt = expiresAt }
+                mutex.withLock { e.expiresAt = expiresAt; e.warmAtMs = clock(); reservations.removeAll { it.plan === plan } }
                 if (kickJobs) scope.launch { jobs.segment(id, e.plan, ffmpegPath, 0, e.prewarmSegment ?: startSegment, warm = true) }
                 return id
             }
             stopFor(key)
         }
         val id = register(plan, key, expiresAt, deviceId, itemId)
-        mutex.withLock { entries[id]?.let { it.prewarmSegment = startSegment; it.startMs = startSegment * ENCODER_SEGMENT_MS } }
+        mutex.withLock { entries[id]?.let { it.prewarmSegment = startSegment; it.startMs = startSegment * ENCODER_SEGMENT_MS; it.warmAtMs = clock() } }
         Logger.info("encoder: prewarm device=$deviceId item=$itemId at segment $startSegment ${plan.codec} rungs=${plan.rungs.size} start=${plan.startRung} (309)", "tv")
         if (kickJobs) scope.launch { jobs.segment(id, plan, ffmpegPath, 0, startSegment, warm = true) }
         return id
@@ -298,6 +383,7 @@ class Encoder(
             val hit = entries.entries.firstOrNull { (_, e) -> e.prewarmSegment != null && e.deviceId == deviceId && e.itemId == itemId }
                 ?: return@withLock null
             val e = hit.value
+            reservations.removeAll { it.plan === plan }   // DEB-5685 (FR-313-24) — the adopted stream already holds the load
             if (!samePlay(e.plan, plan) || kotlin.math.abs((e.prewarmSegment ?: 0) - startSegment) > 1) return@withLock null
             e.prewarmSegment = null
             e.keptWarm = false
@@ -380,6 +466,7 @@ class Encoder(
             if (byPlay[jellyfinPlaySessionId]?.isEmpty() == true) byPlay.remove(jellyfinPlaySessionId)
             e.prewarmSegment = segment
             e.keptWarm = true
+            e.warmAtMs = clock()
             e.startMs = segment * ENCODER_SEGMENT_MS
             e.jellyfinPlaySessionId = key
             e.expiresAt = clock() + EncoderJobs.IDLE_MS
@@ -426,7 +513,7 @@ class Encoder(
             entries.filter { it.value.download && it.value.downloadOwner == ownerDeviceId }.keys.forEach { entries.remove(it); replaced += it }
             entries[id] = Entry(plan, id, expiresAt, itemId = itemId,
                 startMs = encoderSeekSegment(plan.source.durationMs, startSegment * ENCODER_SEGMENT_MS) * ENCODER_SEGMENT_MS,
-                downloadOwner = ownerDeviceId, lastReadMs = now)
+                downloadOwner = ownerDeviceId, lastReadMs = now).also { takePending(it, plan, now) }
         }
         replaced.forEach { jobs.stop(it, "the same phone asked for a new download stream") }
         Logger.info("encoder: download stream $id item=$itemId ${plan.codec} ${plan.rungs[0].height}p@${plan.rungs[0].videoBps / 1000}k from segment $startSegment (DEB-4062)", "tv")
@@ -464,14 +551,6 @@ class Encoder(
         val cards = if (cfg.enabled) cards() else emptyList()
         return encoderDecision(cfg.enabled, ffmpegReady(), cards, source, isLiveOrAudio = false, deviceKind = deviceKind, castReceivers = cfg.castReceivers)
             ?: refused.reason(source.path, clock())
-    }
-
-    /** FR-313-8 — a prewarm never holds a slot a play needs: every prewarm is stopped. Returns how many. */
-    private suspend fun stopPrewarms(why: String): Int {
-        val keys = mutex.withLock { entries.values.filter { it.prewarmSegment != null }.map { prewarmKey(it.deviceId, it.itemId) }.distinct() }
-        keys.forEach { stopFor(it) }
-        if (keys.isNotEmpty()) Logger.info("encoder: stopped ${keys.size} prewarm(s) — $why (313/309)", "tv")
-        return keys.size
     }
 
     /** DEB-5646 (FR-313-20) — a side job never holds a slot a play needs; stopped after the prewarms. Returns how many. */
@@ -529,7 +608,16 @@ class Encoder(
         if (!cfg.enabled) return null
         val cards = cards()
         if (cards.isEmpty()) return null
-        return restartPlan(e.plan, place(cards, e.plan.codec, e.plan.rungs))
+        // DEB-5685 (FR-313-24) — the re-asks after a deploy are placed one after the other, each counting the one before.
+        return placementMutex.withLock {
+            val snap = loadSnapshot(null)
+            val placement = placeJob(cards, snap.load, e.plan.codec, e.plan.rungs[0].boxHeight, e.plan.rungs.size)
+            if (placement != null) mutex.withLock {
+                sessionBumps[placement.card] = (sessionBumps[placement.card] ?: 0) + placement.rungs
+                e.pendingCard = placement.card; e.pendingLoad = jobLoad(e.plan.codec, e.plan.rungs[0].boxHeight, placement.rungs); e.pendingAtMs = clock()
+            }
+            restartPlan(e.plan, placement)
+        }
     }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -725,6 +813,8 @@ class Encoder(
         const val TIMELINE_HEAD_BYTES = 2048
         private const val KIND = "encoder"
         private const val PREWARM_PREFIX = "prewarm:"
+        /** DEB-5685 (FR-313-24) — how long a placement with no job yet counts against the card. */
+        private const val PENDING_MS = 15_000L
         /** DEB-4062 — a download stream's id starts with this; the routes answer an unknown one "waiting", never 404. */
         const val DOWNLOAD_PREFIX = "dl-"
         /** Pinned (FR-313-11): the same build Jellyfin's own container runs (8.1.2), portable GPL, verified by SHA-256. */
