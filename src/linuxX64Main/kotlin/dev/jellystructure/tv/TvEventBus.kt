@@ -183,8 +183,23 @@ class TvEventBus(private val scope: CoroutineScope,
     /** R370 — one directive to one device's socket (`session_load`, `cast_relay_load`, `targets_changed`). */
     fun notifyDevice(userId: String, deviceId: String, json: String) = notifySessionCommand(userId, deviceId, json)
 
-    /** DEB-1932 (FR-187-8 rule 4) — [deviceId]'s Jellyfin sign-in ended (a password change it could not be re-signed through). */
-    fun notifySignedOut(userId: String, deviceId: String) = notifyDevice(userId, deviceId, OtherDevicesResign.SIGNED_OUT_EVENT)
+    /**
+     * DEB-5777 (FR-143-4) — one directive to the socket registered under exactly ([userId], [deviceId]), never through
+     * [targetFor]'s device-level fallback: a TV whose open socket is profile B's must not hear that profile A was removed.
+     * Nothing is sent when no socket matches.
+     */
+    fun notifyExact(userId: String, deviceId: String, json: String) {
+        scope.launch {
+            val target = mutex.withLock { sessions[userId]?.get(deviceId) } ?: return@launch
+            runCatching { target.send(Frame.Text(json)) }
+        }
+    }
+
+    /** DEB-1932 (FR-187-8 rule 4) — [deviceId]'s Jellyfin sign-in ended (a password change it could not be re-signed through). Exact socket only (DEB-5777, FR-143-4). */
+    fun notifySignedOut(userId: String, deviceId: String) = notifyExact(userId, deviceId, OtherDevicesResign.SIGNED_OUT_EVENT)
+
+    /** DEB-5777 (FR-143-1) — someone other than the device removed this sign-in (an admin, the viewer from another device, the gone-user sweep). */
+    fun notifySignInRemoved(userId: String, deviceId: String) = notifyExact(userId, deviceId, OtherDevicesResign.SIGN_IN_REMOVED_EVENT)
 
     /** R141: monotonic rev — exposed so the degrade-to-poll `/api/tv/config/rev` endpoint can serve it. */
     suspend fun currentRev(): Long = mutex.withLock { rev }

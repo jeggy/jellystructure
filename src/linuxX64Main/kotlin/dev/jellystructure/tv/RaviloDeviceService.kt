@@ -496,8 +496,17 @@ class RaviloDeviceService(private val db: JellystructureDb) : BorrowedTokenStore
      */
     var onScreensChanged: ((jellyfinUserId: String) -> Unit)? = null
 
-    /** Removes a specific user's session from [deviceId] without affecting others. */
-    fun removeSession(deviceId: String, jellyfinUserId: String) {
+    /**
+     * A device row a removal took, by the ids it was stored under — what DEB-5777 (FR-143-2) pushes `sign_in_removed` to.
+     * The stored form, not the caller's: the events socket of that sign-in is registered under it.
+     */
+    data class RemovedSignIn(val userId: String, val deviceId: String)
+
+    /**
+     * Removes a specific user's session from [deviceId] without affecting others. Returns the row it removed (none when no row
+     * matched), so a caller that owes the device an event (DEB-5777, FR-143-2) knows whom to push it to.
+     */
+    fun removeSession(deviceId: String, jellyfinUserId: String): List<RemovedSignIn> {
         // Security fix (2026-08-02 review, finding M3) — this deleted the DB row but never touched
         // tokenCache, so a revoked device token kept passing validateDeviceToken() (served from cache)
         // for up to TOKEN_CACHE_TTL_MS (5 minutes) after the operator removed it. unpair() already got
@@ -510,6 +519,7 @@ class RaviloDeviceService(private val db: JellystructureDb) : BorrowedTokenStore
         db.userRemovalQueries.deleteDeviceRowFor(device_id = deviceId, key = key)
         dropHistoryIfGone(deviceId)   // Phase 259 (FR-259-5) — one viewer of two keeps it; the last takes it
         if (row?.kind == "screen") onScreensChanged?.invoke(row.jellyfin_user_id)   // R360 (dev review item 3)
+        return listOfNotNull(row?.let { RemovedSignIn(it.jellyfin_user_id, it.device_id) })
     }
 
     /** Phase 143 — every device row across every user, for the Users & Devices admin overview.
@@ -541,9 +551,10 @@ class RaviloDeviceService(private val db: JellystructureDb) : BorrowedTokenStore
     /**
      * Phase 143 — "sign out everywhere": every device row this Jellyfin user has ever signed into. DEB-2675 (FR-12) — matched on
      * the normalised id, so a row stored as dashed uppercase is found by the 32-hex form and the other way round; it used to match the
-     * exact string and report success on a miss. Returns how many rows it removed (`0` is how a caller tells that none matched).
+     * exact string and report success on a miss. Returns the rows it removed (empty is how a caller tells that none matched; DEB-5777
+     * FR-143-6 — the count the routes answer with is the size of this list, and the list is how they find each sign-in's socket).
      */
-    fun deleteAllForUser(jellyfinUserId: String): Int {
+    fun deleteAllForUser(jellyfinUserId: String): List<RemovedSignIn> {
         // Security fix (2026-08-02 review, finding M3) — same tokenCache gap as removeSession above:
         // "sign out everywhere" reported success while every signed-out device token kept working for
         // up to 5 more minutes, served straight from the cache.
@@ -553,7 +564,7 @@ class RaviloDeviceService(private val db: JellystructureDb) : BorrowedTokenStore
         db.userRemovalQueries.deleteDevicesFor(key)
         rows.map { it.device_id }.distinct().forEach { dropHistoryIfGone(it) }   // Phase 259 (FR-259-5)
         rows.filter { it.kind == "screen" }.map { it.jellyfin_user_id }.distinct().forEach { onScreensChanged?.invoke(it) }   // R360 (dev review item 3)
-        return rows.size
+        return rows.map { RemovedSignIn(it.jellyfin_user_id, it.device_id) }
     }
 
     /** DEB-2675 (FR-13) — [jellyfinUserId]'s device rows whichever form their id is stored in, newest first. */

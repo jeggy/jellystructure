@@ -187,9 +187,9 @@ class GoneUserRemovalTest {
         devices.loginDevice("tv-2", "TV", key, "Alex", "tok2", isAdmin = false, isKids = false)
         sessions.create(dashed(key), "Alex", "jf")
         assertEquals(2, devices.listByUserAnyForm(dashed(key)).size)
-        assertEquals(2, devices.deleteAllForUser(dashed(key)))
+        assertEquals(2, devices.deleteAllForUser(dashed(key)).size)
         assertEquals(1, sessions.revokeAllForUser(key.uppercase()))
-        assertEquals(0, devices.deleteAllForUser(key), "0 is how a caller tells that no row matched")
+        assertEquals(0, devices.deleteAllForUser(key).size, "0 is how a caller tells that no row matched")
     }
 
     private fun playbackSession(id: String, owner: String, name: String) = db.playbackSessionQueries.upsert(

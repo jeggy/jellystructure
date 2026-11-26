@@ -1121,7 +1121,8 @@ fun Route.tvRoutes(
         val deviceId = call.parameters["deviceId"] ?: return@delete call.respond(HttpStatusCode.BadRequest)
         val userId = call.request.queryParameters["userId"]
             ?: return@delete call.respond(HttpStatusCode.BadRequest, mapOf("error" to "userId is required"))
-        deviceService.removeSession(deviceId, userId)
+        // DEB-5777 (FR-143-2/-3) — the row and its token are gone; now its own sign-in's socket hears it. The answer is unchanged.
+        deviceService.removeSession(deviceId, userId).forEach { tvEventBus?.notifySignInRemoved(it.userId, it.deviceId) }
         call.respond(mapOf("ok" to true))
     }
 
@@ -1308,9 +1309,11 @@ fun Route.tvRoutes(
             ?: return@post call.respond(HttpStatusCode.Unauthorized, mapOf("error" to "Not logged in"))
         val userId = call.parameters["userId"] ?: return@post call.respond(HttpStatusCode.BadRequest)
         // DEB-2675 (FR-12, FR-13) — both match the id in any stored form and say how many rows they removed; 0 is how a caller tells none matched.
-        val devices = deviceService.deleteAllForUser(userId)
+        val removed = deviceService.deleteAllForUser(userId)
         val sessions = sessionService.revokeAllForUser(userId)
-        call.respond(SignOutAllResult(ok = true, devices = devices, sessions = sessions))
+        // DEB-5777 (FR-143-2/-3) — one event per removed row, after the rows and their tokens are gone; the answer keeps its shape (FR-143-6).
+        removed.forEach { tvEventBus?.notifySignInRemoved(it.userId, it.deviceId) }
+        call.respond(SignOutAllResult(ok = true, devices = removed.size, sessions = sessions))
     }
 
     // Phase 269 (FR-269-9) — "Recommended for {name}": the stored list (the newest build), each with its

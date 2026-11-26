@@ -25,6 +25,9 @@ object OtherDevicesResign {
     /** Rule 4 — the event pushed to a device whose sign-in the change ended. Additive: a client that does not know it ignores it. */
     const val SIGNED_OUT_EVENT = """{"type":"signed_out"}"""
 
+    /** DEB-5777 (FR-143-1) — pushed to the socket of a sign-in that someone other than the device removed. Not [SIGNED_OUT_EVENT]: that one's clients say the password changed. */
+    const val SIGN_IN_REMOVED_EVENT = """{"type":"sign_in_removed"}"""
+
     /** The rows rule 1 reaches: [userId]'s own-sign-in rows other than [caller]'s. Borrowing kinds and rows with no token are not. */
     fun targets(caller: DeviceData, userId: String, rows: List<DeviceData>): List<DeviceData> =
         rows.filter {

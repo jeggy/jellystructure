@@ -235,7 +235,9 @@ fun Route.remoteRoutes(
         delete("/devices/{device_id}/sessions/me") {
             val caller = call.attributes[RemoteCallerAttr]
             val deviceId = call.parameters["device_id"] ?: return@delete call.respond(HttpStatusCode.BadRequest)
-            deviceService.removeSession(deviceId, caller.jellyfinUserId)
+            val removed = deviceService.removeSession(deviceId, caller.jellyfinUserId)
+            // DEB-5777 (FR-143-2) — another device's sign-in was removed from here, so that device hears it; the caller's own device acts on this answer.
+            if (deviceId != caller.deviceId) removed.forEach { tvEventBus.notifySignInRemoved(it.userId, it.deviceId) }
             call.respond(mapOf("ok" to true))
         }
 

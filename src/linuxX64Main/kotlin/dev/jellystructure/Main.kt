@@ -764,6 +764,7 @@ fun main() = runBlocking {
         db, raviloDeviceService, sessionService,
         dropCaches = { id -> dev.jellystructure.tv.PlaystateCache.forget(id); homeFeedService.forgetUser(id) },
         clock = { platform.posix.time(null) * 1000L },
+        pushSignInRemoved = { userId, deviceId -> tvEventBus.notifySignInRemoved(userId, deviceId) },   // DEB-5777 (FR-143-2)
     )
     val devicePolicyReconciler = dev.jellystructure.tv.DevicePolicyReconciler(
         deviceService = raviloDeviceService,

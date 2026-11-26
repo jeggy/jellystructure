@@ -25,6 +25,8 @@ class GoneUserRemoval(
     /** The in-memory caches that hold this user: the playstate map and the Continue Watching list. Called with the normalised id. */
     private val dropCaches: (normalisedUserId: String) -> Unit = {},
     private val clock: () -> Long,
+    /** DEB-5777 (FR-143-2) — tells one removed sign-in's socket (stored user id, device id). Called only once the transaction has committed. */
+    private val pushSignInRemoved: (userId: String, deviceId: String) -> Unit = { _, _ -> },
 ) {
     /** FR-6 — what the Users & devices page lists for seven days; in memory, so a restart empties it. */
     data class Removed(val username: String, val removedAt: Long, val deviceCount: Int)
@@ -57,11 +59,11 @@ class GoneUserRemoval(
         val name = deviceService.listByUserAnyForm(key).firstOrNull()?.jellyfinUsername?.takeIf { it.isNotBlank() }
             ?: nameFromData(key)?.takeIf { it.isNotBlank() }
             ?: DevicePolicyReconciler.anOldAccount(key)
-        var devices = 0
+        var removedDevices = emptyList<RaviloDeviceService.RemovedSignIn>()
         var sessions = 0
         var keys = 0
         db.transaction {
-            devices = deviceService.deleteAllForUser(key)
+            removedDevices = deviceService.deleteAllForUser(key)
             sessions = sessionService.revokeAllForUser(key)
             keys = q.liveKeyCountFor(key).executeAsOne().toInt()
             q.revokeKeysFor(key)
@@ -80,6 +82,9 @@ class GoneUserRemoval(
             q.deleteOutboxFor(key)
             q.deleteAiViewerFor(key)
         }
+        // A removal that threw (FR-11, a failed statement) never reaches here, so it pushes nothing (FR-143-2).
+        removedDevices.forEach { runCatching { pushSignInRemoved(it.userId, it.deviceId) } }
+        val devices = removedDevices.size
         runCatching { dropCaches(key) }
         val outcome = Outcome(name, devices, sessions, keys)
         if (devices > 0 || sessions > 0 || keys > 0) {
