@@ -148,6 +148,9 @@ done
         assertEquals("no encoder slot free on any card", why)
         assertEquals(31, enc.prewarmSegmentOf("dev-k", "item-k"), "the kept stream is still there")
         assertEquals(0, enc.prewarmSegmentOf("dev-z", "item-z"), "and so is the other prewarm")
+        // The prewarm's job is started by a launch of its own: give it the time to be running before it is counted.
+        val until = kotlin.time.Clock.System.now().toEpochMilliseconds() + 5_000
+        while (enc.running().size < 2 && kotlin.time.Clock.System.now().toEpochMilliseconds() < until) delay(25)
         assertEquals(2, enc.running().size, "both jobs run")
         // A play does stop warm jobs, a page prewarm before a kept-warm stream.
         val (play, _) = planOf(enc, "dev-x", "item-x")
