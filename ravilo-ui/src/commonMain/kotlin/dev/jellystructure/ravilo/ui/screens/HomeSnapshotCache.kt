@@ -1,6 +1,9 @@
 package dev.jellystructure.ravilo.ui.screens
 
 import dev.jellystructure.shared.tv.HomeFeed
+import dev.jellystructure.shared.tv.SNAPSHOT_MAX_BYTES
+import dev.jellystructure.shared.tv.SNAPSHOT_STALE_AFTER_MS
+import dev.jellystructure.shared.tv.isSnapshotFresh
 import dev.jellystructure.shared.tv.Skin
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -38,30 +41,21 @@ fun HomeSnapshot.themeSettings(): dev.jellystructure.ravilo.ui.theme.ThemeSettin
     dev.jellystructure.ravilo.ui.theme.ThemeSettings(follow, themeLight ?: dev.jellystructure.shared.tv.RaviloThemes.DAYLIGHT, themeDark ?: skinId, theme ?: skinId)
 }
 
-/** A snapshot older than this is treated as absent (phase-R212 FR-RV-R212-4) — a starting point,
- *  not load-bearing; easy to tune without any structural change. */
-const val HOME_SNAPSHOT_STALE_AFTER_MS: Long = 7L * 24 * 60 * 60 * 1000
+/** A snapshot older than this is treated as absent (phase-R212 FR-RV-R212-4). DEB-5697 (FR-61): the rule lives in `shared`, the Samsung's too. */
+const val HOME_SNAPSHOT_STALE_AFTER_MS: Long = SNAPSHOT_STALE_AFTER_MS
 
-/** Defensive backstop only — a realistic Home feed serializes to well under this (phase-R212
- *  "Storage guardrails"). `save()` silently skips (keeping whatever was previously cached) rather
- *  than ever writing something this large. */
-const val HOME_SNAPSHOT_MAX_BYTES: Long = 2L * 1024 * 1024
+/** Defensive backstop only — see [SNAPSHOT_MAX_BYTES]. `save()` silently skips (keeping whatever was previously cached) rather than
+ *  ever writing something this large. */
+const val HOME_SNAPSHOT_MAX_BYTES: Long = SNAPSHOT_MAX_BYTES
 
 // R318 — a stored feed is server data too: a snapshot written by a newer build must not fail to load.
 internal val homeSnapshotJson = dev.jellystructure.shared.tv.RaviloWireJson
 
-/** Pure staleness check (FR-RV-R212-4), factored out of the platform actuals so it's unit-testable
- *  from commonTest without needing an actual `load()`/file system. `nowEpochMs` is a parameter
- *  (never `Clock.System.now()` internally) purely so tests can pin "now" — the actuals always pass
- *  the real current time. A negative age (clock skew) is treated as stale, not fresh. */
-internal fun isSnapshotFresh(snapshot: HomeSnapshot, nowEpochMs: Long): Boolean {
-    val ageMs = nowEpochMs - snapshot.savedAtEpochMs
-    return ageMs in 0..HOME_SNAPSHOT_STALE_AFTER_MS
-}
+/** The staleness check (FR-RV-R212-4) on a snapshot; the rule itself is `shared`'s [isSnapshotFresh]. */
+internal fun isSnapshotFresh(snapshot: HomeSnapshot, nowEpochMs: Long): Boolean = isSnapshotFresh(snapshot.savedAtEpochMs, nowEpochMs)
 
-/** Pure size-guard check (part of the "Storage guardrails" in the phase spec), also factored out
- *  for the same testability reason as [isSnapshotFresh]. */
-internal fun exceedsSnapshotSizeCap(json: String): Boolean = json.length.toLong() > HOME_SNAPSHOT_MAX_BYTES
+/** The size guard (part of the "Storage guardrails" in the phase spec); the rule itself is `shared`'s [exceedsSnapshotSizeCap]. */
+internal fun exceedsSnapshotSizeCap(json: String): Boolean = dev.jellystructure.shared.tv.exceedsSnapshotSizeCap(json)
 
 /**
  * One overwritten file/entry per user — never a growing history. Images are never part of this

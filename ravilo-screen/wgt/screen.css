@@ -173,6 +173,9 @@
     .brand-mark { display: block; width: 44px; height: 44px; margin-right: 14px; }
     .shell-nav { display: flex; align-items: center; }
     .shell-target { outline: none; cursor: pointer; }
+    /* DEB-5697 (FR-61) — the line under the bar while Home shows its saved feed and the network has not answered: Android TV's StaleContentBanner (a pill of text-secondary on the surface). */
+    #shell-saved { position: absolute; top: 88px; left: 50%; z-index: 2; margin-left: -300px; width: 600px; box-sizing: border-box; padding: 8px 20px; border-radius: 22px; background: rgba(20,23,34,.9); color: var(--ink-soft); font-size: 20px; text-align: center; pointer-events: none; }
+    #shell-saved[hidden] { display: none; }
     .shell-nav .shell-target { padding: 9px 20px; border-radius: 11px; color: var(--ink-soft); font-size: 21px; margin-right: 8px; }
     .shell-nav .shell-target.cur { color: var(--ink); font-weight: 600; }
     .shell-nav .shell-target.focused { background: var(--ink); color: #0a0c13; }

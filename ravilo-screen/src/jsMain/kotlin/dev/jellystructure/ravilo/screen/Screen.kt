@@ -127,7 +127,7 @@ private class Screen(private val serverUrl: String) {
     private val qoe = ScreenQoe(::nowMs, backend::currentBandwidthBps, ::onLowestRung, ::askForLowerRung, backend::availableBitratesBps, ::askAfterFreeze, ::showFrozen) { report -> lastQoePost = GlobalScope.launch { api.postPlaybackQoe(report) } }
     /** DEB-5396 (FR-36) — the next episode's encode, started at the credits (or 60 s before the end) and dropped by anything but its own start. */
     private val nextWarm = ScreenPrewarm(api, backend::capabilities, ::rememberedAudioFor)
-    private val shell = ScreenShell(api, serverUrl, ::reopenServerSetup, onProfileMenu = { openProfileMenu() }, onSignIn = ::signInAgain, onPlay = ::playFromTv,
+    private val shell = ScreenShell(api, serverUrl, ::reopenServerSetup, onProfileMenu = { openProfileMenu() }, onSignIn = ::signInAgain, userId = { activeUserId }, onPlay = ::playFromTv,
         playback = ScreenPlaybackSwitches(api, { config }, { config = it }),
         prewarmCapabilities = backend::capabilities, prewarmRemembered = ::rememberedAudioFor)
 
@@ -357,6 +357,7 @@ private class Screen(private val serverUrl: String) {
         if (activeUserId == userId) activeUserId = null
         tokens.remove(userId)
         profiles.remove(userId)
+        ScreenHomeSnapshot.delete(userId)   // DEB-5697 (FR-61) — a signed-out profile leaves no feed behind
         // A local sign-out must complete even when the server is unreachable.
         if (token != null) GlobalScope.launch { runCatching { api.unpair(token) } }
     }
@@ -1609,6 +1610,7 @@ private class Screen(private val serverUrl: String) {
     private fun reopenServerSetup() {
         localStorage.setItem(SETUP_PREFILL_KEY, serverUrl)
         localStorage.removeItem(SERVER_URL_KEY)
+        ScreenHomeSnapshot.deleteAll()   // DEB-5697 (FR-61) — the saved feeds belong to the server being left
         window.location.reload()
     }
 

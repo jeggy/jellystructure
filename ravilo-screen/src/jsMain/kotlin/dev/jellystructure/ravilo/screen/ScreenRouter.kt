@@ -1,6 +1,7 @@
 package dev.jellystructure.ravilo.screen
 
 import dev.jellystructure.shared.tv.ClientCapabilities
+import dev.jellystructure.ravilo.receiver.nowMs
 import dev.jellystructure.shared.tv.HomeFeed
 import dev.jellystructure.shared.tv.MediaCard
 import dev.jellystructure.shared.tv.MediaKind
@@ -42,6 +43,11 @@ internal data class ScreenRouteEntry(
     var stale: Boolean = false,
     /** FR-59 — a silent re-read of this feed is in flight. */
     var reading: Boolean = false,
+    /** DEB-5697 (FR-61) — the feed on show is the last one saved, not yet answered by the network; set once the saved feed is looked for, so a failed load does not look again. */
+    var saved: Boolean = false,
+    var savedLooked: Boolean = false,
+    /** FR-61 — the network read behind a saved feed failed: the line under the bar says so until an answer draws. */
+    var savedFailed: Boolean = false,
 ) {
     /** Home's and a channel's feed are the pages FR-59 keeps current. */
     val isFeed get() = name == "home" || name == "channel"
@@ -115,6 +121,8 @@ internal class ScreenShell(
     private val onProfileMenu: () -> Unit = {},
     /** DEB-5696 (FR-60) — OK on a failure's *Sign in*: this profile is removed and the sign-in screen opens. */
     private val onSignIn: () -> Unit = {},
+    /** DEB-5697 (FR-61) — the profile showing, whose saved Home feed is read and written; null saves and reads nothing. */
+    private val userId: () -> String? = { null },
     private val onPlay: (ScreenPlayRequest) -> Unit = {},
     private val playback: ScreenPlaybackSwitches = ScreenPlaybackSwitches(api, { null }, {}),
     prewarmCapabilities: () -> ClientCapabilities = { ClientCapabilities() },
@@ -308,6 +316,7 @@ internal class ScreenShell(
             current.search.render(body)
         } else {
             body.textContent = ""
+            seedFromSaved(current)
             val feed = current.feed
             if (feed != null) {
                 home.render(feed, body, ScreenLanguage.lang, current.heroSlide) { current.heroSlide = it }
@@ -323,8 +332,11 @@ internal class ScreenShell(
         }
         renderScreenNav(if (current.name == "channel" || current.name == "detail" || current.name == "person" || current.name == SEE_ALL_ROUTE) "home" else current.name, ScreenLanguage.lang)
         focus.refocus()
+        syncSavedLine()
         if (current.isFeed && current.feed == null && !current.failed) loadFeed(current)
-        if (current.isFeed && current.stale) requestFeedRead()   // FR-59 — a feed told it changed while covered is read now that it shows
+        // FR-61 — a saved feed is read at once (FR-59's silent re-read, without its gathering second); any other stale feed gathers.
+        if (current.saved && current.stale) readStaleFeed()
+        else if (current.isFeed && current.stale) requestFeedRead()   // FR-59 — a feed told it changed while covered is read now that it shows
         syncQuietRetry()
         current.detail?.load()
         current.detail?.shown()   // FR-64 — a read it was told about while covered
@@ -423,12 +435,54 @@ internal class ScreenShell(
             val result = runCatching { readFeed(entry) }
             if (generation != loadGeneration || !visible || entry !== entries.lastOrNull()) return@launch
             val feed = result.getOrNull()
-            if (feed != null) entry.feed = feed else { entry.failed = true; entry.failedKind = ScreenLoadKind.of(result.exceptionOrNull()) }
+            if (feed != null) { entry.feed = feed; answered(entry, feed) } else { entry.failed = true; entry.failedKind = ScreenLoadKind.of(result.exceptionOrNull()) }
             render()
         }
     }
 
     private suspend fun readFeed(entry: ScreenRouteEntry): HomeFeed = entry.channelId?.let { api.getChannel(it) } ?: api.getHome()
+
+    /**
+     * DEB-5697 (DEB-5685, FR-61) — Home, at start and on a profile switch, draws the profile's last saved feed at once when it is fresh, with no
+     * skeleton; [render] then reads the network as FR-59's silent re-read does, and the answer replaces it in place. A channel is never seeded.
+     */
+    private fun seedFromSaved(entry: ScreenRouteEntry) {
+        if (entry.name != "home" || entry.feed != null || entry.failed || entry.savedLooked) return
+        entry.savedLooked = true
+        val feed = userId()?.let { ScreenHomeSnapshot.load(it, nowMs()) } ?: return
+        entry.feed = feed
+        entry.saved = true
+        entry.stale = true
+    }
+
+    /** FR-61 — the network answered for [entry]: a Home feed is saved under the profile, and a saved feed on show is no longer one. */
+    private fun answered(entry: ScreenRouteEntry, feed: HomeFeed) {
+        entry.saved = false; entry.savedFailed = false
+        if (entry.name == "home") userId()?.let { ScreenHomeSnapshot.save(it, feed, nowMs()) }
+    }
+
+    /** FR-61 — the read behind a saved feed failed: the line under the bar says so, and the 5 s ask behind a failure goes on until an answer draws. */
+    private fun savedReadFailed(entry: ScreenRouteEntry) {
+        if (!entry.saved) return
+        entry.savedFailed = true
+        syncSavedLine()
+        syncQuietRetry()
+    }
+
+    /** FR-61 — `home.showing_saved` under the bar while the route showing is Home on a saved feed whose read failed; gone when an answer draws. */
+    private fun syncSavedLine() {
+        val entry = entries.lastOrNull()
+        val on = visible && !player && entry != null && entry.savedFailed
+        var line = document.getElementById(SAVED_LINE_ID) as? HTMLElement
+        if (!on) { line?.hidden = true; return }
+        if (line == null) {
+            line = document.createElement("div") as HTMLElement
+            line.id = SAVED_LINE_ID
+            root.appendChild(line)
+        }
+        line.textContent = ScreenLanguage.t("home.showing_saved")
+        line.hidden = false
+    }
 
     /**
      * DEB-5695 (FR-59) — every trigger that says a feed is out of date (the player closing, `home_changed`, `playstate_changed`, a socket back
@@ -452,7 +506,11 @@ internal class ScreenShell(
             val feed = runCatching { readFeed(entry) }.getOrNull()
             entry.reading = false
             if (entry.stale) requestFeedRead()   // told again while this read was out: its answer may predate it
-            if (feed == null || feed == entry.feed || entries.none { it === entry }) return@launch
+            if (entries.none { it === entry }) return@launch
+            if (feed == null) { savedReadFailed(entry); return@launch }
+            val shown = entry.saved
+            answered(entry, feed)
+            if (feed == entry.feed) { if (shown) syncSavedLine(); return@launch }
             redrawFeed(entry, feed)
         }
     }
@@ -479,7 +537,8 @@ internal class ScreenShell(
      */
     private fun syncQuietRetry() {
         val entry = entries.lastOrNull()
-        val waiting = visible && !player && entry != null && entry.isFeed && entry.failed && entry.feed == null && entry.failedKind == ScreenLoadKind.UNREACHABLE
+        val waiting = visible && !player && entry != null && entry.isFeed &&
+            ((entry.failed && entry.feed == null && entry.failedKind == ScreenLoadKind.UNREACHABLE) || entry.savedFailed)   // FR-61 — the line under a saved feed waits for an answer the same way
         if (!waiting) {
             quietRetryTimer?.let { window.clearTimeout(it) }
             quietRetryTimer = null
@@ -491,7 +550,13 @@ internal class ScreenShell(
 
     private fun quietRetry() {
         val entry = entries.lastOrNull() ?: return
-        if (!visible || player || !entry.isFeed || !entry.failed || entry.failedKind != ScreenLoadKind.UNREACHABLE || entry.feed != null || entry.reading) return
+        if (!visible || player || !entry.isFeed || entry.reading) return
+        if (entry.savedFailed && entry.saved) {   // FR-61 — a saved feed's read failed: ask again, and the answer replaces it in place
+            entry.stale = true
+            readStaleFeed()
+            return
+        }
+        if (!entry.failed || entry.failedKind != ScreenLoadKind.UNREACHABLE || entry.feed != null) return
         entry.reading = true
         val generation = loadGeneration
         GlobalScope.launch {
@@ -501,6 +566,7 @@ internal class ScreenShell(
             if (generation != loadGeneration || !visible || player || entry !== entries.lastOrNull() || !entry.failed) return@launch
             if (feed == null) return@launch
             entry.feed = feed; entry.failed = false; entry.stale = false
+            answered(entry, feed)
             render()
         }
     }
@@ -629,6 +695,9 @@ internal class ScreenShell(
 
     private companion object {
         const val SEE_ALL_ROUTE = "seeall"
+
+        /** DEB-5697 (FR-61) — the line under the bar that says Home shows what was saved. */
+        const val SAVED_LINE_ID = "shell-saved"
 
         /** DEB-5698 (FR-64) — the most routes the Back stack holds, Home included. */
         const val MAX_ROUTES = 12

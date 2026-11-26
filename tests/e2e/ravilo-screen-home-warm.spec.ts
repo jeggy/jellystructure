@@ -213,3 +213,183 @@ test.describe("DEB-5640 FR-50 — a Continue Watching tile warms what its page's
     await expect.poll(() => seen.prewarms.length).toBe(2);
   });
 });
+
+// DEB-5697 (DEB-5685, FR-61) — Home opens from the last feed it drew. The real ravilo-screen.js bundle, the backend stood in for by
+// page.route: a reload with /api/tv/home held shows the saved tiles before any skeleton, and what the network answers replaces them in place.
+test.describe("DEB-5685 FR-61 — Home opens from the last feed it drew", () => {
+  const homeOf = (...names: string[]) => ({
+    heroes: [], channels: [], tile_shape: "POSTER", hero_height_pct: 48, focus_detail: "none",
+    rows: [{ id: "new", title: "New Arrivals", kind: "NEWLY_ADDED", items: names.map((n) => card(`id-${n}`, `Title ${n}`)) }],
+  });
+  const SAVED_KEY = (userId: string) => `ravilo.screen.homeSnapshot.${userId}`;
+
+  type Net = { mode: "answer" | "hold" | "fail"; feed: object; reads: number; release: (() => void)[] };
+
+  /** Home answers, holds until [Net.release] runs, or fails with a 500. Profiles are set once, so a reload keeps whatever the test left in storage. */
+  async function open(page: Page, profiles = [{ userId: "viewer", displayName: "Test Viewer", token: "test-token" }]): Promise<Net> {
+    const net: Net = { mode: "answer", feed: homeOf("a", "b"), reads: 0, release: [] };
+    await page.routeWebSocket(/\/api\/tv\/events/, () => {});
+    await page.addInitScript((p) => {
+      if (!sessionStorage.getItem("seeded")) localStorage.setItem("ravilo.screen.serverUrl", "http://app:9505");   // once: Change server's reload must reach setup
+      sessionStorage.setItem("seeded", "1");
+      if (localStorage.getItem("ravilo.screen.profiles") == null) localStorage.setItem("ravilo.screen.profiles", JSON.stringify(p));
+      // Counts every skeleton ever added to the page, so "before any skeleton" is a count, not a moment.
+      (window as any).__skeletons = 0;
+      new MutationObserver((records) => records.forEach((r) => r.addedNodes.forEach((n) => {
+        if (n instanceof HTMLElement && (n.matches(".skeleton") || n.querySelector(".skeleton"))) (window as any).__skeletons++;
+      }))).observe(document, { childList: true, subtree: true });
+    }, profiles);
+    await page.route(`${API}/**`, async (route) => {
+      const url = new URL(route.request().url());
+      if (route.request().method() === "OPTIONS") return route.fulfill({ status: 204 });
+      if (url.pathname === "/api/tv/home") {
+        net.reads++;
+        if (net.mode === "hold") await new Promise<void>((resolve) => net.release.push(resolve));
+        if (net.mode === "fail") return route.fulfill({ status: 500, contentType: "application/json", body: "{}" });
+        return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(net.feed) });
+      }
+      if (url.pathname.startsWith("/api/tv/image/")) return route.fulfill({ status: 204 });
+      return route.fulfill({ status: 404, contentType: "application/json", body: "{}" });
+    });
+    return net;
+  }
+  const titles = (page: Page) => page.locator("#shell-body .home-tile .tile-title");
+  const skeletons = (page: Page) => page.evaluate(() => (window as any).__skeletons as number);
+  const stored = (page: Page, userId = "viewer") => page.evaluate((k) => localStorage.getItem(k), SAVED_KEY(userId));
+
+  test("a reload with Home held shows the saved tiles before any skeleton, and the answer replaces them in place", async ({ page }) => {
+    const net = await open(page);
+    await page.goto(SCREEN_URL);
+    await expect(titles(page)).toHaveText(["Title a", "Title b"]);
+    await expect.poll(() => stored(page)).not.toBeNull();   // the feed that drew from the network is saved
+    expect(await skeletons(page)).toBeGreaterThan(0);       // the first start had nothing saved: it drew the skeleton
+
+    net.mode = "hold"; net.feed = homeOf("x", "a", "b"); net.reads = 0;
+    await page.reload();
+    await expect(titles(page)).toHaveText(["Title a", "Title b"]);   // the saved feed, while the read is out
+    await expect.poll(() => net.reads).toBe(1);
+    await expect(page.locator("#home-row-0-tile-0")).toHaveClass(/focused/);
+    expect(await skeletons(page), "no skeleton before the saved feed drew").toBe(0);
+    await expect(page.locator("#shell-saved")).toBeHidden();       // the read is out, not failed
+
+    net.mode = "answer"; net.release.splice(0).forEach((r) => r());
+    await expect(titles(page)).toHaveText(["Title x", "Title a", "Title b"]);
+    expect(await skeletons(page), "the answer replaced the feed in place: no skeleton").toBe(0);
+    await expect.poll(async () => JSON.stringify(JSON.parse((await stored(page))!).feed.rows[0].items.length)).toBe("3");
+  });
+
+  test("a held then failed read shows home.showing_saved, and it goes when an answer draws", async ({ page }) => {
+    await page.clock.install();
+    const net = await open(page);
+    await page.goto(SCREEN_URL);
+    await expect(titles(page)).toHaveText(["Title a", "Title b"]);
+    await expect.poll(() => stored(page)).not.toBeNull();
+
+    net.mode = "hold"; net.reads = 0;
+    await page.reload();
+    await expect(titles(page)).toHaveText(["Title a", "Title b"]);
+    await expect.poll(() => net.reads).toBe(1);
+    await expect(page.locator("#shell-saved")).toBeHidden();
+    net.mode = "fail"; net.release.splice(0).forEach((r) => r());
+    await expect(page.locator("#shell-saved")).toBeVisible();
+    await expect(page.locator("#shell-saved")).toHaveText("Showing saved content — trying to reconnect");
+    await expect(titles(page)).toHaveText(["Title a", "Title b"]);   // the saved feed stays
+    await expect(page.locator("#shell-body .load-failure")).toHaveCount(0);
+
+    net.mode = "answer"; net.feed = homeOf("c", "a", "b");
+    await page.clock.fastForward(5_100);                               // FR-59's quiet ask behind a failure
+    await expect(titles(page)).toHaveText(["Title c", "Title a", "Title b"]);
+    await expect(page.locator("#shell-saved")).toBeHidden();
+    expect(await skeletons(page)).toBe(0);
+  });
+
+  test("a feed saved over 7 days ago is not drawn: the skeleton comes first", async ({ page }) => {
+    const net = await open(page);
+    await page.goto(SCREEN_URL);
+    await expect(titles(page)).toHaveText(["Title a", "Title b"]);
+    await expect.poll(() => stored(page)).not.toBeNull();
+    await page.evaluate((k) => {
+      const saved = JSON.parse(localStorage.getItem(k)!);
+      saved.savedAtEpochMs = Date.now() - 8 * 24 * 3600 * 1000;
+      localStorage.setItem(k, JSON.stringify(saved));
+    }, SAVED_KEY("viewer"));
+    net.mode = "hold";
+    await page.reload();
+    await expect(page.locator("#shell-body .skeleton")).toBeVisible();
+    await expect(titles(page)).toHaveCount(0);
+    net.mode = "answer"; net.release.splice(0).forEach((r) => r());
+    await expect(titles(page)).toHaveText(["Title a", "Title b"]);
+  });
+
+  test("a second profile does not see the first's snapshot", async ({ page }) => {
+    const net = await open(page);
+    await page.goto(SCREEN_URL);
+    await expect(titles(page)).toHaveText(["Title a", "Title b"]);
+    await expect.poll(() => stored(page)).not.toBeNull();
+    await page.evaluate(() => localStorage.setItem("ravilo.screen.profiles", JSON.stringify([
+      { userId: "viewer", displayName: "Test Viewer", token: "test-token" }, { userId: "other", displayName: "Other Viewer", token: "other-token" }])));
+    net.mode = "hold"; net.feed = homeOf("o1");
+    await page.reload();
+    await expect(page.locator("#profile-picker")).toHaveClass(/\bon\b/);
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("Enter");                                // the second profile
+    await expect(page.locator("#shell")).toHaveClass(/\bon\b/);
+    await expect(page.locator("#shell-body .skeleton")).toBeVisible();
+    await expect(titles(page)).toHaveCount(0);                         // not the first profile's tiles
+    net.mode = "answer"; net.release.splice(0).forEach((r) => r());
+    await expect(titles(page)).toHaveText(["Title o1"]);
+    await expect.poll(() => stored(page, "other")).not.toBeNull();
+    expect(JSON.parse((await stored(page))!).feed.rows[0].items).toHaveLength(2);   // and its own save left the first's alone
+  });
+
+  test("a play from a snapshot tile opens the title's page", async ({ page }) => {
+    const net = await open(page);
+    await page.route(`${API}/api/tv/movie/id-a`, (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(movieDetail("id-a")) }));
+    await page.goto(SCREEN_URL);
+    await expect(titles(page)).toHaveText(["Title a", "Title b"]);
+    await expect.poll(() => stored(page)).not.toBeNull();
+    net.mode = "hold";
+    await page.reload();
+    await expect(titles(page)).toHaveText(["Title a", "Title b"]);
+    await page.keyboard.press("Enter");
+    await expect(page.locator("#shell-body .detail")).toBeVisible();
+  });
+
+  test("signing the profile out removes its snapshot key", async ({ page }) => {
+    await open(page);
+    await page.goto(SCREEN_URL);
+    await expect(titles(page)).toHaveText(["Title a", "Title b"]);
+    await expect.poll(() => stored(page)).not.toBeNull();
+    await page.keyboard.press("ArrowUp");
+    for (let i = 0; i < 4; i++) await page.keyboard.press("ArrowRight");
+    await page.keyboard.press("Enter");
+    await expect(page.locator("#profile-menu")).toHaveClass(/\bon\b/);
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("Enter");                                // Sign out
+    await expect(page.locator("#shell")).not.toHaveClass(/\bon\b/);
+    expect(await stored(page)).toBeNull();
+  });
+
+  test("Change server removes every snapshot", async ({ page }) => {
+    await open(page, [{ userId: "viewer", displayName: "Test Viewer", token: "test-token" }, { userId: "other", displayName: "Other Viewer", token: "other-token" }]);
+    await page.goto(SCREEN_URL);
+    await page.keyboard.press("Enter");                                // the picker's first profile
+    await expect(titles(page)).toHaveText(["Title a", "Title b"]);
+    await expect.poll(() => stored(page)).not.toBeNull();
+    await page.evaluate(([from, to]) => localStorage.setItem(to, localStorage.getItem(from)!), [SAVED_KEY("viewer"), SAVED_KEY("other")]);   // a second profile's, as a switch would have left it
+    await page.keyboard.press("ArrowUp");
+    for (let i = 0; i < 4; i++) await page.keyboard.press("ArrowRight");
+    await page.keyboard.press("Enter");
+    await expect(page.locator("#profile-menu")).toHaveClass(/\bon\b/);
+    await page.keyboard.press("ArrowDown");                            // Switch profile -> Settings
+    await page.keyboard.press("Enter");
+    await expect(page.locator("#set-server-note")).toBeVisible();
+    for (let i = 0; i < 3; i++) await page.keyboard.press("ArrowDown");
+    await expect(page.locator("#shell .shell-target.focused")).toHaveAttribute("id", "set-change-server");
+    await page.keyboard.press("Enter");
+    await expect(page.locator("#setup")).toHaveClass(/\bon\b/);
+    expect(await stored(page)).toBeNull();
+    expect(await stored(page, "other")).toBeNull();
+  });
+});

@@ -841,6 +841,8 @@ test.describe("Home stays current (DEB-5685 FR-59)", () => {
     const ids = Array.from({ length: 14 }, (_, i) => `t${i}`);
     const seen = await live(page);
     seen.home = { ...feedOf(...ids), heroes: [hero("h1"), hero("h2")] };
+    // FR-61 — a reload draws the saved feed first; this case starts from a Home with nothing saved, as a first start does.
+    await page.evaluate(() => Object.keys(localStorage).filter((k) => k.startsWith("ravilo.screen.homeSnapshot.")).forEach((k) => localStorage.removeItem(k)));
     await page.reload();
     await expect(page.locator("#shell-body .home-feed")).toBeVisible();
     await expect(page.locator("#home-hero")).toHaveClass(/focused/);
