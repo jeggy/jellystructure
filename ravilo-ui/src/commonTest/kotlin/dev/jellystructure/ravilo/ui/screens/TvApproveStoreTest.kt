@@ -19,6 +19,9 @@ class TvApproveStoreTest {
         var approveAnswer: () -> Unit = {}
         val previews = mutableListOf<String>()
         val approvals = mutableListOf<String>()
+        val cancels = mutableListOf<String>()
+        var cancelAnswer: () -> Unit = {}
+        override suspend fun cancel(code: String) { cancels += code; cancelAnswer() }
         override suspend fun preview(code: String): String { previews += code; return previewAnswer() }
         override suspend fun approve(code: String) { approvals += code; approveAnswer() }
     }
@@ -81,9 +84,35 @@ class TvApproveStoreTest {
 
     @Test fun `Cancel returns to an empty field and approves nothing`() = runTest {
         val api = FakeApi(); val store = TvApproveStore(api)
-        store.start("K7P4QX"); store.reset()
+        store.start("K7P4QX"); store.cancel()
         assertEquals(TvApproveState.Entering(), store.state.value)
         assertTrue(api.approvals.isEmpty())
+    }
+
+    // DEB-5776 (FR-6 amendment 2026-11-26): the TV was left on "Approving on ‹name›'s phone…" after Cancel.
+    @Test fun `Cancel on the confirm screen tells the server once`() = runTest {
+        val api = FakeApi(); val store = TvApproveStore(api)
+        store.start("K7P4QX"); store.cancel()
+        assertEquals(listOf("K7P4QX"), api.cancels)
+        store.cancel()   // already on the field: nothing more to undo
+        assertEquals(listOf("K7P4QX"), api.cancels)
+    }
+
+    @Test fun `a cancel that cannot be sent still returns to the field`() = runTest {
+        val api = FakeApi(); val store = TvApproveStore(api)
+        api.cancelAnswer = { throw http(503) }
+        store.start("K7P4QX"); store.cancel()
+        assertEquals(TvApproveState.Entering(), store.state.value)
+        api.cancelAnswer = { throw RuntimeException("no network") }
+        store.start("K7P4QX"); store.cancel()
+        assertEquals(TvApproveState.Entering(), store.state.value)
+    }
+
+    @Test fun `Sign in and an outcome send no cancel`() = runTest {
+        val api = FakeApi(); val store = TvApproveStore(api)
+        store.start("K7P4QX"); store.confirm(); store.cancel()
+        assertEquals(TvApproveState.Done("Living room TV"), store.state.value)
+        assertTrue(api.cancels.isEmpty())
     }
 
     @Test fun `an unknown or expired code is expired whether the preview or the approval says so`() = runTest {

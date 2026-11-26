@@ -304,6 +304,24 @@ password place, wherever the current layout keeps it.
 - **So the row is on Profile only where Profile has the account rows** (a phone, a narrow browser window, a narrow desktop window). Everywhere else it is in Settings ›
   Account: a wide Ravilo Web window, and the desktop layout. A TV still draws nothing.
 
+**Amendment 2026-11-26 (DEB-5776) — Cancel puts the TV's screen back.** Found in a lab pass (DEB-5753): a viewer reached *Sign in on ‹TV› as ‹name›?*, tapped
+**Cancel**, and the TV kept saying *Approving on ‹name›'s phone…* for 30 s and more. FR-3 moves a code to `approving` at the preview and says nothing about the way back,
+so a cancelled approval left the TV where the preview put it. Adds one route, and one client rule:
+
+- **`POST /api/tv/signin/cancel {code}`** (device token, the same callers as FR-3's preview and approve; a borrowing row gets **403**). It moves a code that is
+  `approving` **on behalf of this caller** back to `waiting` and clears the approver's name, so the TV's next poll (FR-5, every 3 s) draws its plain code again.
+  - It answers **204** whatever the code is: unknown, expired, already approved, or being approved by someone else all change nothing and are not told apart, so the route
+    cannot be used to find codes. It never touches an `approved` code.
+  - It is its own bucket of 20 per minute per approving device, like the preview's.
+  - The code stays good. Entering it again and tapping *Sign in* signs the TV in, as before.
+- **The client calls it** when the viewer leaves the confirm screen without signing in: **Cancel**, and Back from it. It is sent once and best-effort: a failure shows the viewer
+  nothing and does not stop the screen going back. *Sign in*, and any outcome after it, do not call it.
+- **Not covered:** a viewer who closes the app or loses the connection on the confirm screen sends no cancel, and the TV keeps the line until the code expires (FR-2, ten
+  minutes) or another preview or approval moves it. Ending that on a timer needs a timestamp on the code row, which is a schema change and is the owner's and Tróndur's to
+  ask for, not part of this fix.
+- **Wording, not changed:** an unknown code and an expired one are both a 404, and FR-6 reads both as *expired* on purpose, since telling them apart would tell a viewer which
+  codes exist. *That code has expired — get a new one on the TV* for a mistyped code is therefore as specified.
+
 ### Single sign-on on every client and the admin
 
 **FR-8 — Discovering it.**

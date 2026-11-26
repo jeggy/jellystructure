@@ -159,6 +159,15 @@ class TvApiClient(
         r.assertSuccess()
     }
 
+    /** `POST /api/tv/signin/cancel` (DEB-5776) — the viewer left the confirm screen: the TV's screen goes back to its plain code. 204 whatever the code is. */
+    suspend fun signInCancel(code: String) {
+        val r = client.post("$baseUrl/api/tv/signin/cancel") {
+            auth()
+            jsonBody(json.encodeToString(TvSignInApproveRequest.serializer(), TvSignInApproveRequest(code)))
+        }
+        r.assertSuccess()
+    }
+
     // ─── Feed ────────────────────────────────────────────────────────────────
 
     suspend fun getHome(): HomeFeed {

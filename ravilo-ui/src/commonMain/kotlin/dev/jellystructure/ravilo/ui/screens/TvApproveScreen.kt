@@ -93,13 +93,16 @@ fun TvApproveScreen(
     val state by store.state.collectAsState()
     val scope = rememberCoroutineScope()
     LaunchedEffect(store, linkCode) { store.start(linkCode) }
+    // DEB-5776: leaving the confirm screen by Back tells the TV to draw its plain code again, as Cancel does. The store is
+    // read, not the collected state, so the call sees the screen as it is when Back is pressed.
+    val leave: () -> Unit = { scope.launch { store.cancel() }; onBack() }
 
     Box(Modifier.fillMaxSize().background(colors.background)) {
         Column(Modifier.fillMaxSize().padding(horizontal = 20.dp).padding(top = 14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     "‹", color = colors.text, fontSize = 26.sp,
-                    modifier = Modifier.clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onBack)
+                    modifier = Modifier.clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = leave)
                         .padding(horizontal = 8.dp, vertical = 4.dp),
                 )
                 Text(str("tvcode.row"), color = colors.text, fontSize = 20.sp, fontWeight = FontWeight.Bold, fontFamily = SpaceGrotesk)
@@ -109,7 +112,7 @@ fun TvApproveScreen(
                 when (val s = state) {
                     is TvApproveState.Entering -> CodeField(s, store) { scope.launch { store.submit() } }
                     is TvApproveState.Checking -> Busy(s.code)
-                    is TvApproveState.Confirm -> Confirm(s.code, s.tvName, displayName, onSwitch, onCancel = store::reset) { scope.launch { store.confirm() } }
+                    is TvApproveState.Confirm -> Confirm(s.code, s.tvName, displayName, onSwitch, onCancel = { scope.launch { store.cancel() } }) { scope.launch { store.confirm() } }
                     is TvApproveState.Approving -> Busy(s.code)
                     is TvApproveState.Done -> Outcome(
                         glyph = { CheckGlyph(GOOD, 40.dp) },

@@ -22,6 +22,7 @@ import kotlinx.coroutines.sync.withLock
  *
  *  1. [mint] — the unsigned-in TV (no credential): code + secret, after checking sign-in by code is possible at all.
  *  2. [preview] — the approving viewer's client asks what the code is for; the code moves to `approving`.
+ *     [cancel] undoes that when the viewer leaves the confirm screen without signing the TV in.
  *  3. [approve] — the cycle: initiate under the TV's identity, authorise with the CALLER'S token, exchange the secret,
  *     then the unchanged [RaviloDeviceService.loginDevice]. The server-side secret never leaves this class.
  *  4. [poll] — the TV, with its secret, until approved; a 200 deletes the row, so a code signs a TV in exactly once.
@@ -114,6 +115,13 @@ class TvSignInService(
         if (row.state == "approved") return null
         db.tvSigninCodeQueries.preview(approver_name = approver.jellyfinUsername, code = row.code)
         return Previewed(row.device_name ?: "Ravilo TV ${row.device_id.take(6)}", row.platform)
+    }
+
+    /** DEB-5776 — the viewer who previewed a code left without signing the TV in: the code goes back to `waiting`, so the TV draws its
+     *  plain code again. Changes nothing for an unknown, expired or approved code, or one another viewer is approving. */
+    fun cancel(code: String, approver: DeviceData) {
+        val row = live(code) ?: return
+        db.tvSigninCodeQueries.cancelPreview(code = row.code, approver_name = approver.jellyfinUsername)
     }
 
     // ── 3. Approve ────────────────────────────────────────────────────────────────

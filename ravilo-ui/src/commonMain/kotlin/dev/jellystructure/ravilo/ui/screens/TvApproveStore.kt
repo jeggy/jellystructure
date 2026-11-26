@@ -43,11 +43,14 @@ object TvCodeGrouping : VisualTransformation {
 interface TvApproveApi {
     suspend fun preview(code: String): String
     suspend fun approve(code: String)
+    /** DEB-5776 — the viewer left the confirm screen; the TV goes back to its code. Best-effort. */
+    suspend fun cancel(code: String) {}
 }
 
 class TvClientApproveApi(private val client: TvApiClient) : TvApproveApi {
     override suspend fun preview(code: String) = client.signInPreview(code).deviceName
     override suspend fun approve(code: String) = client.signInApprove(code)
+    override suspend fun cancel(code: String) = client.signInCancel(code)
 }
 
 /** Why a code did not sign a TV in. Kinds, never a body: nothing here is rendered from what the server said. */
@@ -116,7 +119,20 @@ class TvApproveStore(private val api: TvApproveApi) {
         approve(s.code, s.tvName)
     }
 
-    /** Cancel on the confirm screen, and *Enter a new code* after an outcome: back to the field with nothing typed. */
+    /** DEB-5776 (FR-6) — Cancel on the confirm screen, and Back from it: the field with nothing typed, and the TV told to draw its plain
+     *  code again. Sent once and best-effort; a failure changes nothing for the viewer. */
+    suspend fun cancel() {
+        val s = _state.value as? TvApproveState.Confirm ?: return
+        reset()
+        try {
+            api.cancel(s.code)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Throwable) {
+        }
+    }
+
+    /** *Enter a new code* after an outcome: back to the field with nothing typed. */
     fun reset() { _state.value = TvApproveState.Entering() }
 
     /** Retry after *unavailable* or *could not reach the server*. */

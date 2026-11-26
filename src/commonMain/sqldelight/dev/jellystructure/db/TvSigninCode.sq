@@ -1,5 +1,5 @@
 -- DEB-2233 (FR-2, FR-3) — a TV's sign-in code. `signin/code` mints a row (state `waiting`), a signed-in viewer's
--- `signin/preview` moves it to `approving`, `signin/approve` signs the TV in as that viewer and moves it to
+-- `signin/preview` moves it to `approving` (and `signin/cancel` back to `waiting`), `signin/approve` signs the TV in as that viewer and moves it to
 -- `approved` (the TV's device token and avatar are stashed here), and the TV's `signin/poll` collects them and deletes
 -- the row, so a code signs a TV in exactly once. Must stay byte-for-byte in sync with 85.sqm's CREATE TABLE.
 CREATE TABLE tv_signin_code (
@@ -29,6 +29,10 @@ SELECT * FROM tv_signin_code WHERE code = ?;
 
 preview:
 UPDATE tv_signin_code SET state = 'approving', approver_name = :approver_name WHERE code = :code AND state != 'approved';
+
+-- DEB-5776 — the approving viewer left the confirm screen: only their own preview is undone, and never an approved code.
+cancelPreview:
+UPDATE tv_signin_code SET state = 'waiting', approver_name = NULL WHERE code = :code AND state = 'approving' AND approver_name = :approver_name;
 
 approve:
 UPDATE tv_signin_code SET state = 'approved', approved_user_id = :user_id, approved_token = :token, approved_avatar_url = :avatar_url

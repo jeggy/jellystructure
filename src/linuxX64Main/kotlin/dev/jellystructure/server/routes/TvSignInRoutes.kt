@@ -35,6 +35,8 @@ class TvSignInLimits(
     /** Preview: a code is guessable in principle and a preview says whether one exists, so it is bounded too — 20 per minute per
      *  approving device, its own bucket so a viewer's preview-then-approve never spends the approve allowance. */
     val preview: LoginRateLimiter = LoginRateLimiter(maxAttempts = 20),
+    /** Cancel (DEB-5776): 20 per minute per approving device, its own bucket like the preview's. */
+    val cancel: LoginRateLimiter = LoginRateLimiter(maxAttempts = 20),
 )
 
 // FR-15: nothing below names the server software behind sign-in, a plugin, a directory, or a status code. A client may one
@@ -44,7 +46,7 @@ private const val TOO_MANY = "Too many attempts — try again in a minute"
 
 /**
  * DEB-2233 (FR-2, FR-3) — `/api/tv/signin/{code,poll}` are open (AuthPlugin's OPEN_API_PATHS: the TV holds no credential);
- * `/api/tv/signin/{preview,approve}` take a device token like every other TV route.
+ * `/api/tv/signin/{preview,cancel,approve}` take a device token like every other TV route.
  */
 fun Route.tvSignInRoutes(service: TvSignInService, limits: TvSignInLimits = TvSignInLimits()) {
     fun io.ktor.server.application.ApplicationCall.clientKey() =
@@ -85,6 +87,18 @@ fun Route.tvSignInRoutes(service: TvSignInService, limits: TvSignInLimits = TvSi
         val code = call.request.queryParameters["code"].orEmpty()
         val p = service.preview(code, caller) ?: return@get call.respond(HttpStatusCode.NotFound, mapOf("error" to NOT_VALID))
         call.respond(TvSignInPreview(deviceName = p.deviceName, platform = p.platform))
+    }
+
+    post("/tv/signin/cancel") {
+        val caller = call.attributes[DeviceKey]
+        if (!TvSignInService.mayApprove(caller)) return@post call.respond(HttpStatusCode.Forbidden, mapOf("error" to "This device can't sign a TV in"))
+        if (!limits.cancel.tryAcquire(caller.deviceId)) return@post call.tooMany()
+        val req = runCatching { call.receive<TvSignInApproveRequest>() }.getOrElse {
+            return@post call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Invalid request"))
+        }
+        // DEB-5776: 204 whatever the code is, so the route cannot be used to find codes.
+        service.cancel(req.code, caller)
+        call.respond(HttpStatusCode.NoContent)
     }
 
     post("/tv/signin/approve") {

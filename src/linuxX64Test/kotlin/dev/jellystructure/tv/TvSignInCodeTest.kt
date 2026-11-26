@@ -139,6 +139,7 @@ class TvSignInCodeTest {
         suspend fun mint(deviceId: String, ip: String? = null) = post("/api/tv/signin/code", """{"deviceId":"$deviceId","deviceName":"Living room","platform":"tv"}""", ip = ip)
         suspend fun poll(code: String, secret: String, ip: String? = null) = post("/api/tv/signin/poll", """{"code":"$code","secret":"$secret"}""", ip = ip)
         suspend fun approve(code: String, bearer: String) = post("/api/tv/signin/approve", """{"code":"$code"}""", bearer)
+        suspend fun cancel(code: String, bearer: String) = post("/api/tv/signin/cancel", """{"code":"$code"}""", bearer)
         suspend fun preview(code: String, bearer: String) = client.get("/api/tv/signin/preview?code=$code") { header(HttpHeaders.Authorization, "Bearer $bearer") }
     }
 
@@ -277,6 +278,45 @@ class TvSignInCodeTest {
         assertEquals(HttpStatusCode.Unauthorized, r.approve(code, "machine-token-$run").status)
         assertEquals(HttpStatusCode.Unauthorized, r.post("/api/tv/signin/approve", """{"code":"$code"}""").status, "no credential at all")
         assertTrue(r.fake.authorizeTokens.isEmpty())
+    }
+
+    // ── DEB-5776: Cancel on the confirm screen puts the TV's screen back ──────────
+
+    @Test fun `a cancelled preview puts the code back to waiting and it still signs the TV in`() = rig("cancel") { r ->
+        val phone = r.signIn("alice phone", "phone-1", "u-alice", "alice-jf-token", "phone")
+        val m = obj(r.mint("tv-1").bodyAsText()); val code = m["code"]!!.jsonPrimitive.content; val secret = m["secret"]!!.jsonPrimitive.content
+        assertEquals(HttpStatusCode.OK, r.preview(code, phone).status)
+        assertEquals("approving", obj(r.poll(code, secret).bodyAsText())["state"]!!.jsonPrimitive.content)
+        assertEquals(HttpStatusCode.NoContent, r.cancel(code, phone).status)
+        val back = obj(r.poll(code, secret).also { assertEquals(HttpStatusCode.Accepted, it.status) }.bodyAsText())
+        assertEquals("waiting", back["state"]!!.jsonPrimitive.content)
+        assertNull(back["approverName"], "the approver's name goes with the cancel")
+        // The code is still good: entering it again and approving signs the TV in.
+        assertEquals(HttpStatusCode.OK, r.preview(code, phone).status)
+        assertEquals(HttpStatusCode.NoContent, r.approve(code, phone).status)
+        assertEquals(HttpStatusCode.OK, r.poll(code, secret).status)
+    }
+
+    @Test fun `a cancel from another viewer or on an approved code changes nothing`() = rig("cancel-other") { r ->
+        val alice = r.signIn("alice phone", "phone-1", "u-alice", "alice-jf-token", "phone")
+        val bob = r.signIn("bob phone", "phone-2", "u-bob", "bob-jf-token", "phone")
+        val m = obj(r.mint("tv-1").bodyAsText()); val code = m["code"]!!.jsonPrimitive.content; val secret = m["secret"]!!.jsonPrimitive.content
+        r.preview(code, alice)
+        assertEquals(HttpStatusCode.NoContent, r.cancel(code, bob).status)
+        val still = obj(r.poll(code, secret).bodyAsText())
+        assertEquals("approving", still["state"]!!.jsonPrimitive.content, "bob did not preview it, so bob cannot undo alice's")
+        assertEquals("u-alice", still["approverName"]!!.jsonPrimitive.content)
+        r.approve(code, alice)
+        assertEquals(HttpStatusCode.NoContent, r.cancel(code, alice).status)
+        assertEquals(HttpStatusCode.OK, r.poll(code, secret).status, "an approved code stays approved")
+    }
+
+    @Test fun `a cancel answers 204 for an unknown code and 403 for a borrowing row`() = rig("cancel-edges") { r ->
+        val phone = r.signIn("alice phone", "phone-1", "u-alice", "alice-jf-token", "phone")
+        val cast = r.signIn("cast", "recv-1", "u-alice", "alice-jf-token", "cast")
+        assertEquals(HttpStatusCode.NoContent, r.cancel("ZZZZZZ", phone).status, "an unknown code is not told apart from a known one")
+        assertEquals(HttpStatusCode.Forbidden, r.cancel("ZZZZZZ", cast).status)
+        assertEquals(HttpStatusCode.Unauthorized, r.post("/api/tv/signin/cancel", """{"code":"ZZZZZZ"}""").status, "no credential at all")
     }
 
     // ── FR-2: mint ──────────────────────────────────────────────────────────────
