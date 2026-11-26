@@ -110,6 +110,11 @@ UPDATE ravilo_device SET last_seen = :last_seen WHERE device_token = :device_tok
 updatePublicAddress:
 UPDATE ravilo_device SET last_public_address = :last_public_address WHERE device_id = :device_id AND jellyfin_user_id = :jellyfin_user_id;
 
+-- DEB-5719 (FR-1) — a TV's events socket carries the name Play on a TV lists it by (`cast_name=`); it becomes the
+-- stored display name, written only when it differs.
+updateDisplayName:
+UPDATE ravilo_device SET display_name = :display_name WHERE device_id = :device_id AND jellyfin_user_id = :jellyfin_user_id AND display_name <> :display_name;
+
 deleteByToken:
 DELETE FROM ravilo_device WHERE device_token = :device_token;
 

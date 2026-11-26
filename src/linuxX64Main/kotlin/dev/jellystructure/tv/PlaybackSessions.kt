@@ -107,9 +107,13 @@ private val KNOWN_FEATURES = setOf(EVENTS_FEATURE_SESSIONS, EVENTS_FEATURE_SESSI
 
 /** R380 (owner decision 2) — a TV's name as Cast shows it (`cast_name=`), kept beside its features as `castname:<name>`. */
 internal fun parseCastName(raw: String?): Set<String> {
-    val name = raw?.trim()?.filter { it >= ' ' }?.take(CAST_NAME_MAX)?.takeIf { it.isNotEmpty() } ?: return emptySet()
+    val name = castNameOf(raw) ?: return emptySet()
     return setOf("$CAST_NAME_FEATURE$name")
 }
+
+/** DEB-5719 — the one cleaning rule for a `cast_name=`: [parseCastName]'s feature and a device's stored display name both come from it. */
+internal fun castNameOf(raw: String?): String? =
+    raw?.trim()?.filter { it >= ' ' }?.take(CAST_NAME_MAX)?.takeIf { it.isNotEmpty() }
 internal const val CAST_NAME_FEATURE = "castname:"
 private const val CAST_NAME_MAX = 64
 

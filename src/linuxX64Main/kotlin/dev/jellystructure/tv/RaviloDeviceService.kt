@@ -380,6 +380,24 @@ class RaviloDeviceService(private val db: JellystructureDb) : BorrowedTokenStore
         if (before != a) runCatching { onAddressChanged?.invoke(deviceId) }   // R368 owner decision 2
     }
 
+    /**
+     * DEB-5719 (FR-1, FR-2) — the name a TV's events socket carries (`cast_name=`, already cleaned by `castNameOf`)
+     * becomes its stored display name, so the session row, the remote, Playing everywhere and Move to read the name
+     * Play on a TV does. Written only when it differs; a null or blank name changes nothing. Returns [device] with the
+     * new name, for the caller to register on the events bus, and patches the cached entry in place as [recordAddress]
+     * does — a session that is already live keeps the name it started with.
+     */
+    fun recordName(device: DeviceData, name: String?): DeviceData {
+        val n = name?.takeIf { it.isNotBlank() } ?: return device
+        val row = db.raviloDeviceQueries.getByDeviceAndUser(device_id = device.deviceId, jellyfin_user_id = device.jellyfinUserId).executeAsOneOrNull()
+            ?: return device
+        db.raviloDeviceQueries.updateDisplayName(display_name = n, device_id = device.deviceId, jellyfin_user_id = device.jellyfinUserId)
+        tokenCache.update(row.device_token) { cur ->
+            if (cur != null && cur.data.displayName != n) cur.copy(data = cur.data.copy(displayName = n)) else cur
+        }
+        return if (device.displayName == n) device else device.copy(displayName = n)
+    }
+
     /** R368 (owner decision 2) — a device's public address moved: the household it belongs to may have changed, so
      *  every opted-in socket gets a fresh session list. */
     var onAddressChanged: ((deviceId: String) -> Unit)? = null

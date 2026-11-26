@@ -797,11 +797,14 @@ fun startServer(
                     // nothing left to check here; already-connected TVs keep their socket either way.
                     val token = call.request.queryParameters["token"]?.takeIf { it.isNotBlank() }
                         ?: call.request.headers["Authorization"]?.removePrefix("Bearer ")?.takeIf { it.isNotBlank() }
-                    val device = token?.let { deviceService.validateDeviceToken(it) }
-                    if (device == null) {
+                    val signedIn = token?.let { deviceService.validateDeviceToken(it) }
+                    if (signedIn == null) {
                         close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, "Invalid or missing device token"))
                         return@webSocket
                     }
+                    // DEB-5719 (FR-1, FR-2) — the name this socket carries is the TV's name from here on, and the device
+                    // the bus holds (which `PlaybackTargets.start` names a session by) carries it too.
+                    val device = deviceService.recordName(signedIn, dev.jellystructure.tv.castNameOf(call.request.queryParameters["cast_name"]))
                     // Phase 134 (FR-OPS2 §D) — defensive hard cap; a reconnect of an already-registered
                     // device always succeeds, only a genuinely new device can be refused.
                     // R368 (dev review item 2) — what this socket opted into: session events go only to a socket that
