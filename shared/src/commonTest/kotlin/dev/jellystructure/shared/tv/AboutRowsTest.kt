@@ -25,7 +25,7 @@ class AboutRowsTest {
         ), aboutRows(film, series = false, echo))
     }
 
-    @Test fun `a series says per episode, first aired, network and its seasons, and a creator stands in for a missing director`() {
+    @Test fun `a series says per episode and first aired and network and its seasons and a creator stands in for a missing director`() {
         val rows = aboutRows(AboutFacts(runtimeMin = 45, released = "2019-09", creator = "A. Creator", studioOrNetwork = "A Network", seasons = 3, episodes = 30), series = true, echo)
         assertEquals(listOf(
             "about.runtime" to "about.per_episode(min=45)",
@@ -36,7 +36,7 @@ class AboutRowsTest {
         ), rows)
     }
 
-    @Test fun `nothing sent means no rows, an unknown country shows its code and a blank value is no row`() {
+    @Test fun `nothing sent means no rows and an unknown country shows its code and a blank value is no row`() {
         assertEquals(emptyList(), aboutRows(AboutFacts(), series = false, echo))
         val rows = aboutRows(AboutFacts(country = "ZZ", director = " ", sizeBytes = 0), series = false, echo)
         assertEquals(listOf("about.country" to "ZZ"), rows)
