@@ -168,6 +168,44 @@ done
         assertEquals(0, enc.running().size)
     }
 
+    /** DEB-5685 (FR-313-27) — the resolution of the first variant the master lists. */
+    private fun firstVariant(master: String): String = Regex("RESOLUTION=(\\d+x\\d+)").find(master.substringAfter("#EXT-X-STREAM-INF"))!!.groupValues[1]
+
+    @Test fun `a start rung that moved still adopts the warm stream and the master lists the play's rung first - FR-313-27`() = runBlocking<Unit> {
+        val enc = encoder()
+        val id = playing(enc, "w27")
+        assertTrue(enc.keepWarm("w27", 62_000))
+        assertEquals("1920x1080", firstVariant(enc.master(id)!!), "kept warm at the start rung it was planned with")
+        val adopted = enc.adoptPrewarm("dev", "item", plan.copy(startRung = 1), 32, "w27b", Long.MAX_VALUE)
+        assertEquals(id, adopted, "the same stream, though the take moved")
+        assertEquals("1280x720", firstVariant(enc.master(id)!!), "the stream took the play's start rung")
+        assertEquals(1, jobCount(), "the job was not restarted")
+        assertEquals(1, enc.running().size)
+        assertEquals(1, enc.stopFor("w27b"))
+        waitFor("the folder to go") { dirsGone() }
+    }
+
+    @Test fun `a play whose rung set differs does not adopt and starts fresh - FR-313-27`() = runBlocking<Unit> {
+        val enc = encoder()
+        playing(enc, "w27c")
+        assertTrue(enc.keepWarm("w27c", 62_000))
+        assertNull(enc.adoptPrewarm("dev", "item", plan.copy(rungs = plan.rungs.take(1), startRung = 0), 32, "w27d", Long.MAX_VALUE))
+        waitFor("the kept stream's folder to go") { dirsGone() }
+        assertNull(enc.prewarmSegmentOf("dev", "item"))
+    }
+
+    @Test fun `a prewarm post with a moved start rung keeps the same stream and its master follows - FR-313-27`() = runBlocking<Unit> {
+        val enc = encoder()
+        val id = playing(enc, "w27e")
+        assertTrue(enc.keepWarm("w27e", 62_000))
+        assertEquals(id, enc.prewarm(plan.copy(startRung = 1), "dev", "item", 31, Long.MAX_VALUE), "the page's re-post with a moved start rung keeps the stream")
+        assertEquals("1280x720", firstVariant(enc.master(id)!!))
+        delay(500)
+        assertEquals(1, jobCount())
+        assertEquals(1, enc.cancelPrewarm("dev", "item"))
+        waitFor("the folder to go") { dirsGone() }
+    }
+
     @Test fun `a start of another item by the device stops it and the same item does not`() = runBlocking<Unit> {
         val enc = encoder()
         playing(enc, "w4")

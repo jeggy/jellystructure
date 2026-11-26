@@ -64,7 +64,7 @@ class Encoder(
      * One stream behind an id. [deviceId]/[itemId] say whose play it is (309's prewarm is adopted by the play that matches
      * it); [prewarmSegment] is non-null while it is a prewarm nobody has pressed Play on yet (FR-313-1 / 309 FR-309-6).
      */
-    private class Entry(val plan: EncoderPlan, var jellyfinPlaySessionId: String, var expiresAt: Long,
+    private class Entry(var plan: EncoderPlan, var jellyfinPlaySessionId: String, var expiresAt: Long,
                         val deviceId: String = "", val itemId: String = "", var prewarmSegment: Int? = null,
                         /** 313 (found live 2026-10-09) — where the play starts: the master says so (`EXT-X-START`) and the
                          *  init segment starts its job there, so a resumed play never encodes from 0:00 first. */
@@ -358,7 +358,10 @@ class Encoder(
         if (existing != null) {
             val (id, e) = existing
             if (samePlay(e.plan, plan) && kotlin.math.abs((e.prewarmSegment ?: 0) - startSegment) <= 1) {
-                mutex.withLock { e.expiresAt = expiresAt; e.warmAtMs = clock(); reservations.removeAll { it.plan === plan } }
+                mutex.withLock {
+                    e.expiresAt = expiresAt; e.warmAtMs = clock(); reservations.removeAll { it.plan === plan }
+                    if (e.plan.startRung != plan.startRung) { e.plan = e.plan.copy(startRung = plan.startRung); persist(id, e, clock()) }   // DEB-5685 (FR-313-27) — a moved start rung keeps the stream and the master lists the new one first
+                }
                 if (kickJobs) scope.launch { jobs.segment(id, e.plan, ffmpegPath, 0, e.prewarmSegment ?: startSegment, warm = true) }
                 return id
             }
@@ -373,7 +376,7 @@ class Encoder(
 
     /**
      * Play adopts the prewarm for (device, item) when it is the same play: same plan (codec, rungs, audio, subtitles,
-     * burn-in, muxing) and a start within one segment. The stream id (and its running job) then belongs to
+     * burn-in, muxing; not the start rung, FR-313-27) and a start within one segment. The stream id (and its running job) then belongs to
      * [jellyfinPlaySessionId], so phase 180 stops it with the play. Otherwise the prewarm is stopped first (never two
      * jobs for one play) and null is returned. Owner, 2026-10-08: the early encode becomes the play's own job.
      */
@@ -387,6 +390,7 @@ class Encoder(
             if (!samePlay(e.plan, plan) || kotlin.math.abs((e.prewarmSegment ?: 0) - startSegment) > 1) return@withLock null
             e.prewarmSegment = null
             e.keptWarm = false
+            if (e.plan.startRung != plan.startRung) e.plan = e.plan.copy(startRung = plan.startRung)   // DEB-5685 (FR-313-27) — the stream takes the play's start rung; the job's command does not depend on it
             e.startMs = startSegment * ENCODER_SEGMENT_MS
             e.jellyfinPlaySessionId = jellyfinPlaySessionId
             e.qoeKey = qoeKey
@@ -556,8 +560,9 @@ class Encoder(
     /** DEB-5646 (FR-313-20) — a side job never holds a slot a play needs; stopped after the prewarms. Returns how many. */
     internal suspend fun stopSideJobs(): Int = jobs.stopSideJobs()
 
+    /** DEB-5685 (FR-313-27) — no `startRung`: `encoderCommand` never reads it, only the master's order does. */
     private fun samePlay(a: EncoderPlan, b: EncoderPlan): Boolean =
-        a.source.path == b.source.path && a.codec == b.codec && a.mux == b.mux && a.rungs == b.rungs && a.startRung == b.startRung &&
+        a.source.path == b.source.path && a.codec == b.codec && a.mux == b.mux && a.rungs == b.rungs &&
             a.audio == b.audio && a.burnSubtitleOrder == b.burnSubtitleOrder && a.subtitles.map { it.name } == b.subtitles.map { it.name }
 
     private fun prewarmKey(deviceId: String, itemId: String) = "$PREWARM_PREFIX$deviceId:$itemId"
