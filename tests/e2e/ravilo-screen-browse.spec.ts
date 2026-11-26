@@ -164,3 +164,104 @@ test("a grid's first row keeps the page at its top and a later row rests 248 px 
   await expect(page.locator("#browse-tile-0.focused")).toBeVisible();
   await expect.poll(() => layoutTop("#browse-tile-0"), { timeout: 4000 }).toBeCloseTo(natural, 0);
 });
+
+// DEB-5698 (DEB-5685 FR-64) — a long grid grows by appending and draws only the rows near the focus; boxes of the same height hold the rest.
+test.describe("a long grid stays light (DEB-5685 FR-64)", () => {
+  const PAGES = 10;
+  const ROWS = (PAGES * 60) / 6;
+  /** What the grid holds in the DOM, and how tall each part of it is. */
+  const measure = (page: Page) => page.evaluate(() => {
+    const tiles = Array.from(document.querySelectorAll<HTMLElement>(".browse-grid .home-tile"));
+    const grid = document.querySelector<HTMLElement>(".browse-grid")!;
+    const gaps = Array.from(document.querySelectorAll<HTMLElement>(".browse-grid .browse-gap"));
+    const style = getComputedStyle(tiles[0]);
+    const pitch = tiles[0].offsetHeight + parseFloat(style.marginTop) + parseFloat(style.marginBottom);
+    const rows = new Set(tiles.map(tile => tile.getAttribute("data-row")));
+    return { tiles: tiles.length, gaps: gaps.length, rows: rows.size, pitch, height: grid.offsetHeight, viewport: window.innerHeight,
+      firstIndex: Number(tiles[0].id.replace("browse-tile-", "")), lastIndex: Number(tiles[tiles.length - 1].id.replace("browse-tile-", "")) };
+  });
+
+  async function openGrid(page: Page) {
+    const asked: number[] = [];
+    await page.route("**/api/tv/browse?**", route => {
+      const n = Number(new URL(route.request().url()).searchParams.get("page"));
+      asked.push(n);
+      return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ query: "",
+        items: Array.from({ length: 60 }, (_, i) => card(`movie-${(n - 1) * 60 + i}`)), total: PAGES * 60 }) });
+    });
+    await boot(page);
+    await page.keyboard.press("ArrowRight");
+    await page.keyboard.press("Enter");
+    await expect(page.locator("#browse-tile-0.focused")).toBeVisible();
+    return asked;
+  }
+
+  test("10 pages append: a drawn tile stays the same node through each, and the DOM holds the windowed rows only", async ({ page }) => {
+    const asked = await openGrid(page);
+    const first = await measure(page);
+    expect(first.tiles).toBe(60);                                                      // the first page is all within range
+    const reach = 3 * Math.ceil(first.viewport / first.pitch);
+
+    const firstTile = await page.locator("#browse-tile-0").elementHandle();
+    let appends = 1;
+    for (let row = 1; row < ROWS; row++) {
+      // The tile in focus before the press: a page appended meanwhile must leave it where it is.
+      const held = await page.locator(`#browse-tile-${(row - 1) * 6}`).elementHandle();
+      await expect.poll(() => asked.length * 10 > row).toBe(true);                     // the page with the next row has been asked for ...
+      await expect(page.locator(`#browse-tile-${row * 6}`)).toHaveCount(1);             // ... and appended
+      await page.keyboard.press("ArrowDown");
+      await expect(page.locator(`#browse-tile-${row * 6}.focused`)).toBeVisible();
+      if (asked.length > appends) {
+        appends = asked.length;
+        expect(await held!.evaluate(node => node.isConnected), `the tile of row ${row - 1} after page ${asked.length} was appended`).toBe(true);
+        if (appends === 2) expect(await firstTile!.evaluate(node => node.isConnected), "the first tile after page 2").toBe(true);
+      }
+      const now = await measure(page);
+      expect(now.rows).toBeLessThanOrEqual(2 * reach + 1);
+      expect(now.tiles).toBeLessThanOrEqual(6 * (2 * reach + 1));
+      expect(now.firstIndex).toBeGreaterThanOrEqual(Math.max(0, row - reach) * 6);
+      await held!.dispose();
+    }
+    expect(asked).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+    const end = await measure(page);
+    expect(end.gaps).toBeGreaterThan(0);
+    // The boxes hold the place of every row that is not drawn, so the grid is as tall as 100 rows of tiles: nothing moved.
+    expect(Math.abs(end.height - ROWS * end.pitch)).toBeLessThanOrEqual(2);
+    // FR-39 — the focused row still rests 248 px from the top.
+    await expect.poll(async () => Math.abs(await page.locator("#browse-tile-594").evaluate(element => {
+      const rect = element.getBoundingClientRect();
+      return rect.top + (rect.height - (element as HTMLElement).offsetHeight) / 2;
+    }) - 248), { timeout: 4000 }).toBeLessThanOrEqual(2);
+  });
+
+  test("scrolling back up draws the rows again as the focus comes to them", async ({ page }) => {
+    const asked = await openGrid(page);
+    for (let row = 1; row < ROWS; row++) {
+      await expect(page.locator(`#browse-tile-${row * 6}`)).toHaveCount(1);          // a page still loading is waited for
+      await page.keyboard.press("ArrowDown");
+      await expect(page.locator(`#browse-tile-${row * 6}.focused`)).toBeVisible();
+    }
+    expect(asked.length).toBe(PAGES);
+    await expect(page.locator("#browse-tile-0")).toHaveCount(0);                      // far above: a box holds its place
+    const bottom = await measure(page);
+    const reach = 3 * Math.ceil(bottom.viewport / bottom.pitch);
+    // Up to the top, wherever FR-4 takes each press (it passes through the tab, as it does with every tile drawn): the drawn rows follow
+    // the focus, one target is focused throughout, and the grid is as tall as ever.
+    const focusedTile = () => page.evaluate(() => Number(document.querySelector(".browse-grid .focused")?.id.replace("browse-tile-", "") ?? -1));
+    let tile = 99 * 6;
+    for (let press = 0; press < 400 && tile >= 12; press++) {                         // (never mind which tile each press lands on)
+      await page.keyboard.press("ArrowUp");
+      const now = await measure(page);
+      expect(now.tiles).toBeLessThanOrEqual(6 * (2 * reach + 1));
+      expect(await page.locator(".shell-target.focused").count()).toBe(1);
+      expect(Math.abs(now.height - ROWS * now.pitch)).toBeLessThanOrEqual(2);
+      tile = (await focusedTile()) < 0 ? tile : await focusedTile();
+    }
+    expect(tile).toBeLessThan(12);                                                    // FR-4 brought it to the top rows
+    const top = await measure(page);
+    expect(top.firstIndex).toBe(0);
+    expect(top.lastIndex).toBeGreaterThanOrEqual(reach * 6);                          // the rows below the focus are drawn again too
+    expect(top.tiles).toBeLessThanOrEqual(6 * (reach + 2));                    // rows 0 to the focused row (at most 1) plus the reach below
+    await expect(page.locator("#browse-tile-0")).toHaveCount(1);
+  });
+});

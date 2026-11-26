@@ -109,6 +109,9 @@ internal class ScreenDetail(
     private var logoLoaded = false
     private var titleNode: HTMLElement? = null
 
+    /** DEB-5698 (FR-64) — a push said the playstate changed while another route covered this page: it is read when the page shows. */
+    private var stale = false
+
     val ready get() = movie != null || series != null
 
     /** DEB-5648 (FR-50) — the page's own reads failed, so nothing on it will ever be ready. */
@@ -179,6 +182,7 @@ internal class ScreenDetail(
      * server's 20 s push is mostly that, and the page's DOM is not touched.
      */
     fun refresh() {
+        stale = false
         if (!ready) { if (loading) readAgain = true; return }
         if (reading) { readAgain = true; return }
         reading = true
@@ -192,6 +196,25 @@ internal class ScreenDetail(
             reading = false
         }
     }
+
+    /**
+     * DEB-5698 (DEB-5685, FR-64) — another route covers this page: it keeps its data and lets go of its drawn nodes (the page, the backdrop, the
+     * logo, the title), which would otherwise stay in memory for as long as the route stays in the stack. [render] draws it again from the data
+     * when it shows; held data is not a load, so no skeleton and no fade (FR-20).
+     */
+    fun cover() {
+        drawn = null
+        backdrop = null
+        logo = null
+        logoLoaded = false
+        titleNode = null
+    }
+
+    /** FR-64 — the events socket pushed while this page was under another route: it reads when it shows, not now. */
+    fun markStale() { stale = true }
+
+    /** FR-64 — the page shows: a read it was told about while covered is made now (FR-31 decides whether the answer redraws). */
+    fun shown() { if (stale) refresh() }
 
     // ── What OK does ──────────────────────────────────────────────────────────
 

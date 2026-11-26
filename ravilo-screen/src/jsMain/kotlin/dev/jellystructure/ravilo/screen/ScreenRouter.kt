@@ -127,6 +127,7 @@ internal class ScreenShell(
     private val entries = mutableListOf(ScreenRouteEntry("home", "shell-page-target"))
     private val home = ScreenHome(serverUrl) { playback.showProgress }
     private val focus = ScreenFocus({ root }, { entries.last() }) {
+        entries.last().browse?.follow(it.id)   // DEB-5698 (FR-64) — a grid draws the rows near the focused one before their images are judged
         home.updateImages(it.id)
         syncHero()
         val entry = entries.last()
@@ -188,7 +189,7 @@ internal class ScreenShell(
     fun openSettings() {
         if (!visible || player) return
         if (entries.last().name != ScreenSettings.ROUTE) {
-            entries.add(ScreenRouteEntry(ScreenSettings.ROUTE, ScreenSettings.firstFocusId(), mutableMapOf("bar" to "nav-profile")))
+            push(ScreenRouteEntry(ScreenSettings.ROUTE, ScreenSettings.firstFocusId(), mutableMapOf("bar" to "nav-profile")))
         }
         root.classList.add("on")
         render()
@@ -196,7 +197,7 @@ internal class ScreenShell(
 
     fun openMyList() {
         if (!visible || player) return
-        entries.add(ScreenRouteEntry("mylist", "nav-profile", browse = ScreenBrowse("mylist", home)))
+        push(ScreenRouteEntry("mylist", "nav-profile", browse = ScreenBrowse("mylist", home)))
         render()
     }
 
@@ -213,10 +214,25 @@ internal class ScreenShell(
         render()
     }
 
-    /** DEB-5050 (FR-31) — `home_changed` or `playstate_changed` on the events socket: every title's page in the stack reads again, under the player too. */
+    /**
+     * DEB-5698 (DEB-5685, FR-64) — a route goes on top of the stack. The stack holds [MAX_ROUTES]: a push past that drops the oldest route
+     * above Home, so Home stays at the bottom and Back always ends there. Following *More like this* and faces for an evening no longer
+     * grows it without end.
+     */
+    private fun push(entry: ScreenRouteEntry) {
+        entries.add(entry)
+        while (entries.size > MAX_ROUTES) entries.removeAt(1)
+    }
+
+    /**
+     * DEB-5050 (FR-31) — `home_changed` or `playstate_changed` on the events socket. DEB-5698 (FR-64): only what shows reads again. The top
+     * route's title page reads now; one under it (or under the player) is marked stale and reads when it shows, which FR-31's rules then
+     * decide whether to redraw.
+     */
     fun stateChanged() {
+        val top = entries.lastOrNull()
         entries.forEach {
-            it.detail?.refresh()
+            if (it === top) it.detail?.refresh() else it.detail?.markStale()
             // DEB-5695 (FR-59) — a feed that has drawn is read again; one under the top route (or the player) is read when it shows.
             if (it.isFeed && it.feed != null) it.stale = true
         }
@@ -311,6 +327,9 @@ internal class ScreenShell(
         if (current.isFeed && current.stale) requestFeedRead()   // FR-59 — a feed told it changed while covered is read now that it shows
         syncQuietRetry()
         current.detail?.load()
+        current.detail?.shown()   // FR-64 — a read it was told about while covered
+        // FR-64 — a title's page that another route covers keeps its data and lets go of its drawn nodes.
+        for (covered in entries) if (covered !== current) covered.detail?.cover()
         syncHero()
         syncPrewarm()
         if (current.browse != null && current.browse.page == 0 && !current.browse.loading && !current.browse.failed) loadBrowse(current)
@@ -510,14 +529,14 @@ internal class ScreenShell(
     /** DEB-5631 (FR-49) — OK on a face: the person's page, over the title's page it was opened from. */
     private fun openPerson(person: Person, source: String) {
         if (!visible || player) return
-        entries.add(ScreenRouteEntry("person", "shell-page-target", title = person.name, browse = ScreenBrowse("person", home, ScreenPersonSeed(person, source))))
+        push(ScreenRouteEntry("person", "shell-page-target", title = person.name, browse = ScreenBrowse("person", home, ScreenPersonSeed(person, source))))
         render()
     }
 
     /** DEB-5690 (FR-55) — OK on a row's *See all* tile: the row's whole list as a grid over Home or the channel page. */
     private fun openSeeAll(row: Row, channelId: String?) {
         if (!visible || player) return
-        entries.add(ScreenRouteEntry(SEE_ALL_ROUTE, "shell-page-target", title = row.title,
+        push(ScreenRouteEntry(SEE_ALL_ROUTE, "shell-page-target", title = row.title,
             browse = ScreenBrowse("seeall", home, rowSeed = ScreenRowSeed(row, channelId), showProgress = { playback.showProgress })))
         render()
     }
@@ -526,7 +545,7 @@ internal class ScreenShell(
     private fun openTitle(mediaId: String, kind: MediaKind, title: String) {
         val page = ScreenDetail(api, serverUrl, mediaId, kind, title, onChange = ::detailChanged, onPlay = ::playFromPage, onPerson = ::openPerson,
             tiles = home, onTitle = { card -> if (visible && !player) openTitle(card.id, card.kind, card.title) })
-        entries.add(ScreenRouteEntry("detail", "shell-page-target", title = title, mediaId = mediaId, mediaKind = kind, detail = page))
+        push(ScreenRouteEntry("detail", "shell-page-target", title = title, mediaId = mediaId, mediaKind = kind, detail = page))
         render()
     }
 
@@ -557,7 +576,7 @@ internal class ScreenShell(
         val channelId = element.getAttribute("data-channel-id")
         val mediaId = element.getAttribute("data-media-id")
         if (channelId != null) {
-            entries.add(ScreenRouteEntry("channel", "shell-page-target", channelId = channelId,
+            push(ScreenRouteEntry("channel", "shell-page-target", channelId = channelId,
                 title = element.textContent ?: ""))
             render()
             return
@@ -582,7 +601,7 @@ internal class ScreenShell(
             else -> null
         }
         val search = if (destination == "search") ScreenSearch(api, home, onResults = ::searchChanged) else null
-        entries.add(ScreenRouteEntry(destination, if (search != null) ScreenSearch.FIELD_ID else "shell-page-target",
+        push(ScreenRouteEntry(destination, if (search != null) ScreenSearch.FIELD_ID else "shell-page-target",
             mutableMapOf("bar" to focused), browse = browse, search = search))
         render()
     }
@@ -610,6 +629,9 @@ internal class ScreenShell(
 
     private companion object {
         const val SEE_ALL_ROUTE = "seeall"
+
+        /** DEB-5698 (FR-64) — the most routes the Back stack holds, Home included. */
+        const val MAX_ROUTES = 12
 
         /** DEB-5648 (FR-50) — how long the reads for a series tile's target may take before nothing is warmed. */
         const val PREWARM_READ_MS = 5_000L

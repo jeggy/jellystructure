@@ -6,6 +6,9 @@ import { fakeAvPlayInitScript, waitForAvplayCall } from "./helpers/screen-cast";
 // answers it gets (the label from the playstate, the write-through that waits for the server, the next-up episode, a
 // season switch, what a play carries to the player), not what the server says.
 
+// DEB-5698 (FR-64) — one case reads `gc()` to see that a covered page's nodes are let go; the flag changes nothing else.
+test.use({ launchOptions: { args: ["--js-flags=--expose-gc"] } });
+
 const SCREEN_URL = process.env.RAVILO_SCREEN_CAST_URL ?? "http://localhost:8092";
 const API = "http://app:9505";
 
@@ -1219,5 +1222,94 @@ test.describe("a failed title's page says its cause (DEB-5685, FR-60)", () => {
     await page.clock.fastForward(11_000);
     await expect(failure(page).locator(".load-failure-title")).toHaveText("Couldn't reach the server");
     await expect(page.locator("#shell-page-target")).toHaveText("Retry");
+  });
+});
+
+// DEB-5698 (DEB-5685 FR-64) — a long evening of browsing stays light: the Back stack is bounded, a covered page keeps its data and not its
+// DOM, and only the page that shows reads its state again.
+test.describe("DEB-5698 FR-64 — a long session stays light", () => {
+  /** A chain of films: `m<k>` lists `m<k+1>` as its only related card, so OK on its tile follows the chain one page deeper. */
+  const film = (k: number) => ({ ...movieDetail, card: card(`m${k}`, `Moon ${k}`), cast: [], related: k < 30 ? [card(`m${k + 1}`, `Moon ${k + 1}`)] : [] });
+  const chain = (to: number) => Object.fromEntries(Array.from({ length: to - 1 }, (_, i) => [`/api/tv/movie/m${i + 2}`, film(i + 2)]));
+  /** OK on the page's one related tile: the next film's page, over this one. */
+  const follow = async (page: Page, k: number) => {
+    await page.keyboard.press("ArrowDown");
+    await expect(page.locator("#detail-related-0")).toHaveClass(/focused/);
+    await page.keyboard.press("Enter");
+    await expect(page.locator(".detail-title")).toHaveText(`Moon ${k}`);
+    await expect(page.locator("#detail-play")).toHaveClass(/focused/);
+  };
+
+  test("20 More like this opens leave 12 routes: Back 11 times reaches Home", async ({ page }) => {
+    await boot(page, { movie: film(1), pages: chain(30) });
+    await openPage(page);
+    for (let k = 2; k <= 21; k++) await follow(page, k);
+    for (let back = 1; back <= 10; back++) {
+      await page.keyboard.press("Escape");
+      await expect(page.locator(".detail-title")).toHaveText(`Moon ${21 - back}`);
+    }
+    // The oldest ten pages were dropped: the one under Moon 11 is Home, not Moon 10.
+    await expect(page.locator(".detail-title")).toHaveText("Moon 11");
+    await page.keyboard.press("Escape");
+    await expect(page.locator("#shell-body .home-feed")).toBeVisible();
+    await expect(page.locator(".detail-title")).toHaveCount(0);
+    await expect(page.locator("#home-row-0-tile-0")).toHaveClass(/focused/);
+  });
+
+  test.describe("covered pages let go of their nodes", () => {
+    test("the page a route covers is collected; Back draws it again from its data", async ({ page }) => {
+      const seen = await boot(page, { movie: film(1), pages: chain(30), images: true });
+      await openPage(page);
+      await expect(page.locator(".detail-backdrop img")).toBeVisible();
+      // Moon 1's drawn page and its backdrop, watched weakly: nothing here keeps them alive.
+      await page.evaluate(() => {
+        (window as any).__page = new WeakRef(document.querySelector(".detail")!);
+        (window as any).__backdrop = new WeakRef(document.querySelector(".detail-backdrop")!);
+      });
+      await follow(page, 2);
+      await follow(page, 3);
+      const titles = seen.titles.length;
+      await expect.poll(async () => page.evaluate(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        (window as any).gc();
+        return [(window as any).__page.deref() === undefined, (window as any).__backdrop.deref() === undefined];
+      }), { timeout: 10_000 }).toEqual([true, true]);
+      await page.keyboard.press("Escape");
+      await page.keyboard.press("Escape");
+      await expect(page.locator(".detail-title")).toHaveText("Moon 1");
+      await expect(page.locator(".detail-backdrop img")).toBeVisible();
+      expect(seen.titles.length).toBe(titles);                                         // drawn from the data it kept
+    });
+  });
+
+  test("with 5 title pages stacked one home_changed reads the playstate once, and a covered page reads when it shows", async ({ page }) => {
+    const seen = await boot(page, { movie: film(1), pages: chain(30) });
+    await openPage(page);
+    for (let k = 2; k <= 5; k++) await follow(page, k);
+    const before = seen.reads.length;
+    const titlesBefore = seen.titles.length;
+
+    seen.push({ type: "home_changed", rev: 1 });
+    await expect.poll(() => seen.reads.length).toBe(before + 1);
+    expect(seen.reads[before]).toEqual(["m5"]);                                      // the page that shows, not the four under it
+    await page.waitForTimeout(500);
+    expect(seen.reads.length).toBe(before + 1);
+
+    // Back onto Moon 4: it reads now that it shows, and draws from the data it held: no skeleton, no new page request.
+    await page.evaluate(() => {
+      (window as any).__skeletons = 0;
+      new MutationObserver((records) => records.forEach((r) => r.addedNodes.forEach((n) => {
+        if (n instanceof HTMLElement && (n.matches(".skeleton") || n.querySelector(".skeleton"))) (window as any).__skeletons++;
+      }))).observe(document.getElementById("shell-body")!, { childList: true, subtree: true });
+    });
+    await page.keyboard.press("Escape");
+    await expect(page.locator(".detail-title")).toHaveText("Moon 4");
+    await expect.poll(() => seen.reads.length).toBe(before + 2);
+    expect(seen.reads[before + 1]).toEqual(["m4"]);
+    await expect(page.locator("#detail-related-0")).toHaveClass(/focused/);
+    expect(await page.evaluate(() => (window as any).__skeletons)).toBe(0);
+    expect(seen.titles.length).toBe(titlesBefore);                                   // its data was kept; nothing was asked for again
+    // Moon 3 was marked stale by the same push and has not shown: nothing read it.
+    expect(seen.reads.length).toBe(before + 2);
   });
 });
