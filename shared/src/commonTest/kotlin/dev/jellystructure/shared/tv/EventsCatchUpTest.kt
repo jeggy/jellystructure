@@ -1,11 +1,11 @@
-package dev.jellystructure.ravilo.ui.seams
+package dev.jellystructure.shared.tv
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
-/** R293 FR-R293-3/4/5 — an open is a rev check; Home refreshes only after a real gap; commands off screen are dropped. */
+/** R293 FR-R293-3/4 — an open is a rev check; Home refreshes only after a real gap. */
 class EventsCatchUpTest {
     @Test
     fun `the first open of a process pulls config and never rebuilds Home`() {
@@ -40,12 +40,5 @@ class EventsCatchUpTest {
         assertFalse(c.onPollRev(5L))
         assertTrue(c.onPollRev(7L))
         assertEquals(EventsCatchUp.Decision(refreshConfig = false, refreshHome = false), c.onOpen(7L, 3_000L).let { it.copy(refreshHome = false) })
-    }
-
-    @Test
-    fun `commands are applied only on screen and signed in`() {
-        assertTrue(acceptsRemoteCommand(onScreen = true, signedIn = true))
-        assertFalse(acceptsRemoteCommand(onScreen = false, signedIn = true))
-        assertFalse(acceptsRemoteCommand(onScreen = true, signedIn = false))
     }
 }

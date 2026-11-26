@@ -1,4 +1,5 @@
 import { test, expect, Page } from "@playwright/test";
+import { fakeAvPlayInitScript } from "./helpers/screen-cast";
 
 const SCREEN_URL = process.env.RAVILO_SCREEN_CAST_URL ?? "http://localhost:8092";
 
@@ -718,5 +719,264 @@ test.describe("Tizen a row's See all and its grid (DEB-5685 FR-55)", () => {
     await expect(page.locator(".browse-count")).toHaveText("0 titles");
     await expect(page.locator(".browse-empty")).toHaveText("No titles match these filters.");
     expect(seen.seeded).toHaveLength(2);
+  });
+});
+
+// DEB-5695 (DEB-5685, FR-59) — Home stays current. The real bundle on Playwright's fake clock, the backend and its events socket stood in for
+// by page.route and page.routeWebSocket: this proves what the app asks for and what it draws, not what the server pushes.
+test.describe("Home stays current (DEB-5685 FR-59)", () => {
+  const API = "http://app:9505";
+  const feedOf = (...ids: string[]) => ({
+    heroes: [], channels: [], tile_shape: "POSTER", hero_height_pct: 48, focus_detail: "none",
+    rows: [{ id: "new", title: "New Arrivals", kind: "NEWLY_ADDED", items: ids.map((id) => card(id, `Title ${id}`)) }],
+  });
+  type Live = {
+    home: object; homeStatuses: number[]; homeReads: number; configReads: number; starts: number; stops: number; opens: number[];
+    push: (message: object) => void;
+  };
+
+  async function live(page: Page, opts: { closeSockets?: boolean } = {}): Promise<Live> {
+    const sockets: any[] = [];
+    const seen: Live = {
+      home: feedOf("a", "b", "c"), homeStatuses: [], homeReads: 0, configReads: 0, starts: 0, stops: 0, opens: [],
+      push: (message) => sockets.forEach((ws) => ws.send(JSON.stringify(message))),
+    };
+    await page.addInitScript(fakeAvPlayInitScript);
+    await page.addInitScript(() => {
+      localStorage.setItem("ravilo.screen.serverUrl", "http://app:9505");
+      localStorage.setItem("ravilo.screen.profiles", JSON.stringify([{ userId: "viewer", displayName: "Test Viewer", token: "test-token" }]));
+    });
+    // When each events socket was opened, on the page's own (fake) clock.
+    await page.routeWebSocket(/\/api\/tv\/events/, async (ws) => {
+      sockets.push(ws);
+      seen.opens.push(await page.evaluate(() => Date.now()));
+      if (opts.closeSockets) setTimeout(() => ws.close(), 100);                                // opened, then cut
+    });
+    const json = (route: any, status: number, body: object = {}) => route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
+    await page.route(`${API}/**`, async (route) => {
+      const req = route.request();
+      const path = new URL(req.url()).pathname;
+      if (req.method() === "OPTIONS") return route.fulfill({ status: 204 });
+      if (path === "/api/tv/home") {
+        seen.homeReads++;
+        const status = seen.homeStatuses.shift() ?? 200;
+        return status === 200 ? json(route, 200, seen.home) : json(route, status);
+      }
+      if (path === "/api/tv/config") { seen.configReads++; return json(route, 200, {}); }
+      if (path === "/api/tv/config/rev") return json(route, 200, { rev: 1 });
+      if (path === "/api/tv/playstate") return json(route, 200, {});
+      if (path.startsWith("/api/tv/movie/")) {
+        const id = path.split("/").pop()!;
+        return json(route, 200, { card: card(id, `Title ${id}`), synopsis: "x", runtime: 90, cast: [], related: [] });
+      }
+      if (path === "/api/tv/playback/start") {
+        seen.starts++;
+        const id = JSON.parse(req.postData()!).item_id;
+        return json(route, 200, { jellyfin_base_url: API, access_token: "", item_id: id, container: "ts", direct_play: false,
+          hls_url: `${API}/hls/${id}/master.m3u8`, start_position_ms: 0, expires_at: 9_999_999_999 });
+      }
+      if (path === "/api/tv/playback/stop") { seen.stops++; return route.fulfill({ status: 204 }); }
+      if (path.startsWith("/api/tv/")) return route.fulfill({ status: 204 });
+      return json(route, 404);
+    });
+    await page.clock.install();
+    await page.goto(SCREEN_URL);
+    await expect(page.locator("#shell-body .home-feed")).toBeVisible();
+    await expect(page.locator("#home-row-0-tile-0")).toHaveClass(/focused/);
+    return seen;
+  }
+
+  const titles = (page: Page) => page.locator("#shell-body .home-tile .tile-title");
+  /** Counts what is added to the page from here on: a silent redraw draws its tiles, but never a skeleton and never the 220 ms fade. */
+  const watchLoads = (page: Page) => page.evaluate(() => {
+    (window as any).__loads = 0;
+    new MutationObserver((records) => records.forEach((r) => r.addedNodes.forEach((n) => {
+      if (n instanceof HTMLElement && (n.matches(".skeleton, .arrive, .load-failure") || n.querySelector(".skeleton, .arrive, .load-failure"))) (window as any).__loads++;
+    }))).observe(document.getElementById("shell-body")!, { childList: true, subtree: true });
+  });
+  const loads = (page: Page) => page.evaluate(() => (window as any).__loads as number);
+
+  test("a home_changed push reads Home again and draws the new tile with focus on the same media id", async ({ page }) => {
+    const seen = await live(page);
+    await page.keyboard.press("ArrowRight");
+    await expect(page.locator("#home-row-0-tile-1")).toHaveClass(/focused/);          // "b"
+    await watchLoads(page);
+    seen.home = feedOf("x", "a", "b", "c");
+    seen.push({ type: "home_changed", rev: 1 });
+    await page.clock.runFor(1_100);
+    await expect.poll(() => seen.homeReads).toBe(2);
+    await expect(titles(page)).toHaveText(["Title x", "Title a", "Title b", "Title c"]);
+    await expect(page.locator("#shell-body .focused")).toHaveAttribute("data-media-id", "b");
+    await expect(page.locator("#shell-body .focused")).toHaveId("home-row-0-tile-2");
+    expect(await loads(page), "a redraw, not a load: no skeleton, no fade").toBe(0);
+  });
+
+  test("the focused tile goes: its index in the row; the row goes: the first tile of the row now there", async ({ page }) => {
+    const seen = await live(page);
+    await page.keyboard.press("ArrowRight");
+    await page.keyboard.press("ArrowRight");
+    await expect(page.locator("#home-row-0-tile-2")).toHaveClass(/focused/);          // "c"
+    seen.home = feedOf("a", "b");                                                      // c is gone
+    seen.push({ type: "home_changed", rev: 1 });
+    await page.clock.runFor(1_100);
+    await expect.poll(() => seen.homeReads).toBe(2);
+    await expect(titles(page)).toHaveText(["Title a", "Title b"]);
+    await expect(page.locator("#shell-body .focused")).toHaveId("home-row-0-tile-1");  // index 2 -> the row's last
+    seen.home = { ...feedOf("p"), rows: [{ id: "other", title: "Other", kind: "CUSTOM", items: [card("q", "Title q"), card("r", "Title r")] }] };
+    seen.push({ type: "playstate_changed", patch: {} });
+    await page.clock.runFor(1_100);
+    await expect.poll(() => seen.homeReads).toBe(3);
+    await expect(titles(page)).toHaveText(["Title q", "Title r"]);
+    await expect(page.locator("#shell-body .focused")).toHaveId("home-row-0-tile-0");  // row "new" went: the first tile of the row now there
+  });
+
+  test("the rail's scroll, the row's focus memory and the hero slide stay where they were", async ({ page }) => {
+    const hero = (id: string) => ({ item: card(id, `Hero ${id}`), tagline_kicker: null, backdrop_url: `/api/tv/image/${id}-backdrop`, logo_url: null, badge: null, synopsis: "s" });
+    const ids = Array.from({ length: 14 }, (_, i) => `t${i}`);
+    const seen = await live(page);
+    seen.home = { ...feedOf(...ids), heroes: [hero("h1"), hero("h2")] };
+    await page.reload();
+    await expect(page.locator("#shell-body .home-feed")).toBeVisible();
+    await expect(page.locator("#home-hero")).toHaveClass(/focused/);
+    await page.keyboard.press("ArrowRight");                                           // the hero's second slide
+    await expect(page.locator("#shell-body .hero-slide").nth(1)).toHaveClass(/\bon\b/);
+    await page.keyboard.press("ArrowDown");                                            // into the row
+    for (let i = 0; i < 9; i++) await page.keyboard.press("ArrowRight");
+    await expect(page.locator("#home-row-0-tile-9")).toHaveClass(/focused/);
+    await page.keyboard.press("ArrowUp");                                              // away and back: the row remembers its tile
+    await page.keyboard.press("ArrowDown");
+    await expect(page.locator("#home-row-0-tile-9")).toHaveClass(/focused/);
+    await page.keyboard.press("ArrowUp");                                              // focus rests on the hero; the row's memory is tile 9
+    const track = page.locator("#shell-body .rail-track").last();
+    const tx = await track.getAttribute("data-tx");
+    expect(Number(tx), "the rail has slid").toBeLessThan(0);
+    await watchLoads(page);
+    seen.home = { ...feedOf(...ids.map((id) => id === "t13" ? "t13b" : id)), heroes: [hero("h1"), hero("h2")] };   // the last tile changed
+    const reads = seen.homeReads;
+    seen.push({ type: "home_changed", rev: 1 });
+    await page.clock.runFor(1_100);
+    await expect.poll(() => seen.homeReads).toBe(reads + 1);
+    await expect(page.locator("#home-row-0-tile-13 .tile-title")).toHaveText("Title t13b");
+    await expect(page.locator("#shell-body .hero-slide").nth(1)).toHaveClass(/\bon\b/);   // the slide stayed
+    expect(await page.locator("#shell-body .rail-track").last().getAttribute("data-tx")).toBe(tx);
+    await expect(page.locator("#home-hero")).toHaveClass(/focused/);
+    await page.keyboard.press("ArrowDown");
+    await expect(page.locator("#home-row-0-tile-9")).toHaveClass(/focused/);          // the row's memory survived
+    expect(await loads(page)).toBe(0);
+  });
+
+  test("several triggers inside one second make one read; an answer equal to what is drawn draws nothing", async ({ page }) => {
+    const seen = await live(page);
+    await watchLoads(page);
+    await page.evaluate(() => {
+      (window as any).__draws = 0;
+      new MutationObserver((records) => records.forEach((r) => { (window as any).__draws += r.addedNodes.length; }))
+        .observe(document.getElementById("shell-body")!, { childList: true, subtree: true });
+    });
+    seen.push({ type: "home_changed", rev: 1 });
+    seen.push({ type: "playstate_changed", patch: {} });
+    seen.push({ type: "home_changed", rev: 2 });
+    await page.clock.runFor(1_100);
+    await expect.poll(() => seen.homeReads).toBe(2);
+    await page.clock.runFor(3_000);
+    expect(seen.homeReads).toBe(2);
+    expect(await page.evaluate(() => (window as any).__draws as number), "the same feed is not drawn again").toBe(0);
+  });
+
+  test("a re-read that fails leaves Home as it is and shows nothing", async ({ page }) => {
+    const seen = await live(page);
+    await watchLoads(page);
+    seen.homeStatuses = [500];
+    seen.push({ type: "home_changed", rev: 1 });
+    await page.clock.runFor(1_100);
+    await expect.poll(() => seen.homeReads).toBe(2);
+    await page.clock.runFor(6_000);                                                    // no quiet retry either: Home is drawn
+    expect(seen.homeReads).toBe(2);
+    await expect(titles(page)).toHaveText(["Title a", "Title b", "Title c"]);
+    await expect(page.locator("#home-row-0-tile-0")).toHaveClass(/focused/);
+    expect(await loads(page)).toBe(0);
+  });
+
+  test("Back from the player onto Home reads it again", async ({ page }) => {
+    const seen = await live(page);
+    seen.push({ type: "play_item", jellyfin_id: "a", kind: "movie", title: "Title a" });
+    await expect.poll(() => seen.starts).toBe(1);
+    await expect(page.locator("#shell")).not.toHaveClass(/\bon\b/);                    // the player covers Home
+    const before = seen.homeReads;
+    seen.home = feedOf("b", "a", "c");                                                 // Continue Watching moved
+    await page.keyboard.press("Escape");
+    await expect.poll(() => seen.stops).toBe(1);
+    await expect(page.locator("#shell")).toHaveClass(/\bon\b/);
+    await page.clock.runFor(1_100);
+    await expect.poll(() => seen.homeReads).toBe(before + 1);
+    await expect(titles(page)).toHaveText(["Title b", "Title a", "Title c"]);
+  });
+
+  test("a Home under a title's page is not read until it shows", async ({ page }) => {
+    const seen = await live(page);
+    await page.keyboard.press("Enter");                                                // "a"'s page
+    await expect(page.locator("#shell-body .detail")).toBeVisible();
+    const before = seen.homeReads;
+    seen.home = feedOf("n", "a", "b", "c");
+    seen.push({ type: "home_changed", rev: 1 });
+    await page.clock.runFor(2_100);
+    expect(seen.homeReads, "covered: not read").toBe(before);
+    await page.keyboard.press("Escape");
+    await expect(page.locator("#shell-body .home-feed")).toBeVisible();
+    await page.clock.runFor(1_100);
+    await expect.poll(() => seen.homeReads).toBe(before + 1);
+    await expect(titles(page)).toHaveText(["Title n", "Title a", "Title b", "Title c"]);
+  });
+
+  test("a Home that failed is asked again every 5 s and draws with no key pressed, focus on its first target", async ({ page }) => {
+    const seen = { home: feedOf("a", "b"), statuses: [500] };
+    await page.addInitScript(() => {
+      localStorage.setItem("ravilo.screen.serverUrl", "http://app:9505");
+      localStorage.setItem("ravilo.screen.profiles", JSON.stringify([{ userId: "viewer", displayName: "Test Viewer", token: "test-token" }]));
+    });
+    let reads = 0;
+    await page.routeWebSocket(/\/api\/tv\/events/, () => {});
+    await page.route(`${API}/**`, async (route) => {
+      const path = new URL(route.request().url()).pathname;
+      if (route.request().method() === "OPTIONS") return route.fulfill({ status: 204 });
+      if (path === "/api/tv/home") {
+        reads++;
+        const status = seen.statuses.shift() ?? 200;
+        return route.fulfill({ status, contentType: "application/json", body: status === 200 ? JSON.stringify(seen.home) : "{}" });
+      }
+      return route.fulfill({ status: 204 });
+    });
+    await page.clock.install();
+    await page.goto(SCREEN_URL);
+    await expect(page.locator("#shell-body .load-failure")).toBeVisible();
+    expect(reads).toBe(1);
+    await page.clock.runFor(4_000);
+    expect(reads, "not before 5 s").toBe(1);
+    await page.clock.runFor(1_200);
+    await expect.poll(() => reads).toBe(2);
+    await expect(page.locator("#shell-body .home-feed")).toBeVisible();
+    await expect(page.locator("#shell-body .load-failure")).toHaveCount(0);
+    await expect(page.locator("#home-row-0-tile-0")).toHaveClass(/focused/);
+  });
+
+  test("a socket closed right after each open reconnects at growing delays, not every 2 s", async ({ page }) => {
+    const seen = await live(page, { closeSockets: true });
+    for (let i = 0; i < 160; i++) { await page.clock.runFor(250); await page.waitForTimeout(25); }   // 40 s of the page's time
+    const opens = seen.opens;
+    const gaps = opens.slice(1).map((t, i) => t - opens[i]);
+    expect(gaps.length).toBeGreaterThanOrEqual(4);
+    // R293: 1 s, 2 s, 4 s, 8 s, each ± 20 %, read off a loop that steps the page's clock 250 ms at a time.
+    expect(gaps[0], `gaps ${gaps}`).toBeLessThan(2_500);
+    expect(gaps[2], `gaps ${gaps}`).toBeGreaterThan(gaps[0]);
+    expect(gaps[3], `gaps ${gaps}`).toBeGreaterThan(gaps[1]);
+    expect(gaps[3], `gaps ${gaps}`).toBeGreaterThan(5_500);                            // never the old flat 2 s
+  });
+
+  test("a config_changed push reads the config again", async ({ page }) => {
+    const seen = await live(page);
+    await expect.poll(() => seen.configReads).toBeGreaterThanOrEqual(1);              // the start-up pull
+    const before = seen.configReads;
+    seen.push({ type: "config_changed", rev: 2 });
+    await expect.poll(() => seen.configReads).toBe(before + 1);
   });
 });

@@ -92,9 +92,9 @@ import dev.jellystructure.ravilo.ui.components.LocalCast
 import dev.jellystructure.ravilo.ui.components.LocalCastHandoff
 import dev.jellystructure.ravilo.ui.components.castArtFor
 import dev.jellystructure.ravilo.ui.components.castQueueFor
-import dev.jellystructure.ravilo.ui.seams.EventsCatchUp
+import dev.jellystructure.shared.tv.EventsCatchUp
 import dev.jellystructure.ravilo.ui.seams.EventsSocketLog
-import dev.jellystructure.ravilo.ui.seams.ReconnectBackoff
+import dev.jellystructure.shared.tv.ReconnectBackoff
 import dev.jellystructure.ravilo.ui.seams.acceptsRemoteCommand
 import dev.jellystructure.ravilo.ui.seams.acceptsPlayerCommand
 import dev.jellystructure.ravilo.ui.seams.acceptsServerMessage

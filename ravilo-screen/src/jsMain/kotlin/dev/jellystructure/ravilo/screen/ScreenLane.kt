@@ -102,6 +102,32 @@ internal object ScreenLane {
         move(track, TX, "X", next)
     }
 
+    /** DEB-5695 (FR-59): where each of [mount]'s rails rests, by the row key its first tile carries (`data-row`), so a redraw can put them back. */
+    fun railsOf(mount: HTMLElement): Map<String, Double> {
+        val rails = mutableMapOf<String, Double>()
+        val tracks = mount.getElementsByClassName("rail-track")
+        for (index in 0 until tracks.length) {
+            val track = tracks.item(index) as? HTMLElement ?: continue
+            val row = (track.firstElementChild as? HTMLElement)?.getAttribute("data-row") ?: continue
+            track.getAttribute(TX)?.toDoubleOrNull()?.let { rails[row] = it }
+        }
+        return rails
+    }
+
+    /** DEB-5695 (FR-59): sends the rail of [row] where it was, with no transition: a redraw is not a move. */
+    fun restoreRail(mount: HTMLElement, row: String, value: Double) {
+        val tracks = mount.getElementsByClassName("rail-track")
+        for (index in 0 until tracks.length) {
+            val track = tracks.item(index) as? HTMLElement ?: continue
+            if ((track.firstElementChild as? HTMLElement)?.getAttribute("data-row") != row) continue
+            track.setAttribute(TX, value.toString())
+            track.style.transition = "none"
+            track.style.transform = "translateX(${value}px)"
+            track.getBoundingClientRect()
+            track.style.transition = ""
+        }
+    }
+
     private fun committed(element: HTMLElement, attribute: String): Double = element.getAttribute(attribute)?.toDoubleOrNull() ?: 0.0
 
     /** A page or rail that has never been sent anywhere is drawn at its place with no transition: a redraw does not replay the move. */

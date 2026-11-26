@@ -32,7 +32,7 @@ internal class ScreenHome(private val serverUrl: String, private val showProgres
             val track = node("div", "rail-track")
             rail.appendChild(track)
             feed.channels.forEachIndexed { index, channel ->
-                val target = target("home-channel-$index", "channels", "channel")
+                val target = target(channelId(index), "channels", "channel")
                 target.setAttribute("data-channel-id", channel.id)
                 target.setAttribute("aria-label", channel.name)
                 channel.brandColor?.takeIf { it.startsWith("#") || it.startsWith("linear-gradient(") }
@@ -55,7 +55,7 @@ internal class ScreenHome(private val serverUrl: String, private val showProgres
             rail.appendChild(track)
             val shape = if (row.kind == RowKind.CONTINUE) TileShape.LANDSCAPE else feed.tileShape
             row.items.forEachIndexed { tileIndex, card ->
-                val tile = tile(card, "home-row-$rowIndex-tile-$tileIndex", "row-$rowIndex", shape,
+                val tile = tile(card, tileId(rowIndex, tileIndex), "row-$rowIndex", shape,
                     row.kind == RowKind.CONTINUE && showProgress(), row.kind)
                 // DEB-5648 (FR-50) — the router warms what a Continue Watching tile's page would play.
                 if (row.kind == RowKind.CONTINUE) tile.setAttribute("data-row-kind", CONTINUE_ROW)
@@ -216,6 +216,9 @@ internal class ScreenHome(private val serverUrl: String, private val showProgres
     companion object {
         const val HERO_ID = ScreenHero.ID
         const val CONTINUE_ROW = "continue"
+        /** The ids Home's targets carry; DEB-5695's redraw (ScreenFeedKeep) finds a tile by them. */
+        fun tileId(row: Int, tile: Int) = "home-row-$row-tile-$tile"
+        fun channelId(index: Int) = "home-channel-$index"
         private const val IMAGE_CAP = 60
     }
 }

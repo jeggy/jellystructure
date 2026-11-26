@@ -36,7 +36,14 @@ internal data class ScreenRouteEntry(
     var failed: Boolean = false,
     /** DEB-5487 (FR-38) — the hero slide showing, so Back from a title opened on slide 2 draws slide 2. */
     var heroSlide: Int = 0,
-)
+    /** DEB-5695 (FR-59) — the feed was told it changed while it could not be read (a page over it, the player up): it is read again when it shows. */
+    var stale: Boolean = false,
+    /** FR-59 — a silent re-read of this feed is in flight. */
+    var reading: Boolean = false,
+) {
+    /** Home's and a channel's feed are the pages FR-59 keeps current. */
+    val isFeed get() = name == "home" || name == "channel"
+}
 
 /**
  * What the title's page already knows about a play — the part of a phone's push the TV would otherwise ask for (DEB-4660, FR-7).
@@ -126,8 +133,13 @@ internal class ScreenShell(
     private var player = false
     private var loadGeneration = 0
     private var away = false
+    /** DEB-5695 (FR-59) — the one gathering window that makes several triggers inside 1 s one read, and the 5 s wait behind a failure. */
+    private var gatherTimer: Int? = null
+    private var quietRetryTimer: Int? = null
+    /** FR-59 — a silent redraw in progress: what [render] puts back once the feed is drawn and before focus settles. */
+    private var keep: Pair<ScreenFeedKeep, HomeFeed>? = null
 
-    fun hide() { visible = false; ++loadGeneration; root.classList.remove("on"); pageWarm.cancel(); syncHero() }
+    fun hide() { visible = false; ++loadGeneration; root.classList.remove("on"); pageWarm.cancel(); syncHero(); syncQuietRetry() }
 
     fun resetHome() {
         entries.clear(); entries.add(ScreenRouteEntry("home", "shell-page-target"))
@@ -165,6 +177,7 @@ internal class ScreenShell(
         root.classList.remove("on")
         syncHero()
         syncPrewarm()   // a phone's push over the page cancels; Play released it first
+        syncQuietRetry()
     }
 
     /** DEB-4663 (FR-11) — Settings is a route like Movies: Back pops to where the viewer came from. */
@@ -185,17 +198,25 @@ internal class ScreenShell(
 
     fun returnFromPlayer() {
         if (!visible) return
-        if (player && entries.last().name == "player") entries.removeAt(entries.lastIndex)
+        val closed = player && entries.last().name == "player"
+        if (closed) entries.removeAt(entries.lastIndex)
         player = false
         root.classList.add("on")
         // DEB-5050 (FR-31) — whichever way the play ended, the page under the player reads its state again; it draws what it holds now.
         entries.lastOrNull()?.detail?.refresh()
+        // DEB-5695 (FR-59) — and a Home or channel feed under it is read again (Continue Watching moved), drawn in place when it lands.
+        if (closed) entries.lastOrNull()?.takeIf { it.isFeed && it.feed != null }?.stale = true
         render()
     }
 
     /** DEB-5050 (FR-31) — `home_changed` or `playstate_changed` on the events socket: every title's page in the stack reads again, under the player too. */
     fun stateChanged() {
-        entries.forEach { it.detail?.refresh() }
+        entries.forEach {
+            it.detail?.refresh()
+            // DEB-5695 (FR-59) — a feed that has drawn is read again; one under the top route (or the player) is read when it shows.
+            if (it.isFeed && it.feed != null) it.stale = true
+        }
+        requestFeedRead()
     }
 
     fun handleKey(event: KeyboardEvent): Boolean {
@@ -270,6 +291,7 @@ internal class ScreenShell(
             val feed = current.feed
             if (feed != null) {
                 home.render(feed, body, ScreenLanguage.lang, current.heroSlide) { current.heroSlide = it }
+                keep?.let { (kept, next) -> kept.restoreRails(body, next) }   // FR-59 — before focus settles, which judges a rail by where it rests
                 if (current.skeleton) ScreenSkeleton.fadeIn(body.firstElementChild as? HTMLElement)
                 current.skeleton = false
             } else if (current.failed) {
@@ -281,7 +303,9 @@ internal class ScreenShell(
         }
         renderScreenNav(if (current.name == "channel" || current.name == "detail" || current.name == "person" || current.name == SEE_ALL_ROUTE) "home" else current.name, ScreenLanguage.lang)
         focus.refocus()
-        if ((current.name == "home" || current.name == "channel") && current.feed == null && !current.failed) loadFeed(current)
+        if (current.isFeed && current.feed == null && !current.failed) loadFeed(current)
+        if (current.isFeed && current.stale) requestFeedRead()   // FR-59 — a feed told it changed while covered is read now that it shows
+        syncQuietRetry()
         current.detail?.load()
         syncHero()
         syncPrewarm()
@@ -371,10 +395,87 @@ internal class ScreenShell(
     private fun loadFeed(entry: ScreenRouteEntry) {
         val generation = ++loadGeneration
         GlobalScope.launch {
-            val result = runCatching { entry.channelId?.let { api.getChannel(it) } ?: api.getHome() }
+            val result = runCatching { readFeed(entry) }
             if (generation != loadGeneration || !visible || entry !== entries.lastOrNull()) return@launch
             val feed = result.getOrNull()
             if (feed != null) entry.feed = feed else entry.failed = true
+            render()
+        }
+    }
+
+    private suspend fun readFeed(entry: ScreenRouteEntry): HomeFeed = entry.channelId?.let { api.getChannel(it) } ?: api.getHome()
+
+    /**
+     * DEB-5695 (FR-59) — every trigger that says a feed is out of date (the player closing, `home_changed`, `playstate_changed`, a socket back
+     * after a gap, a stale feed showing) opens one 1 s window, and the window's end makes one read: several triggers inside it are one read.
+     */
+    private fun requestFeedRead() {
+        if (gatherTimer != null) return
+        gatherTimer = window.setTimeout({ gatherTimer = null; readStaleFeed() }, FEED_GATHER_MS)
+    }
+
+    /**
+     * FR-59 — a silent re-read of the feed on screen. The feed stays drawn until the new one lands; a read that fails changes nothing and shows
+     * nothing; an answer equal to what is held draws nothing. A feed under the top route or the player stays stale until it shows.
+     */
+    private fun readStaleFeed() {
+        val entry = entries.lastOrNull() ?: return
+        if (!visible || player || !entry.isFeed || !entry.stale || entry.feed == null || entry.reading) return
+        entry.stale = false
+        entry.reading = true
+        GlobalScope.launch {
+            val feed = runCatching { readFeed(entry) }.getOrNull()
+            entry.reading = false
+            if (entry.stale) requestFeedRead()   // told again while this read was out: its answer may predate it
+            if (feed == null || feed == entry.feed || entries.none { it === entry }) return@launch
+            redrawFeed(entry, feed)
+        }
+    }
+
+    /**
+     * FR-59 — the new feed replaces the old one in place: focus stays on the tile by its media id, each row's memory, the hero slide and the
+     * rails stay where they were ([ScreenFeedKeep]), and nothing fades or shows a skeleton. A feed under the top route (or the player) is stored
+     * and drawn when it shows.
+     */
+    private fun redrawFeed(entry: ScreenRouteEntry, feed: HomeFeed) {
+        val old = entry.feed ?: return
+        if (!visible || player || entry !== entries.lastOrNull()) { entry.feed = feed; return }
+        val kept = ScreenFeedKeep(old, entry, body)
+        entry.feed = feed
+        kept.retarget(entry, feed)
+        keep = kept to feed
+        try { render() } finally { keep = null }
+        ScreenFeedKeep.showImagesAtOnce(body)
+    }
+
+    /**
+     * FR-59 — a Home or channel feed whose load failed is asked again every 5 s while its failure shows ([HomeLoadPolicy.quietRetryMs] on Android TV),
+     * and draws when an answer comes, focus on its first target. Retry still asks at once, under the skeleton.
+     */
+    private fun syncQuietRetry() {
+        val entry = entries.lastOrNull()
+        val waiting = visible && !player && entry != null && entry.isFeed && entry.failed && entry.feed == null
+        if (!waiting) {
+            quietRetryTimer?.let { window.clearTimeout(it) }
+            quietRetryTimer = null
+            return
+        }
+        if (quietRetryTimer != null) return
+        quietRetryTimer = window.setTimeout({ quietRetryTimer = null; quietRetry() }, QUIET_RETRY_MS)
+    }
+
+    private fun quietRetry() {
+        val entry = entries.lastOrNull() ?: return
+        if (!visible || player || !entry.isFeed || !entry.failed || entry.feed != null || entry.reading) return
+        entry.reading = true
+        val generation = loadGeneration
+        GlobalScope.launch {
+            val feed = runCatching { readFeed(entry) }.getOrNull()
+            entry.reading = false
+            // Retry pressed, or the route left, meanwhile: that load owns the page now.
+            if (generation != loadGeneration || !visible || player || entry !== entries.lastOrNull() || !entry.failed) return@launch
+            if (feed == null) return@launch
+            entry.feed = feed; entry.failed = false; entry.stale = false
             render()
         }
     }
@@ -499,5 +600,9 @@ internal class ScreenShell(
 
         /** DEB-5648 (FR-50) — how long the reads for a series tile's target may take before nothing is warmed. */
         const val PREWARM_READ_MS = 5_000L
+        /** DEB-5695 (FR-59) — triggers this close together are one read. */
+        const val FEED_GATHER_MS = 1_000
+        /** FR-59 — `HomeLoadPolicy.quietRetryMs`: the pace of the asks behind a failure. */
+        const val QUIET_RETRY_MS = 5_000
     }
 }

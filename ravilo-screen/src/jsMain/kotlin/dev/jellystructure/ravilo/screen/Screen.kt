@@ -5,10 +5,12 @@ import dev.jellystructure.ravilo.receiver.hms
 import dev.jellystructure.ravilo.receiver.nowMs
 import dev.jellystructure.ravilo.receiver.subtitleTracksOf
 import dev.jellystructure.shared.tv.CastTrack
+import dev.jellystructure.shared.tv.EventsCatchUp
 import dev.jellystructure.shared.tv.MediaKind
 import dev.jellystructure.shared.tv.NavigateEnvelope
 import dev.jellystructure.shared.tv.NEXT_UP_NO_MARKER_MS
 import dev.jellystructure.shared.tv.PairResult
+import dev.jellystructure.shared.tv.ReconnectBackoff
 import dev.jellystructure.shared.tv.PlayItemEnvelope
 import dev.jellystructure.shared.tv.PlayerCommandEnvelope
 import dev.jellystructure.shared.tv.PlaystateCommandEnvelope
@@ -77,10 +79,8 @@ private const val PROGRESS_EVERY_MS = 10_000L
 private val STOP_RETRY_WAITS_MS = longArrayOf(0, 1_000, 2_000)
 private val RESTREAM_RETRY_WAITS_MS = longArrayOf(0, 2_000, 4_000, 8_000)
 private const val STATUS_EVERY_MS = 5_000L
-private const val RECONNECT_BASE_MS = 2_000L
 /** DEB-4925 (FR-22) — away this long, the shell comes back to a freshly loaded Home. */
 private const val LONG_AWAY_MS = 5 * 60_000L
-private const val RECONNECT_MAX_MS = 30_000L
 /** R264 — the next-up card's countdown, and when it appears on a title with no credits marker. */
 private const val NEXT_UP_SECS = 10
 
@@ -384,13 +384,30 @@ private class Screen(private val serverUrl: String) {
     }
 
     // ── events socket: reconnect with backoff (FR-R264-6) ──
+    /**
+     * DEB-5695 (DEB-5685, FR-59) — R293's rules, as Android TV's `RaviloApp` keeps them: the wait before the next open is [ReconnectBackoff]'s (1 s
+     * doubling to 60 s with jitter, back to 1 s only after a socket was held open 5 minutes), and an open is [EventsCatchUp]'s check — Home is read
+     * again when the socket was down more than 30 s, the config when its rev moved. `config_changed` reads the config again too.
+     */
     private suspend fun eventLoop() {
-        var backoff = RECONNECT_BASE_MS
+        val backoff = ReconnectBackoff()
+        val catchUp = EventsCatchUp()
+        var firstOpen = true
         while (true) {
+            var openedAt: Long? = null
             runCatching {
                 api.connectEvents(
-                    onOpen = { backoff = RECONNECT_BASE_MS; if (loaded) sendStatus() },
-                    onEvent = {},
+                    onOpen = {
+                        openedAt = nowMs()
+                        if (loaded) sendStatus()
+                        val rev = runCatching { api.getConfigRev() }.getOrNull()
+                        val decision = catchUp.onOpen(rev, nowMs())
+                        // The first open's config pull is the start-up one (adoptLanguageOfActiveUser), already made.
+                        if (decision.refreshConfig && !firstOpen) adoptLanguageOfActiveUser()
+                        if (decision.refreshHome) shell.stateChanged()
+                        firstOpen = false
+                    },
+                    onEvent = { adoptLanguageOfActiveUser() },
                     onHomeChanged = { shell.stateChanged() },
                     onPlaystateChanged = { shell.stateChanged() },
                     onPlayItem = { env -> onPlayItem(env) },
@@ -401,8 +418,9 @@ private class Screen(private val serverUrl: String) {
                     outgoing = outgoing,
                 )
             }
-            delay(backoff)
-            backoff = (backoff * 2).coerceAtMost(RECONNECT_MAX_MS)
+            val heldOpenMs = openedAt?.let { nowMs() - it } ?: 0L
+            if (openedAt != null) catchUp.onClosed(nowMs())
+            delay(backoff.next(heldOpenMs))
         }
     }
 

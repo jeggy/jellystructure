@@ -1,4 +1,4 @@
-package dev.jellystructure.ravilo.ui.seams
+package dev.jellystructure.shared.tv
 
 import kotlin.random.Random
 import kotlin.test.Test

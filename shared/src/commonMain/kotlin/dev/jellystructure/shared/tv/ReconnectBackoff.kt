@@ -1,10 +1,10 @@
-package dev.jellystructure.ravilo.ui.seams
+package dev.jellystructure.shared.tv
 
 import kotlin.random.Random
 
 /**
  * R293 (FR-R293-4, dev review item 3) — the one reconnect backoff for every socket a Ravilo client
- * keeps open (`/api/tv/events` in `RaviloApp`, `/api/remote/events` in [ScreenSender]).
+ * keeps open (`/api/tv/events` in `RaviloApp`, `/api/remote/events` in `ScreenSender`).
  *
  * Before this phase any socket held open ≥ 2 s counted as healthy and reset the delay to 1 s, so a
  * socket that died every minute was reopened every minute, forever (1,326 times in 29 hours on one
