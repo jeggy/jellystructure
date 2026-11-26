@@ -506,6 +506,41 @@ test.describe("DEB-5047 FR-31 — a title's page reads its state again", () => {
     await expect(page.locator("#detail-ep-1")).toHaveClass(/focused/);
     await expect(page.locator("#detail-season-1")).toHaveClass(/cur/);
   });
+
+  // DEB-5755 (FR-31 amended) — `.rail-track` transitions its transform, so a redrawn track handed the kept one slid in from 0.
+  test("a redraw on a slid rail puts the track at its kept place on the first frame, with no transform transition running", async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 540 });
+    const eps = Array.from({ length: 12 }, (_, i) => episode(`s1e${i + 1}`, i + 1, `Reel ${i + 1}`));
+    const seen = await boot(page, { series: seriesDetail({ seasons: [{ index: 1, name: "Season 1", episodes: eps }, { index: 2, name: "Season 2", episodes: [episode("s2e1", 1, "Return Reel")] }] }), playstate: { sr1: state({ continue_episode_id: "s1e1" }) } });
+    await openPage(page);
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("ArrowDown");
+    for (let i = 1; i <= 9; i++) await page.keyboard.press("ArrowRight");
+    await expect(page.locator("#detail-ep-9")).toHaveClass(/focused/);
+    const track = () => page.evaluate(() => { const t = document.querySelector(".detail-episodes .rail-track") as HTMLElement; return { tf: t.style.transform, computed: getComputedStyle(t).transform }; });
+    await expect.poll(async () => (await track()).computed).not.toBe("none");      // the rail has slid
+    await expect.poll(async () => (await track()).computed).not.toBe("matrix(1, 0, 0, 1, 0, 0)");
+    await page.waitForTimeout(400);                                                  // the slide has finished
+    const kept = await track();
+    // A recorder that reads the new track on the first frame after the redraw (a MutationObserver runs before any frame).
+    await page.evaluate(() => {
+      const w = window as any;
+      w.__first = null;
+      const root = document.getElementById("shell-body")!;
+      const obs = new MutationObserver(() => {
+        const t = root.querySelector(".detail-episodes .rail-track") as HTMLElement | null;
+        if (!t || w.__first) return;
+        requestAnimationFrame(() => { w.__first = { computed: getComputedStyle(t).transform, running: t.getAnimations().length }; });
+      });
+      obs.observe(root, { childList: true, subtree: true });
+    });
+    seen.playstate = { sr1: state({ continue_episode_id: "s1e1" }), s1e2: state({ played: true }) };
+    seen.push({ type: "playstate_changed", patch: {} });
+    await expect(page.locator("#detail-ep-1 .detail-ep-check")).toHaveText("✓");
+    await expect.poll(() => page.evaluate(() => (window as any).__first)).not.toBeNull();
+    expect(await page.evaluate(() => (window as any).__first)).toEqual({ computed: kept.computed, running: 0 });
+    expect((await track()).tf).toBe(kept.tf);
+  });
 });
 
 // DEB-4893 (DEB-4889 FR-19) — Android TV's audio and subtitle flag line, redrawn in DOM from the packed flags/<cc>.png.

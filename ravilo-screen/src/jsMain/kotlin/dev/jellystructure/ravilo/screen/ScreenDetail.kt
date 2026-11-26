@@ -407,7 +407,13 @@ internal class ScreenDetail(
 
     private fun carryRail(old: HTMLElement, track: HTMLElement, scrollLeft: Double) {
         old.getAttribute("data-tx")?.let { track.setAttribute("data-tx", it) }
+        // DEB-5755 (FR-31): `.rail-track` transitions its transform, so a new track given the kept one would slide in
+        // from 0. Land it with the transition off, force a style flush so the kept place is the first one computed, then
+        // give the transition back for the next real move.
+        track.style.transition = "none"
         track.style.transform = old.style.transform
+        track.offsetWidth
+        track.style.removeProperty("transition")
         (track.parentElement as? HTMLElement)?.scrollLeft = scrollLeft
     }
 
