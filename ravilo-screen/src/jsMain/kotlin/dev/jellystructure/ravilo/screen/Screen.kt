@@ -41,6 +41,7 @@ import dev.jellystructure.shared.tv.receiverSubPick
 import dev.jellystructure.shared.tv.receiverSubtitles
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.js.Js
+import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.plugins.websocket.WebSockets
 import kotlinx.browser.document
 import kotlinx.browser.localStorage
@@ -97,7 +98,16 @@ private class Screen(private val serverUrl: String) {
     private val tokens = profiles.profiles().associate { it.userId to it.token }.toMutableMap()
     private var activeUserId: String? = profiles.profiles().singleOrNull()?.userId
     private val api = TvApiClient(
-        client = HttpClient(Js) { install(WebSockets) },
+        client = HttpClient(Js) {
+            install(WebSockets)
+            // DEB-5685 FR-58: Android TV's bound (RaviloRootActuals.kt). TvApiClient's events socket and long polls set their own
+            // infinite timeout { }, so only an ordinary request is cut, and each page's failure path takes it.
+            install(HttpTimeout) {
+                connectTimeoutMillis = 5_000L
+                requestTimeoutMillis = 10_000L
+                socketTimeoutMillis = 10_000L
+            }
+        },
         baseUrl = serverUrl,
         deviceToken = { activeUserId?.let(tokens::get) },
         platform = "tizen",

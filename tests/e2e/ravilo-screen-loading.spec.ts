@@ -50,7 +50,8 @@ async function mock(page: Page, routes: Record<string, Handler>) {
   });
 }
 
-async function start(page: Page) {
+async function start(page: Page, fakeClock = false) {
+  if (fakeClock) await page.clock.install();
   await page.addInitScript(() => {
     localStorage.setItem("ravilo.screen.serverUrl", "http://app:9505");
     localStorage.setItem("ravilo.screen.profiles", JSON.stringify([{ userId: "viewer", displayName: "Test Viewer", token: "test-token" }]));
@@ -179,6 +180,20 @@ test.describe("DEB-4893 — Home and a channel's feed (FR-20)", () => {
     expect(calls).toBe(2);
   });
 
+  test("a feed that never answers fails at the 10 s deadline, with Retry (DEB-5685 FR-58)", async ({ page }) => {
+    const never = gate();   // the half-open connection: the handler holds the request and never answers
+    await mock(page, { "/api/tv/home": async (route) => { await never.open; await route.abort(); } });
+    await start(page, true);
+    await expect(page.locator("#shell-body .skeleton")).toBeVisible();
+    await page.clock.fastForward(11_000);
+    const failure = page.locator("#shell-body .load-failure");
+    await expect(failure).toBeVisible();
+    await expect(page.locator(".skeleton")).toHaveCount(0);
+    await expect(failure.locator(".load-failure-title")).toHaveText("Couldn't reach the server");
+    await expect(page.locator("#shell-page-target")).toHaveText("Retry");
+    never.release();
+  });
+
   test("a channel's feed loads under the same skeleton", async ({ page }) => {
     const held = gate();
     await mock(page, {
@@ -201,7 +216,7 @@ test.describe("DEB-4893 — Home and a channel's feed (FR-20)", () => {
 });
 
 test.describe("DEB-4893 — a title's page (FR-20)", () => {
-  async function openTile(page: Page, kind: "movie" | "series", answer: (route: any) => Promise<void>) {
+  async function openTile(page: Page, kind: "movie" | "series", answer: (route: any) => Promise<void>, fakeClock = false) {
     const tile = kind === "movie" ? card("m1", "Paper Moon") : card("sr1", "Paper Series", "SERIES");
     await mock(page, {
       "/api/tv/home": (route) => json(route, 200, { ...feed, heroes: [], channels: [], rows: [{ id: "new", title: "New", kind: "NEWLY_ADDED", items: [tile] }] }),
@@ -209,7 +224,7 @@ test.describe("DEB-4893 — a title's page (FR-20)", () => {
       "/api/tv/playstate": (route) => json(route, 200, {}),
       "/api/tv/favorite": (route) => json(route, 200, { resume_ms: 0, played: false, played_pct: 0, favorite: true }),
     });
-    await start(page);
+    await start(page, fakeClock);
     await expect(page.locator("#home-row-0-tile-0")).toHaveClass(/focused/);
     await page.keyboard.press("Enter");
   }
@@ -278,6 +293,16 @@ test.describe("DEB-4893 — a title's page (FR-20)", () => {
     expect((await animationOf(page.locator("#shell-body .detail"))).name).toBe("none");
   });
 
+  test("a page that never answers fails at the 10 s deadline with DEB-4660's unreachable line (DEB-5685 FR-58)", async ({ page }) => {
+    const never = gate();
+    await openTile(page, "movie", async (route) => { await never.open; await route.abort(); }, true);
+    await expect(page.locator("#shell-body .skeleton")).toBeVisible();
+    await page.clock.fastForward(11_000);
+    await expect(page.locator("#shell-body .shell-placeholder")).toHaveText("Couldn't reach the server");   // a timeout is no HTTP status
+    await expect(page.locator(".skeleton")).toHaveCount(0);
+    never.release();
+  });
+
   test("a page that fails keeps DEB-4660's line and the skeleton is gone", async ({ page }) => {
     await openTile(page, "movie", async (route) => { await json(route, 404); });
     await expect(page.locator("#shell-body .shell-placeholder")).toHaveText("This isn't here any more");
@@ -286,12 +311,12 @@ test.describe("DEB-4893 — a title's page (FR-20)", () => {
 });
 
 test.describe("DEB-4893 — the grids (FR-20)", () => {
-  async function openMovies(page: Page, answer: (route: any) => Promise<void>) {
+  async function openMovies(page: Page, answer: (route: any) => Promise<void>, fakeClock = false) {
     await mock(page, {
       "/api/tv/home": (route) => json(route, 200, { ...feed, heroes: [], channels: [], rows: [] }),
       "/api/tv/browse": answer,
     });
-    await start(page);
+    await start(page, fakeClock);
     await page.keyboard.press("ArrowUp");
     for (let i = 0; i < 6; i++) await page.keyboard.press("ArrowLeft");
     await page.keyboard.press("ArrowRight");
@@ -325,6 +350,17 @@ test.describe("DEB-4893 — the grids (FR-20)", () => {
     await expect(page.locator(".skeleton")).toHaveCount(0);
     await expect(page.locator("#shell-body .browse-heading")).toHaveText("Movies");
     expect((await animationOf(page.locator("#shell-body .browse-grid"))).name).toBe("arrive-fade");
+  });
+
+  test("a first page that never answers fails at the 10 s deadline, with Retry (DEB-5685 FR-58)", async ({ page }) => {
+    const never = gate();
+    await openMovies(page, async (route) => { await never.open; await route.abort(); }, true);
+    await expect(page.locator("#shell-body .skeleton-grid")).toBeVisible();
+    await page.clock.fastForward(11_000);
+    await expect(page.locator("#shell-body .load-failure-title")).toHaveText("Couldn't reach the server");
+    await expect(page.locator("#shell-page-target")).toHaveText("Retry");
+    await expect(page.locator(".skeleton")).toHaveCount(0);
+    never.release();
   });
 
   test("a first page that fails shows the failure and Retry, and Retry loads the grid", async ({ page }) => {
