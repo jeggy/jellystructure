@@ -206,4 +206,39 @@ done
         assertNotNull(enc.segment(id, "v", 0, 0), "segment 0 was made before the stop")
         enc.stopFor("p8")
     }
+
+    // ── FR-313-26 ───────────────────────────────────────────────────────────────────────────────────────────────
+
+    @Test fun `a prewarm pauses 5 segments past its start and a re-post leaves it there until a read resumes it to 20 ahead`() = runBlocking<Unit> {
+        val enc = encoder()
+        enc.prewarm(plan, "dev", "item", 30, Long.MAX_VALUE)
+        waitFor("the prewarm's job at 30") { jobDirs(30).size == 1 }
+        waitFor("the warm job to pause") { enc.running().single().paused }
+        val job = enc.running().single()
+        assertTrue(job.highest - job.startSegment <= EncoderJobs.WARM_AHEAD, "paused ${job.highest - job.startSegment} segments past its start")
+        enc.prewarm(plan, "dev", "item", 30, Long.MAX_VALUE)
+        delay(600)
+        assertTrue(job.paused, "a re-post is no read")
+        assertTrue(job.highest - job.startSegment <= EncoderJobs.WARM_AHEAD)
+        val id = enc.adoptPrewarm("dev", "item", plan, 30, "p9", Long.MAX_VALUE)
+        assertNotNull(id)
+        assertNotNull(enc.segment(id, "v", 0, 30), "the first real read")
+        waitFor("the job to resume and run to 20 ahead") { job.highest - job.startSegment > EncoderJobs.PAUSE_AHEAD - 2 }
+        waitFor("the job to pause again") { job.paused }
+        assertTrue(job.highest - job.startSegment > EncoderJobs.WARM_AHEAD + 5, "it keeps up to 20 ahead once read")
+        enc.stopFor("p9")
+    }
+
+    @Test fun `a ticket's job pauses 5 segments past its start before its first read and runs on after it`() = runBlocking<Unit> {
+        val enc = encoder()
+        val id = enc.register(plan, "p10", Long.MAX_VALUE, "dev", "item", startMs = 60_000)
+        enc.startWithTicket(id, 30)
+        waitFor("the job at 30") { jobDirs(30).size == 1 }
+        waitFor("the warm job to pause") { enc.running().single().paused }
+        val job = enc.running().single()
+        assertTrue(job.highest - job.startSegment <= EncoderJobs.WARM_AHEAD)
+        assertNotNull(enc.segment(id, "v", 0, 30))
+        waitFor("the job to run past the warm limit") { job.highest - job.startSegment > EncoderJobs.WARM_AHEAD + 5 }
+        enc.stopFor("p10")
+    }
 }

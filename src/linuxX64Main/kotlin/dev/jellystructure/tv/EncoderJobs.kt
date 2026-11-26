@@ -77,7 +77,9 @@ class EncoderJobs(
                        /** The stream's rung count and the rungs this job makes (null = all of them): see [Restart]. */
                        val streamRungs: Int = plan.rungs.size, val kept: List<Int>? = null,
                        /** DEB-5646 (FR-313-20) — a side job answers a player's opening read of the head: it stops after [SIDE_SEGMENTS] segments and is kept like a retired job. */
-                       val side: Boolean = false) {
+                       val side: Boolean = false,
+                       /** DEB-5685 (FR-313-26) — started by a prewarm, a kept-warm stop or a ticket and not yet read by a player: it pauses once [WARM_AHEAD] segments are made past its start, not [PAUSE_AHEAD]. */
+                       warmOnly: Boolean = false) {
         fun slot(variant: Int): Int? = when {
             kept == null -> variant
             variant < streamRungs -> kept.indexOf(variant).takeIf { it >= 0 }
@@ -89,6 +91,7 @@ class EncoderJobs(
         @Volatile var paused = false
         @Volatile var highest = startSegment - 1
         @Volatile var furthestRequest = startSegment
+        @Volatile var warmOnly = warmOnly
         @Volatile var lastRequestAtMs = nowMs()
         @Volatile var firstSegmentMs: Long? = null
         /** 313 (2026-10-09) — segments below this were deleted behind the player ([prune]); none of them can be served. */
@@ -213,6 +216,7 @@ class EncoderJobs(
                 }
                 stats = s.stats
                 val head = s.headStart
+                if (!warm) s.current?.warmOnly = false   // DEB-5685 (FR-313-26) — a player's read ends warm-only; a prewarm re-post does not
                 if (!warm && head != null && k >= head) s.headServed = true
                 // Already made by a job of this stream (the current one or a retired one): served without an encode.
                 (listOfNotNull(s.current) + s.retired).firstOrNull { k >= it.startSegment && access(it.file(variant, k), F_OK) == 0 }?.let { made ->
@@ -239,7 +243,7 @@ class EncoderJobs(
                 if (j == null || !j.reaches(k)) {
                     j?.let { old -> old.stopped = true; kill(old); keepRetired(s, old) }
                     ensureRoom()
-                    j = start(streamId, s.restart?.plan ?: plan, ffmpeg, k, s.stats, canRefuse = !s.started, streamRungs = plan.rungs.size, kept = s.restart?.kept)
+                    j = start(streamId, s.restart?.plan ?: plan, ffmpeg, k, s.stats, canRefuse = !s.started, streamRungs = plan.rungs.size, kept = s.restart?.kept, warmOnly = warm)
                     if (s.headStart == null) { s.headStart = k; s.headServed = !warm || k == 0 }
                     s.started = true
                     s.stats.newJob()
@@ -336,10 +340,11 @@ class EncoderJobs(
         while (s.retired.size > KEEP_RETIRED) s.retired.removeLast().let { gone -> gone.stopped = true; kill(gone); scope.launch { removeTree(gone.dir) } }
     }
 
+    /** DEB-5685 (FR-313-26) — a warm-only job stays paused: a prewarm's re-post touches it, a player's read has already ended warm-only. */
     private fun touch(j: Job, k: Int) {
         if (k > j.furthestRequest) j.furthestRequest = k
         j.lastRequestAtMs = nowMs()
-        if (j.paused && j.highest - j.furthestRequest < RESUME_AHEAD && j.pid > 0) { platform.posix.kill(j.pid, SIGCONT); j.paused = false }
+        if (j.paused && !j.warmOnly && j.highest - j.furthestRequest < RESUME_AHEAD && j.pid > 0) { platform.posix.kill(j.pid, SIGCONT); j.paused = false }
     }
 
     private fun Job.reaches(k: Int): Boolean = !stopped && !exited && k >= maxOf(startSegment, prunedBelow) && k <= highest + REACH_AHEAD
@@ -362,11 +367,11 @@ class EncoderJobs(
     private fun refresh(j: Job) { while (access(j.slotFile(0, j.highest + 1), F_OK) == 0) j.highest++ }
 
     private suspend fun start(streamId: String, plan: EncoderPlan, ffmpeg: String, k: Int, stats: EncoderStats, canRefuse: Boolean = true,
-                              streamRungs: Int = plan.rungs.size, kept: List<Int>? = null, side: Boolean = false): Job {
+                              streamRungs: Int = plan.rungs.size, kept: List<Int>? = null, side: Boolean = false, warmOnly: Boolean = false): Job {
         val dir = "$root/$streamId-$k-${nowMs()}"
         mkdir(dir, 0x1C0u)
         for (v in 0 until plan.variantCount) mkdir("$dir/$v", 0x1C0u)
-        val job = Job(streamId, dir, k, plan.variantCount, plan, streamRungs, kept, side)
+        val job = Job(streamId, dir, k, plan.variantCount, plan, streamRungs, kept, side, warmOnly)
         val cmd = encoderCommand(plan, k, dir, ffmpeg)
         val deadlineMs = if (plan.cudaDevice != null && plan.cudaDevice !in warmCards) coldFirstSegmentDeadlineMs else firstSegmentDeadlineMs
         Logger.info("encoder $streamId: ${if (side) "side job" else "start"} at segment $k — ${plan.codec} ${plan.rungs.size} rungs ${plan.rungs.joinToString("/") { "${it.height}p@${it.videoBps / 1000}k" }}, " +
@@ -400,7 +405,7 @@ class EncoderJobs(
                             streams[streamId]?.retired?.forEach { prune(it, job.furthestRequest, KEEP_BEHIND) }
                         }
                     }
-                    if (!job.paused && !job.stopped && job.highest - job.furthestRequest > PAUSE_AHEAD && job.pid > 0) {
+                    if (!job.paused && !job.stopped && job.highest - job.furthestRequest > (if (job.warmOnly) WARM_AHEAD - 1 else PAUSE_AHEAD) && job.pid > 0) {
                         job.paused = true
                         mutex.withLock { stats.paused() }
                         platform.posix.kill(job.pid, SIGSTOP)
@@ -540,6 +545,8 @@ class EncoderJobs(
         const val READER_THREADS = 64
         const val PAUSE_AHEAD = 20       // 40 s of 2 s segments
         const val RESUME_AHEAD = 10      // 20 s
+        /** DEB-5685 (FR-313-26) — a warm job nobody has read yet pauses this far (10 s) ahead of its start. */
+        const val WARM_AHEAD = 5
         const val REACH_AHEAD = 10       // a request up to 20 s past what exists waits for this job
         const val KEEP_RETIRED = 2
         /** DEB-5646 (FR-313-20) — a side job stops after this many segments (6 s). */
