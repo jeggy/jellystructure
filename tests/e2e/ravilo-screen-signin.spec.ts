@@ -389,10 +389,11 @@ test.describe("an admin removes the open sign-in (DEB-5777, FR-143-5)", () => {
     expect(login.status(), await login.text()).toBe(200);
     const profiles = JSON.parse((await page.evaluate(() => localStorage.getItem("ravilo.screen.profiles")))!) as { userId: string; displayName: string }[];
     const userId = profiles.find(p => p.displayName === displayName)!.userId;
-    const devices = await (await request.get(`/api/tv/admin/devices?userId=${encodeURIComponent(userId)}`)).json() as { deviceId: string; name: string }[];
-    const tv = devices.find(d => d.name === "Samsung TV")!;
-    expect(tv, JSON.stringify(devices)).toBeTruthy();
-    const del = await request.delete(`/api/tv/admin/devices/${encodeURIComponent(tv.deviceId)}?userId=${encodeURIComponent(userId)}`);
+    // This screen's own row: other workers sign the same admin in on devices of the same name, so the name picks nobody.
+    const deviceId = (await page.evaluate(() => localStorage.getItem("ravilo.screen.deviceId")))!;
+    const devices = await (await request.get(`/api/tv/admin/devices?userId=${encodeURIComponent(userId)}`)).json() as { deviceId: string }[];
+    expect(devices.map(d => d.deviceId), "the screen's own row").toContain(deviceId);
+    const del = await request.delete(`/api/tv/admin/devices/${encodeURIComponent(deviceId)}?userId=${encodeURIComponent(userId)}`);
     expect(del.status(), await del.text()).toBe(200);
     return userId;
   }
