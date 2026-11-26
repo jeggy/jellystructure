@@ -22,7 +22,7 @@ class EventsCatchUpTest {
     }
 
     @Test
-    fun `a moved rev refreshes config, a long gap refreshes Home`() {
+    fun `a moved rev refreshes config and a long gap refreshes Home`() {
         val c = EventsCatchUp(homeGapMs = 30_000L)
         c.onOpen(5L, 0L)
         c.onClosed(60_000L)
