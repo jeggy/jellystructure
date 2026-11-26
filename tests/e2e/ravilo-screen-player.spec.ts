@@ -628,9 +628,10 @@ test.describe("DEB-5078 FR-33 — a start that fails on our encoder is asked onc
     await expect.poll(() => page.evaluate(() => (window as any).webapis.avplay.getCurrentTime()), { timeout: 10_000 }).toBeGreaterThan(1_000);   // the first frame is a few ticks in
     await page.waitForTimeout(1_000);
     await page.evaluate(() => (window as any).__avplay.error("PLAYER_ERROR_CONNECTION_FAILED"));
-    await expect(page.locator("#failed")).toHaveClass(/\bon\b/, { timeout: 15_000 });
+    // DEB-5685 (FR-63) — the error is asked for again at the position first (this boot answers /playback/restream with nothing, so every try fails, 0 + 2 + 4 + 8 s), and only then ends.
+    await expect(page.locator("#failed")).toHaveClass(/\bon\b/, { timeout: 30_000 });
     await page.waitForTimeout(1_000);
-    expect(seen.starts).toHaveLength(1);
+    expect(seen.starts, "a restream is not a start").toHaveLength(1);
   });
 
   test("Back during the second ask leaves nothing playing and makes no further start", async ({ page }) => {
@@ -653,6 +654,173 @@ test.describe("DEB-5078 FR-33 — a start that fails on our encoder is asked onc
     await page.waitForTimeout(1_500);
     expect(await opens(page), "the second ticket is never opened").toHaveLength(1);
     await expect(page.locator("#failed")).not.toHaveClass(/\bon\b/);
+  });
+});
+
+// DEB-5694 (DEB-5685, FR-63) — a play that loses the network after its first picture is asked for again at its position, and every end sends
+// its stop with the position, retried. The backend is stood in for by page.route; `page.clock` jumps the 1/2 s stop waits and the 2/4/8 s restream waits.
+test.describe("DEB-5685 FR-63 — a play that loses the network picks up where it was", () => {
+  const API = "http://app:9505";
+
+  type Seen = { starts: any[]; restreams: any[]; stops: any[] };
+
+  /**
+   * [restreamStatuses] / [stopStatuses]: the status each successive call is answered with (the last repeats); 200 on a restream is a new ticket.
+   * [encoder]: the start ticket's encoder (undefined = the field is absent); [directPlay]: the start ticket's direct_play.
+   */
+  async function boot(page: Page, opts: { restreamStatuses?: number[]; stopStatuses?: number[]; encoder?: string; directPlay?: boolean } = {}): Promise<Seen> {
+    const { restreamStatuses = [200], stopStatuses = [204], encoder = "ours", directPlay = false } = opts;
+    const seen: Seen = { starts: [], restreams: [], stops: [] };
+    const card = { id: "m1", kind: "MOVIE", title: "Paper Moon", year: 2024, genre: null, rating: null, poster_url: "/api/tv/image/m1-poster", backdrop_url: "/api/tv/image/m1-backdrop" };
+    const detail = { card, synopsis: "x", runtime: 90, cast: [], related: [], logo_url: null };
+    const feed = { heroes: [], channels: [], rows: [{ id: "new", title: "New Arrivals", kind: "NEWLY_ADDED", items: [card] }], tile_shape: "POSTER", hero_height_pct: 48, focus_detail: "none" };
+    await page.addInitScript(fakeAvPlayInitScript);
+    await page.addInitScript(() => {
+      localStorage.setItem("ravilo.screen.serverUrl", "http://app:9505");
+      localStorage.setItem("ravilo.screen.profiles", JSON.stringify([{ userId: "viewer", displayName: "Test Viewer", token: "test-token" }]));
+    });
+    await page.clock.install();   // time still flows; `page.clock.runFor` jumps it, firing every timer on the way
+    const json = (route: any, status: number, body: object = {}) => route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
+    const ticketFor = (n: number) => ({ jellyfin_base_url: API, access_token: "", item_id: "m1", container: "ts", direct_play: directPlay,
+      hls_url: `${API}/hls/m1/${n}/master.m3u8`, start_position_ms: 0, expires_at: 9_999_999_999, ...(encoder ? { encoder } : {}) });
+    const nth = (statuses: number[], n: number) => statuses[Math.min(n, statuses.length - 1)];
+    await page.route(`${API}/**`, async (route) => {
+      const req = route.request();
+      const path = new URL(req.url()).pathname;
+      if (req.method() === "OPTIONS") return route.fulfill({ status: 204 });
+      if (path === "/api/tv/home") return json(route, 200, feed);
+      if (path === "/api/tv/movie/m1") return json(route, 200, detail);
+      if (path === "/api/tv/playstate") return json(route, 200, {});
+      if (path === "/api/tv/playback/start") { seen.starts.push(JSON.parse(req.postData() ?? "{}")); return json(route, 200, ticketFor(0)); }
+      if (path === "/api/tv/playback/restream") {
+        const n = seen.restreams.length;
+        seen.restreams.push(JSON.parse(req.postData() ?? "{}"));
+        const status = nth(restreamStatuses, n);
+        return status === 200 ? json(route, 200, ticketFor(seen.restreams.length)) : json(route, status);
+      }
+      if (path === "/api/tv/playback/stop") {
+        const n = seen.stops.length;
+        seen.stops.push(JSON.parse(req.postData() ?? "{}"));
+        const status = nth(stopStatuses, n);
+        return status < 300 ? route.fulfill({ status }) : json(route, status);
+      }
+      if (path.startsWith("/api/tv/")) return route.fulfill({ status: 204 });
+      return json(route, 404);
+    });
+    await page.goto(SCREEN_URL);
+    await expect(page.locator("#home-row-0-tile-0")).toHaveClass(/focused/);
+    return seen;
+  }
+  /** Opens the title and plays it to a few ticks past its first frame (the fake's playhead ticks every 250 ms). */
+  async function playPastFirstFrame(page: Page) {
+    await page.keyboard.press("Enter");
+    await expect(page.locator("#detail-play")).toHaveClass(/focused/);
+    await page.keyboard.press("Enter");
+    const opened = await waitForAvplayCall(page, "open");
+    await waitForAvplayCall(page, "play", opened.index);
+    await expect.poll(() => page.evaluate(() => (window as any).webapis.avplay.getCurrentTime()), { timeout: 10_000 }).toBeGreaterThan(1_000);
+    await page.waitForTimeout(500);
+  }
+  const lose = (page: Page) => page.evaluate(() => (window as any).__avplay.error("PLAYER_ERROR_CONNECTION_FAILED"));
+  const opens = (page: Page) => page.evaluate(() => (window as any).__avplayCalls.filter((c: any[]) => c[0] === "open").map((c: any[]) => c[1]));
+  /** Jumps [ms] of the page's clock once [count] calls have reached the server and the app has had a moment to arm its next wait. */
+  const advance = async (page: Page, calls: () => number, count: number, ms: number) => {
+    await expect.poll(calls, { timeout: 10_000 }).toBe(count);
+    await page.waitForTimeout(300);
+    expect(calls(), "no call before its wait has run").toBe(count);
+    await page.clock.runFor(ms);
+  };
+
+  test("an error after the first frame on our encoder restreams once at the position, under the buffering view, and plays on", async ({ page }) => {
+    test.setTimeout(60_000);
+    const seen = await boot(page);
+    await playPastFirstFrame(page);
+    await lose(page);
+    await expect(page.locator("#buffering")).toHaveClass(/\bon\b/);
+    await expect.poll(() => seen.restreams.length, { timeout: 10_000 }).toBe(1);
+    expect(seen.restreams[0].position_ms, "asked at the position the play was lost at").toBeGreaterThan(1_000);
+    await expect.poll(() => opens(page).then((o: string[]) => o.length), { timeout: 10_000 }).toBe(2);
+    expect(await opens(page), "the new ticket is the one opened").toEqual([expect.stringContaining("/hls/m1/0/"), expect.stringContaining("/hls/m1/1/")]);
+    await expect(page.locator("#failed")).not.toHaveClass(/\bon\b/);
+    await page.waitForTimeout(1_000);
+    expect(seen.restreams, "once").toHaveLength(1);
+    expect(seen.starts, "a restream is not a start").toHaveLength(1);
+    expect(seen.stops, "the play goes on, so nothing stops it").toHaveLength(0);
+  });
+
+  test("a restream answered 500 three times then 200 is asked again at 2, 4 and 8 s and plays on", async ({ page }) => {
+    test.setTimeout(60_000);
+    const seen = await boot(page, { restreamStatuses: [500, 500, 500, 200] });
+    await playPastFirstFrame(page);
+    await lose(page);
+    await advance(page, () => seen.restreams.length, 1, 2_000);
+    await advance(page, () => seen.restreams.length, 2, 4_000);
+    await advance(page, () => seen.restreams.length, 3, 8_000);
+    await expect.poll(() => seen.restreams.length, { timeout: 10_000 }).toBe(4);
+    await expect.poll(() => opens(page).then((o: string[]) => o.length), { timeout: 10_000 }).toBe(2);
+    expect(await opens(page)).toEqual([expect.stringContaining("/hls/m1/0/"), expect.stringContaining("/hls/m1/4/")]);
+    for (const r of seen.restreams) expect(r.position_ms, "every try is asked at the position the play was lost at").toBe(seen.restreams[0].position_ms);
+    await expect(page.locator("#failed")).not.toHaveClass(/\bon\b/);
+    expect(seen.stops).toHaveLength(0);
+  });
+
+  test("four failed restreams end on R237's copy with a stop at the position", async ({ page }) => {
+    test.setTimeout(60_000);
+    const seen = await boot(page, { restreamStatuses: [500] });
+    await playPastFirstFrame(page);
+    await lose(page);
+    await advance(page, () => seen.restreams.length, 1, 2_000);
+    await advance(page, () => seen.restreams.length, 2, 4_000);
+    await advance(page, () => seen.restreams.length, 3, 8_000);
+    await expect.poll(() => seen.restreams.length, { timeout: 10_000 }).toBe(4);
+    await expect(page.locator("#failed")).toHaveClass(/\bon\b/, { timeout: 10_000 });
+    await expect(page.locator("#failed-t")).not.toHaveText("");
+    await expect.poll(() => seen.stops.length, { timeout: 10_000 }).toBe(1);
+    expect(seen.stops[0]).toMatchObject({ item_id: "m1" });
+    expect(seen.stops[0].position_ms, "the stop carries the position").toBe(seen.restreams[0].position_ms);
+    expect(seen.restreams, "and no fifth try").toHaveLength(4);
+  });
+
+  test("a new stream that errors again before its position moves ends the play", async ({ page }) => {
+    test.setTimeout(60_000);
+    const seen = await boot(page);
+    await playPastFirstFrame(page);
+    await lose(page);
+    await page.evaluate(() => (window as any).__avplay.zeroAfterSeek(60_000));   // the second stream reads 0 after its seek to the position: it has not moved
+    await expect.poll(() => opens(page).then((o: string[]) => o.length), { timeout: 10_000 }).toBe(2);
+    await waitForAvplayCall(page, "seekTo");
+    await lose(page);
+    await expect(page.locator("#failed")).toHaveClass(/\bon\b/, { timeout: 10_000 });
+    await expect.poll(() => seen.stops.length, { timeout: 10_000 }).toBe(1);
+    expect(seen.stops[0].position_ms, "stopped at the position it was asked for").toBe(seen.restreams[0].position_ms);
+    expect(seen.restreams, "no second restream").toHaveLength(1);
+  });
+
+  test("a stream that is not ours ends on the error as before, now with its stop", async ({ page }) => {
+    test.setTimeout(60_000);
+    const seen = await boot(page, { encoder: "jellyfin" });
+    await playPastFirstFrame(page);
+    await lose(page);
+    await expect(page.locator("#failed")).toHaveClass(/\bon\b/, { timeout: 10_000 });
+    await expect.poll(() => seen.stops.length, { timeout: 10_000 }).toBe(1);
+    expect(seen.stops[0].position_ms).toBeGreaterThan(1_000);
+    expect(seen.restreams, "Jellyfin's stream is not asked for again").toHaveLength(0);
+  });
+
+  test("a stop answered 500 twice is sent a third time, 1 s then 2 s apart, with the same position", async ({ page }) => {
+    test.setTimeout(60_000);
+    const seen = await boot(page, { stopStatuses: [500, 500, 204] });
+    await playPastFirstFrame(page);
+    for (let i = 0; i < 3 && !(await page.locator("#idle").evaluate((e) => e.classList.contains("on"))); i++) await page.keyboard.press("Escape");   // the first Back may only hide the controls
+    await expect(page.locator("#idle")).toHaveClass(/\bon\b/, { timeout: 10_000 });
+    await advance(page, () => seen.stops.length, 1, 1_000);
+    await advance(page, () => seen.stops.length, 2, 2_000);
+    await expect.poll(() => seen.stops.length, { timeout: 10_000 }).toBe(3);
+    await page.clock.runFor(10_000);
+    await page.waitForTimeout(300);
+    expect(seen.stops, "answered the third time, so no fourth").toHaveLength(3);
+    expect(new Set(seen.stops.map((s) => s.position_ms)).size, "the same position each time").toBe(1);
+    expect(seen.stops[0].position_ms).toBeGreaterThan(1_000);
   });
 });
 

@@ -73,6 +73,9 @@ internal const val SERVER_URL_KEY = "ravilo.screen.serverUrl"
 internal const val CODE_ONLY_SERVER_KEY = "ravilo.screen.codeOnlyServer"
 internal const val SETUP_PREFILL_KEY = "ravilo.screen.serverUrl.prefill"
 private const val PROGRESS_EVERY_MS = 10_000L
+/** DEB-5694 (FR-63) — the waits before each try: a stop is sent up to three times (1 s, then 2 s apart), a lost play's stream asked for again at once and at 2 s, 4 s and 8 s. */
+private val STOP_RETRY_WAITS_MS = longArrayOf(0, 1_000, 2_000)
+private val RESTREAM_RETRY_WAITS_MS = longArrayOf(0, 2_000, 4_000, 8_000)
 private const val STATUS_EVERY_MS = 5_000L
 private const val RECONNECT_BASE_MS = 2_000L
 /** DEB-4925 (FR-22) — away this long, the shell comes back to a freshly loaded Home. */
@@ -204,6 +207,9 @@ private class Screen(private val serverUrl: String) {
     private var attempt: StartAttempt? = null
     /** FR-33 — the failed attempt is closed and the second ask is on its way: a late error of the attempt just closed is not a new failure. */
     private var askingAgain = false
+    /** DEB-5694 (FR-63) — a play that lost its network after its first picture is being asked for again at [recoveredAt]; the position of the stream asked for last, null until one was. */
+    private var recovering = false
+    private var recoveredAt: Long? = null
     // DEB-4661 (FR-9) — a start made with this TV's remote (the Play button, or the next-up card's `remotePlay` on this
     // very device), so a refusal never says *from your phone*. [tvNextItem] is the item the TV asked its own backend for.
     private var tvNextItem: String? = null
@@ -243,11 +249,16 @@ private class Screen(private val serverUrl: String) {
             override fun onStreamCompleted() { onFinished() }
             override fun onError(detail: String) {
                 console.error("Ravilo screen: backend error: $detail")
-                if (askingAgain) return
+                if (askingAgain || recovering) return
                 val failure = HTTP_STATUS.find(detail)?.value?.toIntOrNull() ?: -1
                 if (askAgain(failure)) return   // FR-33
+                val pos = backend.positionMs().let { p -> recoveredAt?.takeIf { p <= it } ?: p }   // a stream asked for at recoveredAt that has not moved is still there
+                if (recoverStream(pos)) return   // FR-63
+                // FR-63 — an error after the first picture ends the play with its stop at the position, which the server's watchdog used to close.
+                val stopped = itemId?.takeIf { loaded && pastFirstFrame() }
                 qoe.end(failure = failure)   // FR-25 — a start that never reached a picture
                 failPlay(null)
+                if (stopped != null) GlobalScope.launch { stopWithRetry(stopped, pos) }
             }
         })
         idle()
@@ -272,7 +283,7 @@ private class Screen(private val serverUrl: String) {
         nextWarm.cancel()   // FR-36 — Back, a stop, Home, hiding the app and a refused start all end here: a viewer who leaves leaves nothing running
         qoe.end()   // FR-25 — the item's final report, whichever way it ended (Back, stop, the stream's end, hiding the app)
         loaded = false; playing = false; buffering = false; itemId = null; title = null; kicker = null; artUrl = null; ticket = null
-        attempt = null; askingAgain = false
+        attempt = null; askingAgain = false; recovering = false; recoveredAt = null
         startedFromTv = false
         seriesName = null; logoUrl = null; logoInk = null   // R303
         segments = null; nextId = null; nextTitle = null; nextKicker = null; following = emptyList()   // R264
@@ -402,7 +413,7 @@ private class Screen(private val serverUrl: String) {
             if (!loaded) continue
             val now = nowMs()
             if (now - lastStatusAt >= STATUS_EVERY_MS) sendStatus()
-            if (playing && now - lastProgressAt >= PROGRESS_EVERY_MS) {
+            if (playing && !recovering && now - lastProgressAt >= PROGRESS_EVERY_MS) {
                 lastProgressAt = now
                 val id = itemId ?: continue
                 GlobalScope.launch { runCatching { api.reportProgress(id, backend.positionMs(), !playing) } }
@@ -543,7 +554,7 @@ private class Screen(private val serverUrl: String) {
      */
     private fun askAgain(failure: Int): Boolean {
         val a = attempt ?: return false
-        if (a.asked || a.generation != loadGeneration || ticket?.encoder != "ours" || !qoe.active || qoe.firstFrameShown) return false
+        if (a.asked || a.generation != loadGeneration || ticket?.encoder != "ours" || !qoe.active || pastFirstFrame()) return false
         askingAgain = true
         loaded = false   // Back during the second ask is a Back on a start that has not begun (cancelStart)
         qoe.end(failure = failure)
@@ -1059,7 +1070,7 @@ private class Screen(private val serverUrl: String) {
         val id = nextId ?: return
         val current = itemId
         // R384 — a title that finished under the countdown is stopped at its length (the player may say 0 once ended).
-        val pos = if (finishedUnderNextUp) backend.durationMs() else if (loaded) backend.positionMs() else 0L
+        val pos = if (finishedUnderNextUp) backend.durationMs() else currentPos()
         val queue = following
         val known = queue.firstOrNull()?.takeIf { it.id == id }
         hideNextUp(); hideSkip(); nextId = null
@@ -1069,7 +1080,7 @@ private class Screen(private val serverUrl: String) {
         }
         tvNextItem = id
         GlobalScope.launch {
-            if (current != null) runCatching { api.stopPlayback(current, pos) }
+            if (current != null) stopWithRetry(current, pos)
             runCatching { api.remotePlay(deviceId, id, 0) }.onFailure { tvNextItem = null; startedFromTv = true; failPlay(0) }
         }
     }
@@ -1078,7 +1089,7 @@ private class Screen(private val serverUrl: String) {
     private fun startEpisode(current: String?, pos: Long, episode: ScreenFollowing, after: List<ScreenFollowing>) {
         val series = seriesName; val logo = logoUrl; val ink = logoInk; val seriesKey = seriesId
         GlobalScope.launch {
-            if (current != null) runCatching { api.stopPlayback(current, pos) }
+            if (current != null) stopWithRetry(current, pos)
             val next = after.firstOrNull()
             following = after
             beginPlay(PlayItemEnvelope(type = "play_item", jellyfinId = episode.id, kind = "episode", title = episode.title, kicker = episode.kicker,
@@ -1138,7 +1149,7 @@ private class Screen(private val serverUrl: String) {
      */
     private fun chooseEpisode(pick: ScreenRailEntry) {
         val current = itemId
-        val pos = if (loaded) backend.positionMs() else 0L
+        val pos = currentPos()
         val order = railSeasons.filter { it.index >= 1 }.flatMap { it.entries }
         val at = order.indexOfFirst { it.id == pick.id }
         val after = if (railNewestFirst || at < 0) emptyList() else order.drop(at + 1).map { ScreenFollowing(it.id, it.title, it.kicker, it.segments) }
@@ -1319,11 +1330,56 @@ private class Screen(private val serverUrl: String) {
         if (env.destination == "home") stopAndIdle()
     }
 
+    /** FR-63 — the play has shown a picture: QoE's first frame, or a stream asked for again after one (a restream starts QoE's count of its first frame over, and it is not a start). */
+    private fun pastFirstFrame() = qoe.firstFrameShown || recoveredAt != null
+
+    /** FR-63 — where the play is: the position it was lost at while its stream is being asked for again (an errored AVPlay answers 0), else AVPlay's. */
+    private fun currentPos(): Long = if (!loaded) 0L else if (recovering) recoveredAt ?: 0L else backend.positionMs()
+
+    /** DEB-5694 (FR-63) — Android TV's Phase 180 stop: up to three tries, 1 s then 2 s apart, so a network that comes back a moment late still closes the session at its position. */
+    private suspend fun stopWithRetry(id: String, positionMs: Long) {
+        for (wait in STOP_RETRY_WAITS_MS) {
+            if (wait > 0) delay(wait)
+            if (runCatching { api.stopPlayback(id, positionMs) }.isSuccess) return
+        }
+    }
+
+    /**
+     * DEB-5694 (FR-63) — an AVPlay error after the first picture on our encoder's stream is asked for again at [pos], under the buffering view:
+     * [restream] once, and when that call fails again at 2 s, 4 s and 8 s. True when it began; false — and the error ends the play — for a stream that is
+     * not ours, a direct play, and a stream asked for at [recoveredAt] that errored again before its position moved. If none answers the play ends on R237's copy.
+     */
+    private fun recoverStream(pos: Long): Boolean {
+        val t = ticket ?: return false
+        val id = itemId ?: return false
+        if (!loaded || !qoe.active || !pastFirstFrame() || t.encoder != "ours" || t.directPlay) return false
+        if (recoveredAt?.let { pos <= it } == true) return false
+        recovering = true; recoveredAt = pos
+        show("buffering")
+        val generation = loadGeneration
+        val audio = carriedAudio()
+        GlobalScope.launch {
+            var answered = false
+            for (wait in RESTREAM_RETRY_WAITS_MS) {
+                if (wait > 0) delay(wait)
+                if (generation != loadGeneration || itemId != id) return@launch   // Back or a newer play came in
+                if (restream(t.burnedSubtitleIndex ?: -1, audio, thenShow = selectedSub, atMs = pos)) { answered = true; break }
+            }
+            if (generation != loadGeneration || itemId != id) return@launch
+            recovering = false
+            if (answered) return@launch
+            qoe.end(failure = -1)
+            failPlay(null)
+            stopWithRetry(id, pos)
+        }
+        return true
+    }
+
     private fun stopAndIdle() {
         finishedUnderNextUp = false
         val id = itemId
-        val pos = if (loaded) backend.positionMs() else 0L
-        if (id != null) GlobalScope.launch { runCatching { api.stopPlayback(id, pos) } }
+        val pos = currentPos()
+        if (id != null) GlobalScope.launch { stopWithRetry(id, pos) }
         backend.close()
         idle()
         sendStatus()
@@ -1346,7 +1402,7 @@ private class Screen(private val serverUrl: String) {
     private fun endHere() {
         val id = itemId
         val dur = backend.durationMs()
-        if (id != null) GlobalScope.launch { runCatching { api.stopPlayback(id, dur) } }
+        if (id != null) GlobalScope.launch { stopWithRetry(id, dur) }
         backend.close()
         val endedItem = itemId; val endedTitle = title; val endedArt = artUrl
         idle()
@@ -1598,14 +1654,15 @@ private class Screen(private val serverUrl: String) {
      * FR-R285-2 — the one restream path: the same item at the current position with [subIndex]
      * burned in (negative = none) and [audioIndex] carried. Keeps play/pause. A failure leaves the
      * running stream alone — a track change that did not happen is better than a player that stopped.
+     * False only when the call failed; [atMs] is the position to ask at when AVPlay cannot say (FR-63's errored stream).
      */
-    private suspend fun restream(subIndex: Int, audioIndex: Int?, thenShow: Int, belowBandwidthBps: Long? = null) {
-        val id = itemId ?: return
-        val pos = backend.positionMs()
+    private suspend fun restream(subIndex: Int, audioIndex: Int?, thenShow: Int, belowBandwidthBps: Long? = null, atMs: Long? = null): Boolean {
+        val id = itemId ?: return true
+        val pos = atMs ?: backend.positionMs()
         val wasPlaying = playing
         val t = runCatching { api.restream(id, subIndex, pos, backend.capabilities(), audioIndex, belowBandwidthBps = belowBandwidthBps) }.getOrNull()
-            ?: run { if (loaded && !buffering) show(); sendStatus(); return }   // FR-32 — a freeze's buffering view must not outlive a restream that never came
-        if (itemId != id) return                       // the viewer moved on while we were negotiating
+            ?: run { if (loaded && !buffering && !recovering) show(); sendStatus(); return false }   // FR-32 — a freeze's buffering view must not outlive a restream that never came
+        if (itemId != id) return true                  // the viewer moved on while we were negotiating
         ticket = t
         selectedAudio = currentAudioPos(t)
         pendingFileAudio = null
@@ -1615,6 +1672,7 @@ private class Screen(private val serverUrl: String) {
         qoe.restreamed(t.streamBps.takeIf { t.directPlay })   // FR-25 — the same item again: its counts stay, its own start is not a stall
         backend.open(t.hlsUrl ?: "", pos, t.startVariantBps, t.directPlay)
         sendStatus()
+        return true
     }
 
     /** DEB-5024 (FR-27) — no rung in the master is below the one playing; no answer from AVPlay counts as none. */
@@ -1658,7 +1716,7 @@ private class Screen(private val serverUrl: String) {
     private suspend fun positionLoop() {
         while (true) {
             delay(500)
-            if (!loaded) continue
+            if (!loaded || recovering) continue   // FR-63 — an errored stream's frozen position is not a freeze to restream
             qoe.watchPosition(backend.positionMs(), playing && backend.state() == "PLAYING", backend.durationMs())
         }
     }
