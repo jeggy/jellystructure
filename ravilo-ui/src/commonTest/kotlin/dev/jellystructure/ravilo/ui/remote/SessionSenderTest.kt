@@ -52,7 +52,7 @@ class SessionSenderTest {
     }
 
     @Test fun `the tracks carry their index as the id the sheet picks them by and the picks are positions`() {
-        val v = view()
+        val v = view(kind = "episode")
         val s = SessionSender.status(v, detail(v), 0, 0, 0)
         assertEquals(listOf(0L, 3L), s.audioTracks.map { it.trackId })
         assertEquals(1, s.selectedAudio)   // Dansk, index 3, is the second entry
@@ -77,6 +77,22 @@ class SessionSenderTest {
     @Test fun `next exists only where the place obeys it`() {
         val v = view()
         assertFalse(SessionSender.status(v, detail(v, ops = listOf("play", "pause")), 0, 0, 0).hasNext)
+    }
+
+    // DEB-5706 (one-remote FR-2) — *Next* is a series' alone: the server lists the op for a film too, and an ended session has none.
+    @Test fun `a film whose ops list next has no next`() {
+        val v = view(kind = "film")
+        assertFalse(SessionSender.status(v, detail(v), 0, 0, 0).hasNext)
+    }
+
+    @Test fun `an ended episode has no next`() {
+        val v = view(kind = "episode", state = "ended")
+        assertFalse(SessionSender.status(v, detail(v), 0, 0, 0).hasNext)
+    }
+
+    @Test fun `a live episode with next keeps it`() {
+        val v = view(kind = "episode")
+        assertTrue(SessionSender.status(v, detail(v), 0, 0, 0).hasNext)
     }
 
     @Test fun `the link is the places when its name is the places`() {

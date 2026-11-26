@@ -187,7 +187,8 @@ object SessionSender {
             loaded = !ended && v.state != "failed",
             ended = ended,
             failed = v.state == "failed",
-            hasNext = d?.let { "next" in it.ops } ?: false,
+            // DEB-5706 (one-remote FR-2) — *Next* is a series' and a queue's: the server lists the op for every kind, a film has none.
+            hasNext = !ended && v.kind != "film" && d?.let { "next" in it.ops } == true,
             audioTracks = audio,
             subtitleTracks = subs,
             selectedAudio = audio.indexOfFirst { it.index == d?.audioIndex }.coerceAtLeast(0),

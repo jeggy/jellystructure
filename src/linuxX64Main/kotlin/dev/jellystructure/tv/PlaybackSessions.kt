@@ -11,6 +11,7 @@ import dev.jellystructure.shared.tv.SessionOwner
 import dev.jellystructure.shared.tv.SessionRoom
 import dev.jellystructure.shared.tv.SessionTarget
 import dev.jellystructure.shared.tv.SessionView
+import dev.jellystructure.shared.tv.playbackFinished
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.SerialName
@@ -1157,7 +1158,9 @@ class PlaybackSessions(
                     // R370 (review item 8) — a load that brought no report within 10 s failed.
                     endLocked(s.id, "failed")?.let { changes += SessionChange.List }
                 } else if (s.live && s.stopHoldUntil != null && t >= s.stopHoldUntil) {
-                    endLocked(s.id, "stopped")?.let { changes += SessionChange.List }
+                    // DEB-5706 — R347's one rule decides whether a stop was a play-out (*Finished*) or a stop midway.
+                    val finished = playbackFinished(s.positionMs, s.options.plan?.durationMs ?: 0L, s.options.plan?.creditsStartMs)
+                    endLocked(s.id, if (finished) "finished" else "stopped")?.let { changes += SessionChange.List }
                 } else if (s.live && s.reconnecting && s.reconnectDeadline != null && t >= s.reconnectDeadline) {
                     onSilentAfterRestart(s, t)?.let { changes += it }
                 } else if (!s.live && t - (s.endedAt ?: t) > SESSION_ENDED_LINGER_MS) {

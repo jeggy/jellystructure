@@ -19,6 +19,7 @@ import dev.jellystructure.ravilo.ui.sessions.CommandFeedback
 import dev.jellystructure.ravilo.ui.sessions.SessionRemote
 import dev.jellystructure.ravilo.ui.sessions.commandFeedback
 import dev.jellystructure.ravilo.ui.sessions.remoteSessionView
+import dev.jellystructure.ravilo.ui.sessions.endedLinesOf
 import dev.jellystructure.ravilo.ui.sessions.sessionStateLineText
 import dev.jellystructure.shared.tv.SessionCommandRequest
 import dev.jellystructure.shared.tv.SessionDetail
@@ -110,7 +111,7 @@ fun rememberOneRemote(
         unreachable = (v.reconnecting || v.offline || cantReach) && !ended,
         retryable = (v.reconnecting || cantReach) && !ended,
         line = line, lineAlert = v.moveFailed != null || v.offline || v.reconnecting || cantReach,
-        subLine = if (ended) str("session.ended", mapOf("place" to v.target.name)) else null,
+        subLine = if (ended) endedLinesOf(v).subKey?.let { str(it, mapOf("place" to v.target.name)) } else null,
         viewOnlyOwner = if (viewOnly) v.owner.name else null,
         confirmStop = !v.mine, ownerName = v.owner.name, here = v.here, view = v, ops = ops, feedback = feedback,
         canSubtitleSize = serverCanSubtitleSize(ops), canNextUp = false,   // DEB-2961 (FR-2, FR-14)

@@ -340,6 +340,34 @@ class PlaybackSessionsTest {
         assertEquals(listOf<SessionChange>(SessionChange.List), pushes)
     }
 
+    // DEB-5706 (FR-R372-4) — a stop midway reads *Stopped*, a play-out reads *Finished* (R347's one rule).
+    @Test fun `a stop at 2 29 of 9 56 ends stopped`() = runBlocking {
+        val s = service()
+        val phone = device("pixel")
+        val id = s.onStart(phone, "film-1", 0, plan = SessionPlan(startOverSeriesId = null, durationMs = 596_000))
+        s.onStop(phone, "film-1", 149_000)
+        now += 16_000; s.tick()
+        assertEquals("stopped", s.get(id)!!.endReason)
+    }
+
+    @Test fun `a stop at 9 10 of 9 56 ends finished`() = runBlocking {
+        val s = service()
+        val phone = device("pixel")
+        val id = s.onStart(phone, "film-1", 0, plan = SessionPlan(startOverSeriesId = null, durationMs = 596_000))
+        s.onStop(phone, "film-1", 550_000)
+        now += 16_000; s.tick()
+        assertEquals("finished", s.get(id)!!.endReason)
+    }
+
+    @Test fun `a stop past a trusted credits marker ends finished`() = runBlocking {
+        val s = service()
+        val phone = device("pixel")
+        val id = s.onStart(phone, "film-1", 0, plan = SessionPlan(startOverSeriesId = null, durationMs = 596_000, creditsStartMs = 400_000))
+        s.onStop(phone, "film-1", 420_000)
+        now += 16_000; s.tick()
+        assertEquals("finished", s.get(id)!!.endReason)
+    }
+
     @Test fun `the last song paused at zero stays paused while it heartbeats`() = runBlocking {
         val s = service()
         val phone = device("pixel")
