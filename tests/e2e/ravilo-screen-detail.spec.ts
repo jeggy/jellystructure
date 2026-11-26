@@ -826,6 +826,7 @@ test.describe("DEB-5631 FR-7 — a title's page shows its cast", () => {
 
 // DEB-5649 (DEB-5640 FR-51) — a title's page ends in Android TV's More like this row.
 test.describe("DEB-5649 FR-51 — a title's page ends in More like this", () => {
+  test.use({ viewport: { width: 1920, height: 1080 } });   // the set's own screen: the lab's trap lived in its pixels
   const related = [card("m2", "Moon Two"), card("m3", "Moon Three"), card("sr9", "Related Series", "SERIES")];
   const people = [{ id: "101", name: "Ada Quill", role: "Lead", image_url: null }];
   const otherMovie = { ...movieDetail, card: card("m2", "Moon Two"), related: [], cast: [] };
@@ -864,6 +865,36 @@ test.describe("DEB-5649 FR-51 — a title's page ends in More like this", () => 
     await expect(page.locator("#detail-related-0")).toHaveClass(/focused/);
     await page.keyboard.press("ArrowUp");
     await expect(page.locator(".detail-ep-toggle.focused")).toHaveCount(1);
+  });
+
+  test("a film whose cast faces rest a pixel apart: Down from a face reaches the related row, never a neighbouring face, and Up returns to a face", async ({ page }) => {
+    // The lab's trap (Tizen 5, DEB-5673): faces with different label heights rest a pixel or two apart, so a neighbour's centre was
+    // "below" the focused face's and beat the related row 250 px down: Down walked the cast. The rail here rests the second face
+    // 2 px lower; a neighbour in the same row is never the row below.
+    const faces = [
+      { id: "101", name: "Ada Quill", role: "Lead", image_url: null },
+      { id: "102", name: "Bo Marsh", role: "Director", image_url: null },
+      { id: "103", name: "Cleo", role: null, image_url: null },
+    ];
+    await boot(page, { movie: { ...movieDetail, cast: faces, related } });
+    await openPage(page);
+    await page.addStyleTag({ content: "#detail-cast-1 { margin-top: 2px; }" });
+    await page.keyboard.press("ArrowDown");
+    await expect(page.locator("#detail-cast-0")).toHaveClass(/focused/);
+    // from each face, Down leaves the cast row for a related tile and Up comes back to a face
+    for (const key of ["", "ArrowRight", "ArrowRight"]) {
+      if (key) await page.keyboard.press(key);
+      await page.keyboard.press("ArrowDown");
+      await expect(page.locator(".detail-related .shell-target.focused")).toHaveCount(1);
+      await page.keyboard.press("ArrowUp");
+      await expect(page.locator(".detail-cast .shell-target.focused")).toHaveCount(1);
+    }
+    await page.keyboard.press("ArrowDown");
+    await expect(page.locator(".detail-related .shell-target.focused")).toHaveCount(1);
+    const box = await page.locator(".detail-related .shell-target.focused").boundingBox();
+    expect(box!.y + box!.height).toBeLessThanOrEqual(page.viewportSize()!.height);   // the row scrolls onto the screen
+    await page.keyboard.press("ArrowUp");
+    await expect(page.locator(".detail-cast .shell-target.focused")).toHaveCount(1);
   });
 
   test("a film: Down from the actions reaches the first tile, Right moves along, Up returns to the actions", async ({ page }) => {

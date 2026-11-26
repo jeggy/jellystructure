@@ -77,7 +77,9 @@ internal class ScreenFocus(
             val rect = ScreenLane.restBox(candidate, shell)
             val x = rect.centerX - fx
             val y = rect.centerY - fy
-            (dx == 0 || x * dx > 0) && (dy == 0 || y * dy > 0)
+            // Up/Down leaves the row: a neighbour whose centre is only a pixel or two lower (cast faces whose labels differ in height)
+            // is the same row, not the one below (DEB-5649).
+            (dx == 0 || x * dx > 0) && (dy == 0 || y * dy > BAND_TOLERANCE_PX)
         }
         // The row above rests partly under the bar (FR-39), so its centre can sit higher than the bar's: inside a page, the page's own
         // targets are visited before the bar is.
