@@ -127,6 +127,37 @@ done
         waitFor("the folder to go") { dirsGone() }
     }
 
+    @Test fun `an adopted stream protects its opening read - a read before the start is a side job and the job at the start keeps running`() = runBlocking<Unit> {
+        val enc = encoder()
+        val id = playing(enc, "w10")
+        assertTrue(enc.keepWarm("w10", 62_000))
+        assertEquals(id, enc.adoptPrewarm("dev", "item", plan, 31, "w10b", Long.MAX_VALUE))
+        assertNotNull(enc.segment(id, "v", 0, 0), "a side job answers the read of segment 0")
+        assertEquals(1, jobDirs(0).size, "a side job at 0")
+        assertEquals(1, jobDirs(30).size, "the job at 30 is not killed")
+        assertEquals(2, enc.running().size, "the job at 30 still runs, beside the side job")
+        val before = jobCount()
+        assertNotNull(enc.segment(id, "v", 0, 31), "the read at the start is served")
+        assertEquals(before, jobCount(), "the next read at 31 starts no job")
+        assertEquals(1, jobDirs(30).size)
+        enc.stopFor("w10b")
+        waitFor("the folder to go") { dirsGone() }
+    }
+
+    @Test fun `an adopted entry whose job idled out is started with the ticket at its start`() = runBlocking<Unit> {
+        val enc = encoder(idleMs = 1_200, sweepMs = 150)
+        val pre = enc.prewarm(plan, "dev", "item", 30, Long.MAX_VALUE)
+        waitFor("the prewarm's job") { jobDirs(30).size == 1 }
+        waitFor("the idle stop", ms = 6_000) { dirsGone() }   // a page's prewarm nobody read: its job goes, its entry stays
+        assertEquals(pre, enc.adoptPrewarm("dev", "item", plan, 31, "w11", Long.MAX_VALUE), "the entry is still there to adopt")
+        assertTrue(enc.startAdoptedIfGone(pre, 31), "no job has it: the ticket starts one")
+        waitFor("the job at the start") { jobDirs(31).size == 1 }
+        assertFalse(enc.startAdoptedIfGone(pre, 31), "a stream with its job is left alone")
+        assertEquals(1, jobDirs(31).size)
+        enc.stopFor("w11")
+        waitFor("the folder to go") { dirsGone() }
+    }
+
     @Test fun `a start 5 segments away stops it and starts fresh`() = runBlocking<Unit> {
         val enc = encoder()
         playing(enc, "w3")

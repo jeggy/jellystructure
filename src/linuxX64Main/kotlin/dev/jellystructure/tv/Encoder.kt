@@ -311,7 +311,10 @@ class Encoder(
             persist(hit.key, e, clock())
             hit.key
         }
-        if (adopted != null) Logger.info("encoder: play adopted the prewarm for item=$itemId (309)", "tv")
+        if (adopted != null) {
+            jobs.rearmHead(adopted, startSegment)   // DEB-5685 (FR-313-22)
+            Logger.info("encoder: play adopted the prewarm for item=$itemId (309)", "tv")
+        }
         else stopFor(key)
         return adopted
     }
@@ -342,6 +345,16 @@ class Encoder(
         val k = encoderSeekSegment(e.plan.source.durationMs, startSegment * ENCODER_SEGMENT_MS)   // the segment the player's first read and init name (DEB-3642 FR-7)
         Logger.info("encoder $id: the ticket starts the job at segment $k (DEB-5646 FR-313-19)", "tv")
         scope.launch { jobs.segment(id, e.plan, ffmpegPath, 0, k, warm = true) }
+    }
+
+    /**
+     * DEB-5685 (FR-313-22) — a play adopted stream [id] ([adoptPrewarm]) but no job of this process has it any more (stopped by idle or by the budget, its
+     * entry still there): the ticket starts one at the adopted start, as for a stream with nothing adopted. True when it did.
+     */
+    suspend fun startAdoptedIfGone(id: String, startSegment: Int): Boolean {
+        if (!kickJobs || jobs.hasStream(id)) return false
+        startWithTicket(id, startSegment)
+        return true
     }
 
     /**

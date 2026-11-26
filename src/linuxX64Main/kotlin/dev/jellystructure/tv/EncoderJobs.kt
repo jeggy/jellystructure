@@ -158,6 +158,18 @@ class EncoderJobs(
     /** The running jobs, for the budget (FR-313-8) and `/api/health`. */
     internal suspend fun running(): List<Job> = mutex.withLock { streams.values.flatMap { listOfNotNull(it.current) + it.retired.filter { j -> j.side } }.filter { !it.stopped } }
 
+    /**
+     * DEB-5685 (FR-313-22) — a play adopted [streamId] (a prewarm or a kept-warm stream) at [startSegment]: its head is armed again, so FR-313-20 protects the
+     * adopting play's opening read as it does a fresh stream's — a read before the start is a side job and the job at the start keeps running. False
+     * when no job of this process has the stream.
+     */
+    internal suspend fun rearmHead(streamId: String, startSegment: Int): Boolean = mutex.withLock {
+        val s = streams[streamId] ?: return@withLock false
+        s.headStart = startSegment
+        s.headServed = startSegment == 0
+        true
+    }
+
     /** DEB-5646 (FR-313-20) — a side job is the first to go after a prewarm when the slots run out: every running one is stopped (its segments are kept). Returns how many. */
     internal suspend fun stopSideJobs(): Int = mutex.withLock {
         val side = streams.values.flatMap { s -> s.retired.filter { it.side && !it.stopped } }
