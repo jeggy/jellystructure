@@ -967,6 +967,55 @@ test.describe("Home stays current (DEB-5685 FR-59)", () => {
     await expect(page.locator("#home-row-0-tile-0")).toHaveClass(/focused/);
   });
 
+  // DEB-5696: the QA lab's cold start — the server was still down at the first quiet ask, and the page was never asked a third time.
+  async function failingHome(page: Page, statuses: number[]) {
+    const seen = { reads: 0 };
+    await page.addInitScript(() => {
+      localStorage.setItem("ravilo.screen.serverUrl", "http://app:9505");
+      localStorage.setItem("ravilo.screen.profiles", JSON.stringify([{ userId: "viewer", displayName: "Test Viewer", token: "test-token" }]));
+    });
+    await page.routeWebSocket(/\/api\/tv\/events/, () => {});
+    await page.route(`${API}/**`, async (route) => {
+      const path = new URL(route.request().url()).pathname;
+      if (route.request().method() === "OPTIONS") return route.fulfill({ status: 204 });
+      if (path === "/api/tv/home") {
+        seen.reads++;
+        const status = statuses.shift() ?? 200;
+        return route.fulfill({ status, contentType: "application/json", body: status === 200 ? JSON.stringify(feedOf("a", "b")) : "{}" });
+      }
+      return route.fulfill({ status: 204 });
+    });
+    await page.clock.install();
+    await page.goto(SCREEN_URL);
+    await expect(page.locator("#shell-body .load-failure")).toBeVisible();
+    return seen;
+  }
+
+  test("a Home still failing at the first quiet ask is asked again 5 s later, and again, and draws when the server is back", async ({ page }) => {
+    const seen = await failingHome(page, [500, 500, 500]);
+    await page.clock.runFor(5_200);
+    await expect.poll(() => seen.reads).toBe(2);
+    await expect(page.locator("#shell-body .load-failure")).toBeVisible();
+    await page.clock.runFor(5_200);
+    await expect.poll(() => seen.reads).toBe(3);
+    await expect(page.locator("#shell-body .load-failure")).toBeVisible();
+    await page.clock.runFor(5_200);
+    await expect.poll(() => seen.reads).toBe(4);
+    await expect(page.locator("#shell-body .home-feed")).toBeVisible();
+    await expect(page.locator("#home-row-0-tile-0")).toHaveClass(/focused/);
+  });
+
+  test("a quiet ask answered 401 shows the reauth lines and Sign in, and is not asked again (FR-60)", async ({ page }) => {
+    const seen = await failingHome(page, [500, 401]);
+    await expect(page.locator("#shell-body .load-failure-title")).toHaveText("Couldn't reach the server");
+    await page.clock.runFor(5_200);
+    await expect.poll(() => seen.reads).toBe(2);
+    await expect(page.locator("#shell-body .load-failure-title")).toHaveText("Sign in again");
+    await expect(page.locator("#shell-page-target")).toHaveText("Sign in");
+    await page.clock.runFor(16_000);
+    expect(seen.reads).toBe(2);
+  });
+
   test("a socket closed right after each open reconnects at growing delays, not every 2 s", async ({ page }) => {
     const seen = await live(page, { closeSockets: true });
     for (let i = 0; i < 160; i++) { await page.clock.runFor(250); await page.waitForTimeout(25); }   // 40 s of the page's time

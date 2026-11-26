@@ -560,11 +560,19 @@ internal class ScreenShell(
         entry.reading = true
         val generation = loadGeneration
         GlobalScope.launch {
-            val feed = runCatching { readFeed(entry) }.getOrNull()
+            val result = runCatching { readFeed(entry) }
+            val feed = result.getOrNull()
             entry.reading = false
             // Retry pressed, or the route left, meanwhile: that load owns the page now.
             if (generation != loadGeneration || !visible || player || entry !== entries.lastOrNull() || !entry.failed) return@launch
-            if (feed == null) return@launch
+            if (feed == null) {
+                // FR-59 — a read that failed again is asked again 5 s later ("every 5 s while its failure shows"): the timer was left spent, so a server
+                // that was still down at the first ask was never asked a second time. DEB-5696 (FR-60) — and the page says what it now is: a sign-in
+                // that has gone since reads as that and is not asked again.
+                val kind = ScreenLoadKind.of(result.exceptionOrNull())
+                if (kind != entry.failedKind) { entry.failedKind = kind; render() } else syncQuietRetry()
+                return@launch
+            }
             entry.feed = feed; entry.failed = false; entry.stale = false
             answered(entry, feed)
             render()
