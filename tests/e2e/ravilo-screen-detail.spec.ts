@@ -520,7 +520,7 @@ test.describe("DEB-4889 FR-19 — a title's page shows its audio and subtitle la
     await expect.poll(async () => (await loaded(flags(page, 1))).every((w) => w > 0)).toBe(true);
     expect(await flags(page, 0).evaluateAll((els) => els.map((e) => (e as HTMLImageElement).getAttribute("src")))).toEqual(["flags/gb.png", "flags/dk.png", "flags/fo.png"]);
     // Between the meta line and the overview, and not a stop for the D-pad.
-    expect(await page.locator(".detail-meta + .detail-langs + .detail-overview").count()).toBe(1);
+    expect(await page.locator(".detail-meta + .detail-langs + .detail-synopsis").count()).toBe(1);
     await expect(page.locator(".detail-langs .shell-target")).toHaveCount(0);
     const size = await flags(page, 0).first().evaluate((el) => { const r = el.getBoundingClientRect(); const s = getComputedStyle(el); return [r.width, r.height, s.borderTopLeftRadius, s.borderTopWidth]; });
     expect(size).toEqual([39, 27, "3px", "1px"]);
@@ -566,7 +566,7 @@ test.describe("DEB-4889 FR-19 — a title's page shows its audio and subtitle la
     await boot(page, { series: seriesDetail() });
     await openPage(page);
     await expect(page.locator(".detail-langs")).toHaveCount(0);
-    await expect(page.locator(".detail-meta + .detail-overview")).toHaveCount(1);
+    await expect(page.locator(".detail-meta + .detail-synopsis")).toHaveCount(1);
   });
 });
 
@@ -983,5 +983,165 @@ test.describe("DEB-5651 FR-53 — episode tiles", () => {
     await expect(page.locator("#detail-ep-toggle-0")).toHaveText("Mark Watched");
     await expect(page.locator(".detail-ep-count")).toHaveText("0 of 3 episodes watched");
     await expect(tile(page, 0).locator(".detail-ep-check")).toHaveCount(0);
+  });
+});
+
+test.describe("DEB-5699 FR-56 — a title's header carries Android TV's facts, and the overview opens", () => {
+  const long = Array.from({ length: 14 }, (_, i) => `Sentence number ${i + 1} of a long overview that runs on well past the clamp.`).join(" ");
+  const film = (extra: object = {}) => ({ ...movieDetail, ...extra });
+  const imdb = (rating: number, votes = 24_800) => ({ aggregate_rating: rating, vote_count: votes });
+
+  test("a film with an IMDb rating of 7.84 shows 7.8 and 24.8K, labelled with imdb.a11y; 8 shows 8.0; none shows no chip", async ({ page }) => {
+    await boot(page, { movie: film({ imdb_rating: imdb(7.84) }) });
+    await openPage(page);
+    await expect(page.locator(".detail-meta .detail-imdb-rating")).toHaveText("7.8");
+    await expect(page.locator(".detail-meta .detail-imdb-votes")).toHaveText("24.8K");
+    await expect(page.locator(".detail-imdb")).toHaveAttribute("aria-label", "IMDb 7.8 out of 10, 24.8K votes");
+    // After the year, the runtime and the rating badge, in that order.
+    const order = await page.locator(".detail-meta > *").evaluateAll((els) => els.map((e) => e.className));
+    expect(order).toEqual(["detail-fact", "detail-fact", "detail-badge", "detail-imdb"]);
+  });
+
+  test("a whole rating prints one decimal, a small vote count is the count, and no rating draws no chip", async ({ page }) => {
+    await boot(page, { movie: film({ imdb_rating: imdb(8, 950) }) });
+    await openPage(page);
+    await expect(page.locator(".detail-imdb-rating")).toHaveText("8.0");
+    await expect(page.locator(".detail-imdb-votes")).toHaveText("950");
+  });
+
+  test("no IMDb rating draws no chip", async ({ page }) => {
+    await boot(page, {});
+    await openPage(page);
+    await expect(page.locator(".detail-imdb")).toHaveCount(0);
+  });
+
+  test("a watched film shows the ✓ Watched chip after the IMDb chip; an unwatched one does not", async ({ page }) => {
+    await boot(page, { movie: film({ imdb_rating: imdb(7.84) }), playstate: { m1: state({ played: true }) } });
+    await openPage(page);
+    await expect(page.locator(".detail-watched-chip")).toHaveText("✓ Watched");
+    const order = await page.locator(".detail-meta > *").evaluateAll((els) => els.map((e) => e.className));
+    expect(order.slice(-2)).toEqual(["detail-imdb", "detail-watched-chip"]);
+  });
+
+  test("an unwatched film has no ✓ chip", async ({ page }) => {
+    await boot(page, { playstate: { m1: state() } });
+    await openPage(page);
+    await expect(page.locator(".detail-watched-chip")).toHaveCount(0);
+  });
+
+  test("five genres show the first three and +2, under the meta line; three show no +N; none draw no line", async ({ page }) => {
+    await boot(page, { movie: film({ genres: ["Drama", "Comedy", "Crime", "Western", "Road"] }) });
+    await openPage(page);
+    await expect(page.locator(".detail-meta + .detail-genres")).toHaveCount(1);
+    await expect(page.locator(".detail-genre-names")).toHaveText("Drama · Comedy · Crime");
+    await expect(page.locator(".detail-genre-more")).toHaveText("+2");
+    await expect(page.locator(".detail-genres .shell-target")).toHaveCount(0);
+  });
+
+  test("three genres show no +N and none draw no line", async ({ page }) => {
+    await boot(page, { movie: film({ genres: ["Drama", "Comedy", "Crime"] }) });
+    await openPage(page);
+    await expect(page.locator(".detail-genre-names")).toHaveText("Drama · Comedy · Crime");
+    await expect(page.locator(".detail-genre-more")).toHaveCount(0);
+  });
+
+  test("no genres draws no line", async ({ page }) => {
+    await boot(page, {});
+    await openPage(page);
+    await expect(page.locator(".detail-genres")).toHaveCount(0);
+  });
+
+  test("a long overview is a focus target above the actions: Up reaches it, OK opens it to its full length and OK closes it", async ({ page }) => {
+    await boot(page, { movie: film({ synopsis: long }) });
+    await openPage(page);
+    await page.keyboard.press("ArrowUp");
+    await expect(page.locator("#detail-overview")).toHaveClass(/focused/);
+    const text = page.locator(".detail-overview");
+    const closed = (await text.boundingBox())!.height;
+    await expect(page.locator(".detail-more")).toHaveText("▾ more");
+    await page.keyboard.press("Enter");
+    await expect(page.locator("#detail-overview")).toHaveClass(/open/);
+    await expect(page.locator("#detail-overview")).toHaveClass(/focused/);
+    await expect(page.locator(".detail-more")).toHaveText("▴ less");
+    expect((await text.boundingBox())!.height).toBeGreaterThan(closed + 20);
+    await page.keyboard.press("Enter");
+    await expect(page.locator("#detail-overview")).not.toHaveClass(/open/);
+    await expect(page.locator(".detail-more")).toHaveText("▾ more");
+    expect((await text.boundingBox())!.height).toBeLessThanOrEqual(closed + 1);
+    // Down returns to the actions.
+    await page.keyboard.press("ArrowDown");
+    await expect(page.locator("#detail-play")).toHaveClass(/focused/);
+  });
+
+  test("a short overview shows no chevron, and OK on it opens nothing", async ({ page }) => {
+    await boot(page, {});
+    await openPage(page);
+    await page.keyboard.press("ArrowUp");
+    await expect(page.locator("#detail-overview")).toHaveClass(/focused/);
+    await expect(page.locator(".detail-more")).toBeHidden();
+    const before = (await page.locator(".detail-overview").boundingBox())!.height;
+    await page.keyboard.press("Enter");
+    await expect(page.locator("#detail-overview")).toHaveClass(/open/);
+    // It is toggled, and it fits either way: the text is the same size.
+    expect((await page.locator(".detail-overview").boundingBox())!.height).toBe(before);
+  });
+
+  test("an about with a director and a country draws those two rows in aboutRows' order, before the cast row", async ({ page }) => {
+    await boot(page, { movie: film({ about: { country: "DK", director: "A. Director" } }) });
+    await openPage(page);
+    await expect(page.locator(".detail-about .home-heading")).toHaveText("About");
+    await expect(page.locator(".about-label")).toHaveText(["Director", "Country"]);
+    await expect(page.locator(".about-value")).toHaveText(["A. Director", "Denmark"]);
+    // Before the cast row, and text only: no focus target in it.
+    await expect(page.locator(".detail-about + .detail-cast")).toHaveCount(1);
+    await expect(page.locator(".detail-about .shell-target")).toHaveCount(0);
+  });
+
+  test("no about, or an about with no row, draws no block and no heading", async ({ page }) => {
+    await boot(page, { movie: film({ about: {} }) });
+    await openPage(page);
+    await expect(page.locator(".detail-about")).toHaveCount(0);
+  });
+
+  test("a series: About follows the episodes, with the series' rows", async ({ page }) => {
+    await boot(page, { series: seriesDetail({ about: { creator: "A. Creator", seasons: 2, episodes: 4, runtime_min: 40 } }) });
+    await openPage(page);
+    await expect(page.locator(".about-label")).toHaveText(["Runtime", "Created by", "Seasons"]);
+    await expect(page.locator(".about-value").first()).toHaveText("40 min per episode");
+    await expect(page.locator(".detail-episodes + .detail-about")).toHaveCount(1);
+  });
+
+  test("a series with next_airing shows the line under the meta line; a series without shows none", async ({ page }) => {
+    await boot(page, { series: seriesDetail({ next_airing: { season: 2, episode: 4, title: "Fourth Reel", air_date: "2026-12-01" } }) });
+    await openPage(page);
+    await expect(page.locator(".detail-meta + .detail-next")).toHaveCount(1);
+    await expect(page.locator(".detail-next-text")).toHaveText("Next episode · S02E04 “Fourth Reel” · airs 2026-12-01");
+  });
+
+  test("a series with no next_airing has no line", async ({ page }) => {
+    await boot(page, { series: seriesDetail() });
+    await openPage(page);
+    await expect(page.locator(".detail-next")).toHaveCount(0);
+  });
+
+  test("a series' IMDb chip and genres are drawn like a film's", async ({ page }) => {
+    await boot(page, { series: seriesDetail({ imdb_rating: imdb(9.05, 1_200_000), genres: ["Drama", "Comedy", "Crime", "Western"] }) });
+    await openPage(page);
+    await expect(page.locator(".detail-imdb-rating")).toHaveText("9.1");
+    await expect(page.locator(".detail-imdb-votes")).toHaveText("1.2M");
+    await expect(page.locator(".detail-genre-more")).toHaveText("+1");
+  });
+
+  test("a season whose episodes are all watched has a ✓ on its pill, and one that is not has none", async ({ page }) => {
+    await boot(page, { series: seriesDetail(), playstate: { sr1: state(), s1e1: state({ played: true }), s1e2: state({ played: true }), s1e3: state({ played: true }), s2e1: state() } });
+    await openPage(page);
+    await expect(page.locator("#detail-season-1 .detail-season-check")).toHaveText("✓");
+    await expect(page.locator("#detail-season-2 .detail-season-check")).toHaveCount(0);
+  });
+
+  test("a season with one episode unwatched, or a page whose playstate has not arrived, has no ✓", async ({ page }) => {
+    await boot(page, { series: seriesDetail(), playstate: { sr1: state(), s1e1: state({ played: true }), s1e2: state({ played: true }), s1e3: state() } });
+    await openPage(page);
+    await expect(page.locator(".detail-season-check")).toHaveCount(0);
   });
 });

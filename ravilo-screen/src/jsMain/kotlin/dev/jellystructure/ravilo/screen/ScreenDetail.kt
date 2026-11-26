@@ -6,12 +6,15 @@ import dev.jellystructure.shared.tv.Episode
 import dev.jellystructure.shared.tv.MediaCard
 import dev.jellystructure.shared.tv.MediaKind
 import dev.jellystructure.shared.tv.MovieDetail
+import dev.jellystructure.shared.tv.NextAiring
 import dev.jellystructure.shared.tv.Person
 import dev.jellystructure.shared.tv.RatingBadge
 import dev.jellystructure.shared.tv.SeriesDetail
 import dev.jellystructure.shared.tv.TileShape
 import dev.jellystructure.shared.tv.TvApiClient
 import dev.jellystructure.shared.tv.TvApiError
+import dev.jellystructure.shared.tv.TvImdbRating
+import dev.jellystructure.shared.tv.aboutRows
 import dev.jellystructure.shared.tv.airDateText
 import dev.jellystructure.shared.tv.countFlagStrip
 import dev.jellystructure.shared.tv.episodeCode
@@ -19,6 +22,7 @@ import kotlinx.browser.document
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
 import kotlin.js.Date
+import kotlin.math.roundToLong
 import org.w3c.dom.HTMLElement
 
 /** What the primary button of a series' page does with [episode]. */
@@ -94,6 +98,8 @@ internal class ScreenDetail(
     private var season = Int.MIN_VALUE
     private var reading = false
     private var readAgain = false
+    /** DEB-5699 (FR-56) — the overview is open to its full length; the viewer's own, kept across redraws. */
+    private var overviewOpen = false
 
     // DEB-5578 (DEB-5576, FR-31) — what the last draw left in the mount, so a redraw keeps the page still (see render).
     private var drawn: HTMLElement? = null
@@ -184,6 +190,7 @@ internal class ScreenDetail(
         when (element.getAttribute("data-action")) {
             "play" -> play(startOver = false)
             "start-over" -> play(startOver = true)
+            "overview" -> { overviewOpen = !overviewOpen; onChange(this) }
             "list" -> write { api.setFavorite(id, overlay[id]?.favorite != true)?.let { mapOf(id to it) } }
             "watched" -> write { api.setPlayed(id, overlay[id]?.played != true) }
             "watched-ep" -> element.getAttribute("data-episode-id")?.let(::toggleEpisode)
@@ -340,12 +347,19 @@ internal class ScreenDetail(
         card.year?.let { meta.appendChild(label("span", "detail-fact", it.toString())) }
         if (m != null && m.runtime > 0) meta.appendChild(label("span", "detail-fact", t("up.runtime_min", ScreenLanguage.lang, m.runtime)))
         (m?.ratingBadge ?: s?.ratingBadge)?.let { meta.appendChild(badge(it)) }
+        // DEB-5699 (FR-56) — Android TV's meta line goes on: the IMDb chip, then the ✓ Watched chip of a film the viewer has played.
+        (m?.imdbRating ?: s?.imdbRating)?.let { meta.appendChild(imdbChip(it)) }
+        if (m != null && overlay[id]?.played == true) meta.appendChild(label("span", "detail-watched-chip", "✓ ${t("action.watched", ScreenLanguage.lang)}"))
         head.appendChild(meta)
+        genreLine(m?.genres ?: s?.genres.orEmpty())?.let { head.appendChild(it) }
+        s?.nextAiring?.let { head.appendChild(nextAiringLine(it)) }
         languageLine(m?.audioLanguages ?: s?.audioLanguages.orEmpty(), m?.subtitleLanguages ?: s?.subtitleLanguages.orEmpty())?.let { head.appendChild(it) }
-        (m?.synopsis ?: s?.synopsis)?.takeIf { it.isNotBlank() }?.let { head.appendChild(label("p", "detail-overview", it)) }
+        val overview = (m?.synopsis ?: s?.synopsis)?.takeIf { it.isNotBlank() }?.let { overview(it) }
+        overview?.let { head.appendChild(it) }
         head.appendChild(actions(m, s))
         page.appendChild(head)
         if (s != null) page.appendChild(episodes(s))
+        aboutBlock(s != null)?.let { page.appendChild(it) }
         castRow()?.let { page.appendChild(it) }
         relatedRow()?.let { page.appendChild(it) }
         if (previous != null) mount.replaceChild(page, previous) else mount.appendChild(page)
@@ -353,6 +367,7 @@ internal class ScreenDetail(
         logo = logoImage
         drawn = page
         drawnSeason = season
+        overview?.let(::markTruncation)
         if (previous != null) {
             mount.scrollTop = scroll
             val track = page.querySelector(".detail-episodes .rail-track") as? HTMLElement
@@ -371,6 +386,94 @@ internal class ScreenDetail(
         old.getAttribute("data-tx")?.let { track.setAttribute("data-tx", it) }
         track.style.transform = old.style.transform
         (track.parentElement as? HTMLElement)?.scrollLeft = scrollLeft
+    }
+
+    /**
+     * DEB-5699 (DEB-5685, FR-56) — Android TV's `ImdbChip`: the gold *IMDb* tag, the rating to one decimal and the votes abbreviated
+     * (`24800` → `24.8K`). `imdb.a11y` is its label, read and never drawn. Not a focus target, and there is no link out on a TV.
+     */
+    private fun imdbChip(rating: TvImdbRating): HTMLElement {
+        val ratingText = tenths(rating.aggregateRating * 10)
+        val votes = when {
+            rating.voteCount >= 1_000_000 -> tenths(rating.voteCount / 100_000.0, trimZero = true) + "M"
+            rating.voteCount >= 1_000 -> tenths(rating.voteCount / 100.0, trimZero = true) + "K"
+            else -> rating.voteCount.toString()
+        }
+        val chip = node("span", "detail-imdb")
+        chip.setAttribute("aria-label", t("imdb.a11y", ScreenLanguage.lang, mapOf("rating" to ratingText, "votes" to votes)))
+        chip.appendChild(label("span", "detail-imdb-tag", "IMDb"))
+        chip.appendChild(label("span", "detail-imdb-rating", ratingText))
+        chip.appendChild(label("span", "detail-imdb-votes", votes))
+        return chip
+    }
+
+    /** [tenthsTimesTen] is a value in tenths of a unit, so `78.4` prints `7.8`; [trimZero] drops a `.0` (`8.0` → `8`, as `ImdbChip`'s votes). */
+    private fun tenths(tenthsTimesTen: Double, trimZero: Boolean = false): String {
+        val whole = tenthsTimesTen.roundToLong()
+        return if (trimZero && whole % 10 == 0L) (whole / 10).toString() else "${whole / 10}.${whole % 10}"
+    }
+
+    /** DEB-5699 (FR-56) — the genres under the meta line, as text: the first three, then `+N`. Not focus targets. Null with none. */
+    private fun genreLine(genres: List<String>): HTMLElement? {
+        if (genres.isEmpty()) return null
+        val line = node("div", "detail-genres")
+        line.appendChild(label("span", "detail-genre-names", genres.take(3).joinToString(" · ")))
+        if (genres.size > 3) line.appendChild(label("span", "detail-genre-more", "+${genres.size - 3}"))
+        return line
+    }
+
+    /** DEB-5699 (FR-56) — Android TV's next-airing line (R149): `Next episode · S01E04 “Title” · airs 2026-12-01`. */
+    private fun nextAiringLine(next: NextAiring): HTMLElement {
+        val line = node("div", "detail-next")
+        line.appendChild(node("span", "detail-next-dot"))
+        val title = next.title?.takeIf { it.isNotBlank() }?.let { " “$it”" } ?: ""
+        line.appendChild(label("span", "detail-next-text",
+            "${t("sonarr.next_ep", ScreenLanguage.lang)} · ${episodeCode(next.season, next.episode)}$title · ${t("sonarr.airs", ScreenLanguage.lang)} ${next.airDate}"))
+        return line
+    }
+
+    /**
+     * DEB-5699 (FR-56) — Android TV's `DetailSynopsis` (R135): the overview is a focus target between the header and the actions. It keeps
+     * the clamp of `.detail-overview`; OK opens it to its full length and OK again closes it. The chevron (`detail.synopsis_more` /
+     * `_less`) is drawn hidden here and shown by [markTruncation] once the page is in the DOM, so a text that fits shows none.
+     */
+    private fun overview(text: String): HTMLElement {
+        val box = node("div", if (overviewOpen) "shell-target detail-synopsis open" else "shell-target detail-synopsis")
+        box.id = "detail-overview"
+        box.setAttribute("data-row", "synopsis")
+        box.setAttribute("data-action", "overview")
+        box.setAttribute("tabindex", "-1")
+        box.appendChild(label("p", "detail-overview", text))
+        box.appendChild(label("div", "detail-more hidden", t(if (overviewOpen) "detail.synopsis_less" else "detail.synopsis_more", ScreenLanguage.lang)))
+        return box
+    }
+
+    /** The chevron is shown when the text is cut by the clamp, and always while it is open (it is how to close it). */
+    private fun markTruncation(box: HTMLElement) {
+        val text = box.querySelector(".detail-overview") as? HTMLElement ?: return
+        val more = box.querySelector(".detail-more") as? HTMLElement ?: return
+        if (overviewOpen || text.scrollHeight > text.clientHeight + 1) more.classList.remove("hidden")
+    }
+
+    /**
+     * DEB-5699 (FR-56) — Android TV's `AboutSection`: *About* and the rows [aboutRows] makes, after the episodes (or the overview) and before
+     * the cast. Text only, so focus skips it. Null with no `about` or no row, so there is no heading either.
+     */
+    private fun aboutBlock(series: Boolean): HTMLElement? {
+        val facts = (movie?.about ?: this.series?.about) ?: return null
+        val rows = aboutRows(facts, series) { key, vars -> t(key, ScreenLanguage.lang, vars) }
+        if (rows.isEmpty()) return null
+        val section = node("div", "detail-about")
+        section.appendChild(label("h2", "home-heading", t("about.title", ScreenLanguage.lang)))
+        val grid = node("div", "about-grid")
+        rows.forEach { (name, value) ->
+            val row = node("div", "about-row")
+            row.appendChild(label("div", "about-label", name))
+            row.appendChild(label("div", "about-value", value))
+            grid.appendChild(row)
+        }
+        section.appendChild(grid)
+        return section
     }
 
     /**
@@ -442,6 +545,9 @@ internal class ScreenDetail(
             val strip = node("div", "detail-seasons")
             for (sn in seasons) {
                 val pill = button("detail-season-${sn.index}", "season", sn.name.ifBlank { "${t("detail.season", ScreenLanguage.lang)} ${sn.index}" }, row = "seasons")
+                // DEB-5699 (FR-56) — SeasonPicker's `watchedSeasons`: ✓ when the page's overlay says every episode of the season is watched.
+                val playable = sn.episodes.filter { it.playable() }
+                if (overlay.isNotEmpty() && playable.all { overlay[it.id]?.played == true }) pill.appendChild(label("span", "detail-season-check", "✓"))
                 pill.setAttribute("data-season", sn.index.toString())
                 pill.classList.toggle("cur", sn.index == season)
                 strip.appendChild(pill)

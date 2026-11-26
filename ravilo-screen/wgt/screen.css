@@ -307,7 +307,7 @@
     .home-heading-count { margin-left: 12px; font-size: 20px; font-weight: 500; color: var(--ink-dim); }
     .detail-backdrop:after { content: ""; position: absolute; top: 0; right: 0; bottom: 0; left: 0; background: linear-gradient(0deg, var(--bg) 4%, rgba(10,12,19,.55) 60%, rgba(10,12,19,.85)); }
     .detail-head { position: relative; z-index: 1; padding-top: 7vh; text-shadow: 0 2px 8px #000; }
-    .detail-head > .detail-overview, .detail-head > .detail-meta { max-width: 62%; }
+    .detail-head > .detail-synopsis, .detail-head > .detail-meta, .detail-head > .detail-genres, .detail-head > .detail-next { max-width: 62%; }
     .detail-logo { display: block; max-width: 520px; max-height: 160px; object-fit: contain; object-position: left bottom; }
     #shell-body .detail-title { font-size: 56px; line-height: 1.1; margin: 0; }
     #shell-body .detail-title.hidden { display: none; }
@@ -321,6 +321,31 @@
     .detail-badge-code[data-tier="3"] { background: #d9722a; }
     .detail-badge-code[data-tier="4"] { background: #c23a3a; }
     .detail-overview { font-size: 21px; line-height: 1.45; color: var(--ink-soft); margin: 18px 0 0; max-height: 6.1em; overflow: hidden; }
+    /* DEB-5699 FR-56 — the rest of Android TV's header: the IMDb chip and the ✓ chip on the meta line, the genres, the next-airing line, and the overview as a
+       focus target (the ring is FR-38's: a box-shadow, so the page does not move). Margins, never flex gap (FR-13). */
+    .detail-imdb { display: inline-flex; align-items: center; font-size: 20px; }
+    .detail-imdb-tag { padding: 2px 8px; border-radius: 5px; background: #f5c518; color: #0a0c13; font-size: 15px; font-weight: 800; }
+    .detail-imdb-rating { margin-left: 10px; font-weight: 700; color: var(--ink); }
+    .detail-imdb-votes { margin-left: 8px; font-size: 18px; color: var(--ink-dim); }
+    .detail-watched-chip { font-size: 20px; font-weight: 600; color: #2dd49a; }
+    .detail-genres { margin-top: 12px; font-size: 20px; color: var(--ink-soft); }
+    .detail-genre-more { margin-left: 10px; color: var(--ink-dim); }
+    .detail-next { display: flex; align-items: center; margin-top: 12px; font-size: 19px; color: var(--ink-soft); }
+    .detail-next-dot { width: 8px; height: 8px; margin-right: 10px; border-radius: 50%; background: var(--accent); }
+    .detail-synopsis { margin-top: 18px; padding: 6px 10px; margin-left: -10px; border-radius: 8px; }
+    .detail-synopsis .detail-overview { margin: 0; }
+    .detail-synopsis.open .detail-overview { max-height: none; }
+    .detail-synopsis.focused { box-shadow: 0 0 0 4px var(--ring); }
+    .detail-synopsis.focused .detail-overview { color: var(--ink); }
+    .detail-more { margin-top: 4px; font-size: 16px; font-weight: 600; color: var(--ink-dim); }
+    .detail-synopsis.focused .detail-more { color: var(--accent-2); }
+    .detail-more.hidden { display: none; }
+    .detail-season-check { margin-left: 10px; color: #2dd49a; }
+    .detail-about { position: relative; z-index: 1; margin-top: 30px; }
+    .about-grid { display: flex; flex-wrap: wrap; margin-top: 8px; }
+    .about-row { box-sizing: border-box; width: 50%; padding: 0 24px 14px 0; }
+    .about-label { font-size: 15px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: var(--ink-dim); }
+    .about-value { margin-top: 2px; font-size: 19px; color: var(--ink-soft); }
     .detail-actions { display: flex; margin-top: 28px; }   /* one row: Left and Right only move within a row */
     /* DEB-5640 FR-52 — Android TV's corner badges (Tile.kt): episode/upcoming top-left, ✓ top-right, picture quality bottom-right. */
     .tile-frame { position: relative; }
@@ -400,7 +425,7 @@
     .search-clear { flex: 0 0 auto; margin: 0 0 0 16px; }
     .search-clear[hidden] { display: none; }
     .search-retry { display: inline-block; margin-top: 18px; }
-    .detail-langs + .detail-overview { margin-top: 14px; }
+    .detail-langs + .detail-synopsis { margin-top: 14px; }
 
     /* DEB-4893 (DEB-4889 FR-20) — every page that loads draws a skeleton, never a word: grey blocks in the places and sizes of
        what replaces them. The whole skeleton is ONE element whose opacity pulses (FR-14: opacity only, one layer, no per-block
