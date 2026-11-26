@@ -183,3 +183,67 @@ rating" chip needs a score→label map jellystructure does not have. And 142 is 
   before firing (the addendum's "Revoke — signs YOU out?" is implementable). Require both.
 - **Plan.md:** `specs/plan.md` §"API Routes › Auth" should gain `GET /api/tv/admin/overview`, the revoke
   routes, and `POST /api/tv/admin/users/{userId}/signout-all`; note the two new `session` columns.
+
+## Amendment 2026-11-26 — a device that is signed out learns it at once (DEB-5777)
+
+Found by QA on DEB-5737 step 4. When an admin revoked a TV, or used *Sign out everywhere*, the TV did not notice. It
+stayed on Home with its events socket open and learned it only at the viewer's next action, which came back `401`.
+Tróndur decided on DEB-5777 that it should be built. When an admin signs a device out, that should take effect at
+once. This amendment covers every path that removes a device row of the server's own accord, not only the two admin
+routes.
+
+**Why it is not the password route's `signed_out`.** FR-187-8 rule 4 already pushes `{"type":"signed_out"}` to a
+device. Android TV, the phone and Ravilo Web (`ravilo-ui`, since DEB-1933) answer it with
+`account.pw_signed_out`: *"Your password was changed on another device. Sign in with the new one."* After an
+admin's revoke that line is false, and installed APKs would show it. So a removal sends its own event. An installed
+client does not know the new event. `TvApiClient`'s `else -> onEvent` reads it as "the config changed" and reads
+again. That read is refused like any other call, which is what such a client does today at its next action. No
+installed client sees anything new or anything false.
+
+- **FR-143-1 — The event.** `{"type":"sign_in_removed"}`, with no other fields. It means that this socket's sign-in
+  (the profile the socket was opened for, on this device) has been removed by someone other than the device. It is
+  additive on the wire. `signed_out` keeps its meaning (the password route, FR-187-8 rule 4) and is not sent for a
+  removal.
+- **FR-143-2 — Which paths send it.** Each path sends one event for each device row it removed:
+
+  | Path | Code | Sends |
+  |---|---|---|
+  | Admin revokes one device: `DELETE /tv/admin/devices/{deviceId}?userId=` | `TvRoutes.kt`, `removeSession` | **yes**, to that row |
+  | Admin *Sign out everywhere*: `POST /tv/admin/users/{userId}/signout-all` | `TvRoutes.kt`, `deleteAllForUser` | **yes**, to every removed row |
+  | A viewer removes their sign-in from another device: `DELETE /api/remote/devices/{device_id}/sessions/me` (FR-236-3) | `RemoteRoutes.kt`, `removeSession` | **yes**, to that row, except when `device_id` is the caller's own device |
+  | A user gone from Jellyfin is signed out (DEB-2672 FR-4) | `GoneUserRemoval.kt`, `deleteAllForUser` | **yes**, to every removed row, only once the removal's transaction has committed. A removal that throws (FR-11) sends nothing |
+  | A device removes a profile from itself: `DELETE /tv/sessions/{userId}` | `TvRoutes.kt`, `removeSession` | **no**. The caller is that device and acts on its own answer |
+  | A device signs itself out: `POST /tv/pair/unpair` | `TvRoutes.kt`, `unpair` | **no**, for the same reason |
+  | A password change that could not re-sign a device (FR-187-8 rule 4) | `OtherDevicesResign` | `signed_out`, unchanged |
+
+  Admin web sessions (`DELETE /tv/admin/sessions/{id}`, the session half of `signout-all`) have no events socket and
+  send nothing.
+- **FR-143-3 — Order.** The event goes out after the row is deleted and its token has left the token cache and
+  `DeviceIdentityRegistry`. A client that reacts at once with a request is then refused, never answered. The push is
+  fire-and-forget (`TvEventBus.notifyDevice`), so the route's answer never waits on a socket.
+- **FR-143-4 — Only the socket of that exact sign-in.** The event goes only to a socket registered under the removed
+  row's own stored `jellyfin_user_id` and its `device_id`. It never uses `targetFor`'s device-level fallback
+  (FR-236-4a). Otherwise a TV whose open socket belongs to profile B would hear that profile A was removed, and would
+  sign B out. If no socket matches exactly, nothing is sent: a profile that is not the open one learns it the next
+  time it is chosen. The same exact match applies to FR-187-8 rule 4's `signed_out`, which has the same fallback
+  today. That restores the rule's "pushes the device", and is not a new behaviour.
+- **FR-143-5 — What a client does with it.** A client that knows the event treats it like `signed_out` for the
+  profile the socket belongs to: that profile goes, and the picker opens, or sign-in if it was the last profile.
+  - `ravilo-ui` (Android TV, phone, Ravilo Web) shows the existing `error.load.reauth.body` (*"This device's session
+    has ended. Sign in again to carry on."*) where `signed_out` shows `account.pw_signed_out`. No new string.
+  - Ravilo Samsung (`ravilo-screen`) runs the same `signedOut(userId)` as for `signed_out` (DEB-5685 FR-60).
+- **FR-143-6 — No answer shape changes.** `signout-all` still answers `{"ok":true,"devices":n,"sessions":k}`
+  (DEB-2675 FR-13). The rows it removed are needed for FR-143-2, but they stay inside the server (for example, a
+  removal method that returns the rows, with the count taken from them). `DELETE /tv/admin/devices/{deviceId}` still
+  answers `{"ok":true}`. The server does not close the removed device's socket; that is left to the client and is not
+  part of this amendment.
+
+**Proof.**
+- `linuxX64Test`: each "yes" path in FR-143-2 calls the push once for each removed row, with that row's stored user
+  id and device id. Each "no" path calls it zero times. A gone-user removal that throws calls it zero times.
+- A `TvEventBus` case: a socket open under (B, X) receives nothing when (A, X) is removed.
+- A `:shared` case: `sign_in_removed` reaches its own callback and never `onEvent`.
+- A `ravilo-ui` desktop case: the line shown is `error.load.reauth.body`.
+- A Playwright case against the real backend (`tests/e2e/ravilo-screen-signin.spec.ts`): an admin revoke of a
+  signed-in Samsung profile opens the picker, or sign-in when it was the last profile.
+- On a real TV: DEB-5737 step 4, by QA.

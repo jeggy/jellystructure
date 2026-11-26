@@ -444,6 +444,11 @@ in and every subsequent request 401s.
 > Keep reading what Jellyfin does rather than assuming it: the 2026-09-05 answer changed under a Jellyfin upgrade.
 > Rule 1 is harmless on a Jellyfin that does not revoke, because it only replaces a working token with another
 > working one.
+>
+> **Amended 2026-11-26 (DEB-5777).** Rule 4's `signed_out` goes only to the socket of that exact sign-in (the row's
+> stored user id and device id), never through the device-level fallback. A removal by an admin, a viewer or the
+> gone-user sweep sends `sign_in_removed`, not `signed_out`, because a client reads `signed_out` as a password
+> change. See `phase-143-users-devices-overview.md`, FR-143-1 to FR-143-6.
 
 **FR-187-9 — Show the photo in the admin, read-only.** Each user row on **Ravilo → Users & devices**
 renders that user's photo in place of its initials chip, from the same `RaviloImageUrl.avatar()` the

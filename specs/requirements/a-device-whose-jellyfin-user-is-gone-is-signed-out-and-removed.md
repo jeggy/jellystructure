@@ -76,6 +76,10 @@ Measured on prod 2026-10-27, read-only:
   and `DeviceIdentityRegistry`, then `sessionService.revokeAllForUser(uid)`. A tune or playback in flight ends the
   way it ends after that action today. No new teardown path is added.
 
+  > **Amended 2026-11-26 (DEB-5777):** as with *Sign out everywhere*, each removed device with a socket open under
+  > that sign-in hears `{"type":"sign_in_removed"}`, sent only after the removal's transaction has committed. See
+  > `phase-143-users-devices-overview.md`, FR-143-2.
+
   In the same step, and so that no path can bring the user back:
   - the user's jellystructure API keys are **revoked** (`api_key.revoked = 1`). The rows stay, so the admin's key
     list still shows what existed;
