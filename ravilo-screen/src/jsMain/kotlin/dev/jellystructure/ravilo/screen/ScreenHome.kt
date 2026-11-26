@@ -7,6 +7,7 @@ import dev.jellystructure.shared.tv.RowKind
 import dev.jellystructure.shared.tv.TileShape
 import dev.jellystructure.shared.tv.continueDateBadge
 import dev.jellystructure.shared.tv.episodeCode
+import dev.jellystructure.shared.tv.offersSeeAll
 import dev.jellystructure.shared.tv.rowHeadingCount
 import kotlinx.browser.document
 import kotlinx.browser.window
@@ -60,6 +61,7 @@ internal class ScreenHome(private val serverUrl: String, private val showProgres
                 if (row.kind == RowKind.CONTINUE) tile.setAttribute("data-row-kind", CONTINUE_ROW)
                 track.appendChild(tile)
             }
+            if (row.offersSeeAll()) track.appendChild(seeAllTile(rowIndex, shape))
             section.appendChild(rail)
             home.appendChild(section)
         }
@@ -168,6 +170,21 @@ internal class ScreenHome(private val serverUrl: String, private val showProgres
         }
         target.appendChild(label("div", "tile-title", card.title))
         if (!isContinue) card.nextUpLabel?.takeIf { it.isNotBlank() }?.let { target.appendChild(label("div", "tile-sub", it)) }
+        return target
+    }
+
+    /**
+     * DEB-5690 (DEB-5685, FR-55) — Android TV's `SeeAllTile`: the row's last tile at the row's size, the arrow and *See all*. It is a tile
+     * for focus and the grow, but it has no `tile-art` holder (FR-42's slots are for pictures) and no title line to carry.
+     */
+    private fun seeAllTile(rowIndex: Int, shape: TileShape): HTMLElement {
+        val target = target("home-row-$rowIndex-see-all", "row-$rowIndex", "tile")
+        target.classList.add("tile-${shape.name.lowercase()}")
+        target.setAttribute("data-see-all", rowIndex.toString())
+        val face = node("div", "tile-see-all")
+        face.appendChild(label("div", "see-all-arrow", "→"))
+        face.appendChild(label("div", "see-all-label", ScreenLanguage.t("browse.see_all_short")))
+        target.appendChild(face)
         return target
     }
 

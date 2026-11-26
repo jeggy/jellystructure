@@ -560,3 +560,163 @@ test.describe("Tizen tile badges and row counts (DEB-5640 FR-52)", () => {
     await expect(headings.nth(2).locator(".home-heading-count")).toHaveCount(0);
   });
 });
+
+// DEB-5690 (DEB-5685 FR-55) — a row that has more ends in See all, and the grid behind it is the row's whole list. The backend is
+// stood in for by page.route, so this proves what the page asks for and what it does with the answer.
+test.describe("Tizen a row's See all and its grid (DEB-5685 FR-55)", () => {
+  const cards = (prefix: string, count: number) => Array.from({ length: count }, (_, i) => card(`${prefix}${i}`, `${prefix.toUpperCase()} ${i}`));
+  const seed = { children: [{ kind: "cond", facet: "genre", values: ["drama"] }] };
+  type Seen = { seeded: any[]; urls: string[] };
+
+  /** Home (or the channel `forest`) with [rows]; the three reads a See all can make are answered with [whole]. */
+  async function open(page: Page, rows: object[], answers: { seeded?: () => { status: number; body?: object } } = {}, channels = false): Promise<Seen> {
+    const seen: Seen = { seeded: [], urls: [] };
+    const json = (route: any, status: number, body: object = {}) => route.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) });
+    const feed = (list: object[]) => ({ heroes: [], channels: [], rows: list, tile_shape: "POSTER", hero_height_pct: 48, focus_detail: "none" });
+    await page.route("**/api/tv/browse/seeded", route => {
+      seen.seeded.push(JSON.parse(route.request().postData()!));
+      const answer = answers.seeded?.() ?? { status: 200, body: { items: cards("w", 12).map(c => ({ card: c })), total: 12 } };
+      return json(route, answer.status, answer.body ?? {});
+    });
+    await page.route("**/api/tv/continue/all**", route => {
+      seen.urls.push(route.request().url());
+      return json(route, 200, cards("k", 10).map((c, i) => ({ ...c, progress_pct: 0.1 * (i + 1) })));
+    });
+    await page.route("**/api/tv/recommendations**", route => {
+      seen.urls.push(route.request().url());
+      return json(route, 200, { items: [card("r2", "Third Pick"), card("r0", "First Pick"), card("r1", "Second Pick")].map(c => ({ card: c })), total: 3 });
+    });
+    await page.route("**/api/tv/channel/forest", route => json(route, 200, feed(rows)));
+    await page.route("**/api/tv/home", route => json(route, 200, { ...feed(rows), channels: channels ? [{ id: "forest", name: "Forest Stories", logo_url: null, style: "TEXT", brand_color: null }] : [] }));
+    await page.addInitScript(() => {
+      localStorage.setItem("ravilo.screen.serverUrl", "http://app:9505");
+      localStorage.setItem("ravilo.screen.profiles", JSON.stringify([{ userId: "viewer", displayName: "Test Viewer", token: "test-token" }]));
+    });
+    await page.goto(SCREEN_URL);
+    await expect(page.locator("#shell-body .home-feed")).toBeVisible();
+    return seen;
+  }
+
+  const shelf = (id: string, count: number, extra: object = {}) => ({ id, title: `Shelf ${id}`, kind: "CUSTOM", items: cards(id, count), seedQuery: seed, ...extra });
+  /** From the first tile of the first row, Right to the row's end. */
+  const toEnd = async (page: Page, row: number, items: number) => {
+    for (let i = 0; i < row; i++) await page.keyboard.press("ArrowDown");
+    await expect(page.locator(`#home-row-${row}-tile-0`)).toHaveClass(/focused/);
+    for (let i = 0; i < items; i++) await page.keyboard.press("ArrowRight");
+    await expect(page.locator(`#home-row-${row}-see-all`)).toHaveClass(/focused/);
+  };
+
+  test("a seeded row of 9 ends in a See all tile of the row's size; one of 8 does not; it takes no image slot", async ({ page }) => {
+    await open(page, [shelf("a", 9), shelf("b", 8)]);
+    await expect(page.locator("#home-row-0-see-all")).toHaveText("→See all");
+    await expect(page.locator("#home-row-0-see-all")).toHaveClass(/home-tile.*tile-poster|tile-poster.*home-tile/);
+    await expect(page.locator("#shell-body .home-rail").nth(0).locator(".home-tile").last()).toHaveId("home-row-0-see-all");
+    await expect(page.locator("#home-row-1-see-all")).toHaveCount(0);
+    await expect(page.locator("#home-row-1-tile-7")).toHaveCount(1);
+    await expect(page.locator("#home-row-0-see-all .tile-art")).toHaveCount(0);
+    const box = (id: string) => page.locator(id).evaluate(el => ({ w: (el as HTMLElement).offsetWidth, h: (el.querySelector(".tile-art, .tile-see-all") as HTMLElement).offsetHeight }));
+    expect(await box("#home-row-0-see-all")).toEqual(await box("#home-row-0-tile-0"));
+  });
+
+  test("it is a tile for focus: Right reaches it, it grows, and Left returns to the tile before it", async ({ page }) => {
+    await open(page, [shelf("a", 9)]);
+    await toEnd(page, 0, 9);
+    await expect(page.locator("#shell-body .shell-target.focused")).toHaveCount(1);
+    await expect.poll(() => page.locator("#home-row-0-see-all").evaluate(el => getComputedStyle(el).transform)).toMatch(/matrix\(1\.1/);
+    await page.keyboard.press("ArrowLeft");
+    await expect(page.locator("#home-row-0-tile-8")).toHaveClass(/focused/);
+  });
+
+  test("OK posts the seeded browse with the row's seed and draws the row's title, the count and the whole list; Back lands on the tile", async ({ page }) => {
+    const seen = await open(page, [shelf("a", 9)]);
+    await toEnd(page, 0, 9);
+    await page.keyboard.press("Enter");
+    await expect(page.locator(".browse-heading")).toHaveText("Shelf a");
+    await expect(page.locator(".browse-count")).toHaveText("12 titles");
+    await expect(page.locator(".browse-crumb")).toHaveCount(0);
+    await expect(page.locator(".browse-grid .home-tile")).toHaveCount(12);
+    await expect(page.locator(".browse-grid .tile-title").first()).toHaveText("W 0");          // no sort_by: the served order
+    expect(seen.seeded).toHaveLength(1);
+    expect(seen.seeded[0].query.children[0]).toMatchObject({ facet: "genre", values: ["drama"] });
+    expect(seen.seeded[0].media_kind ?? null).toBeNull();
+    await expect(page.locator("#browse-tile-0")).toHaveClass(/focused/);
+    await expect(page.locator("#nav-home")).toHaveClass(/cur/);
+    await page.keyboard.press("Escape");
+    await expect(page.locator("#home-row-0-see-all")).toHaveClass(/focused/);
+    await expect(page.locator("#shell-body .shell-target.focused")).toHaveCount(1);
+  });
+
+  test("the row's media kind is sent with its seed", async ({ page }) => {
+    const seen = await open(page, [shelf("a", 9, { seedMediaKind: "SERIES" })]);
+    await toEnd(page, 0, 9);
+    await page.keyboard.press("Enter");
+    await expect(page.locator(".browse-count")).toHaveText("12 titles");
+    expect(seen.seeded[0].media_kind).toBe("SERIES");
+  });
+
+  test("a row with sort_by title opens A–Z", async ({ page }) => {
+    const unsorted = { items: ["Charlie", "alpha", "Bravo"].map((t, i) => ({ card: card(`s${i}`, t) })), total: 3 };
+    await open(page, [shelf("a", 9, { sort_by: "title", sort_descending: false })], { seeded: () => ({ status: 200, body: unsorted }) });
+    await toEnd(page, 0, 9);
+    await page.keyboard.press("Enter");
+    await expect(page.locator(".browse-grid .tile-title")).toHaveText(["alpha", "Bravo", "Charlie"]);
+    await expect(page.locator(".browse-count")).toHaveText("3 titles");
+  });
+
+  test("a Continue Watching row's tile reads /api/tv/continue/all, and its tiles draw FR-5's progress bar", async ({ page }) => {
+    const seen = await open(page, [{ id: "continue", title: "Keep Watching", kind: "CONTINUE", items: cards("c", 9).map(c => ({ ...c, progress_pct: 0.3 })) }]);
+    await toEnd(page, 0, 9);
+    await page.keyboard.press("Enter");
+    await expect(page.locator(".browse-heading")).toHaveText("Keep Watching");
+    await expect(page.locator(".browse-count")).toHaveText("10 titles");
+    await expect(page.locator(".browse-grid .tile-progress")).toHaveCount(10);
+    expect(seen.seeded).toHaveLength(0);
+    expect(seen.urls).toHaveLength(1);
+    expect(new URL(seen.urls[0]).pathname).toBe("/api/tv/continue/all");
+    expect(new URL(seen.urls[0]).search).toBe("");
+  });
+
+  test("a recommendations row reads /api/tv/recommendations and keeps the server's order", async ({ page }) => {
+    const seen = await open(page, [{ id: "rec", title: "Recommended", kind: "CUSTOM", recommendations: true, seedTotalCount: 20, items: cards("r", 5) }]);
+    await toEnd(page, 0, 5);
+    await page.keyboard.press("Enter");
+    await expect(page.locator(".browse-grid .tile-title")).toHaveText(["Third Pick", "First Pick", "Second Pick"]);
+    await expect(page.locator(".browse-count")).toHaveText("3 titles");
+    expect(seen.seeded).toHaveLength(0);
+    expect(new URL(seen.urls[0]).pathname).toBe("/api/tv/recommendations");
+    expect(new URL(seen.urls[0]).search).toBe("");
+  });
+
+  test("a recommendations row that already shows its whole list has no See all", async ({ page }) => {
+    await open(page, [{ id: "rec", title: "Recommended", kind: "CUSTOM", recommendations: true, seedTotalCount: 5, items: cards("r", 5) }]);
+    await expect(page.locator("#home-row-0-see-all")).toHaveCount(0);
+  });
+
+  test("on a channel page the Continue read carries the channel, and Back returns to the channel's row", async ({ page }) => {
+    const seen = await open(page, [{ id: "continue", title: "Keep Watching", kind: "CONTINUE", items: cards("c", 9) }], {}, true);
+    await expect(page.locator("#home-channel-0")).toHaveClass(/focused/);
+    await page.keyboard.press("Enter");
+    await expect(page.locator("#shell-body .home-heading")).toContainText(["Keep Watching"]);
+    await toEnd(page, 0, 9);
+    await page.keyboard.press("Enter");
+    await expect(page.locator(".browse-count")).toHaveText("10 titles");
+    expect(new URL(seen.urls[0]).search).toBe("?channel=forest");
+    await page.keyboard.press("Escape");
+    await expect(page.locator("#home-row-0-see-all")).toHaveClass(/focused/);
+    await page.keyboard.press("Escape");
+    await expect(page.locator("#home-channel-0")).toHaveClass(/focused/);
+  });
+
+  test("an empty answer says so; a failed read shows the failure and Retry asks again", async ({ page }) => {
+    let reads = 0;
+    const seen = await open(page, [shelf("a", 9)], { seeded: () => ++reads === 1 ? { status: 500 } : { status: 200, body: { items: [], total: 0 } } });
+    await toEnd(page, 0, 9);
+    await page.keyboard.press("Enter");
+    await expect(page.locator(".load-failure")).toBeVisible();
+    await expect(page.locator(".browse-heading")).toHaveText("Shelf a");
+    await page.keyboard.press("Enter");
+    await expect(page.locator(".browse-count")).toHaveText("0 titles");
+    await expect(page.locator(".browse-empty")).toHaveText("No titles match these filters.");
+    expect(seen.seeded).toHaveLength(2);
+  });
+});

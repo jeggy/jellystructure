@@ -6,6 +6,7 @@ import dev.jellystructure.shared.tv.MediaCard
 import dev.jellystructure.shared.tv.MediaKind
 import dev.jellystructure.shared.tv.Person
 import dev.jellystructure.shared.tv.RememberedChoice
+import dev.jellystructure.shared.tv.Row
 import dev.jellystructure.shared.tv.TvApiClient
 import dev.jellystructure.shared.tv.TvSegmentMarkers
 import kotlinx.browser.document
@@ -222,7 +223,7 @@ internal class ScreenShell(
             event.key == "ArrowUp" -> {
                 val current = entries.last()
                 if (current.browse != null && current.focusId.startsWith("browse-tile-")) {
-                    val tab = when (current.name) { "mylist" -> "profile"; "person" -> "home"; else -> current.name }
+                    val tab = when (current.name) { "mylist" -> "profile"; "person", SEE_ALL_ROUTE -> "home"; else -> current.name }
                     focus.focus(document.getElementById("nav-$tab") as HTMLElement)
                 } else focus.move(0, -1)
             }
@@ -278,7 +279,7 @@ internal class ScreenShell(
                 current.skeleton = true
             }
         }
-        renderScreenNav(if (current.name == "channel" || current.name == "detail" || current.name == "person") "home" else current.name, ScreenLanguage.lang)
+        renderScreenNav(if (current.name == "channel" || current.name == "detail" || current.name == "person" || current.name == SEE_ALL_ROUTE) "home" else current.name, ScreenLanguage.lang)
         focus.refocus()
         if ((current.name == "home" || current.name == "channel") && current.feed == null && !current.failed) loadFeed(current)
         current.detail?.load()
@@ -347,12 +348,16 @@ internal class ScreenShell(
         GlobalScope.launch {
             // DEB-5631 (FR-49) — a person page asks the seeded endpoint, as Android TV's `openPersonBrowse` does: one read, the whole set.
             val seed = browse.seed
+            val rowSeed = browse.rowSeed
             val seeded = if (seed != null) runCatching { api.browseSeeded(seed.query, null) }.getOrNull() else null
-            val paged = if (seed == null) runCatching { api.browse(kind = browse.kind, page = browse.page + 1, pageSize = 60) }.getOrNull() else null
+            // DEB-5690 (FR-55) — a row's See all is the same one read, whichever of the three Android TV's store would make.
+            val rowItems = if (rowSeed != null) runCatching { rowSeed.read(api) }.getOrNull() else null
+            val paged = if (seed == null && rowSeed == null) runCatching { api.browse(kind = browse.kind, page = browse.page + 1, pageSize = 60) }.getOrNull() else null
             browse.loading = false
             if (generation != loadGeneration || !visible || entry !== entries.lastOrNull()) return@launch
-            if (seeded != null || paged != null) {
+            if (seeded != null || paged != null || rowItems != null) {
                 seeded?.let(browse::appendAll)
+                rowItems?.let(browse::appendRow)
                 paged?.let(browse::append)
                 render()
             } else if (browse.page == 0) {
@@ -401,6 +406,14 @@ internal class ScreenShell(
         render()
     }
 
+    /** DEB-5690 (FR-55) — OK on a row's *See all* tile: the row's whole list as a grid over Home or the channel page. */
+    private fun openSeeAll(row: Row, channelId: String?) {
+        if (!visible || player) return
+        entries.add(ScreenRouteEntry(SEE_ALL_ROUTE, "shell-page-target", title = row.title,
+            browse = ScreenBrowse("seeall", home, rowSeed = ScreenRowSeed(row, channelId), showProgress = { playback.showProgress })))
+        render()
+    }
+
     /** A title's page over the route: from a tile on Home, a grid, a person's page, or DEB-5649's *More like this* row. */
     private fun openTitle(mediaId: String, kind: MediaKind, title: String) {
         val page = ScreenDetail(api, serverUrl, mediaId, kind, title, onChange = ::detailChanged, onPlay = ::playFromPage, onPerson = ::openPerson,
@@ -415,6 +428,11 @@ internal class ScreenShell(
         // DEB-4660 (FR-7) — on a title's page OK is the page's own: its actions, a season pill, an episode.
         if (current.detail != null && !current.focusId.startsWith("nav-")) { current.detail.activate(element); return }
         if (element.getAttribute("data-action") == "retry") { retry(current); return }
+        val seeAll = element.getAttribute("data-see-all")?.toIntOrNull()
+        if (seeAll != null) {
+            current.feed?.rows?.getOrNull(seeAll)?.let { openSeeAll(it, current.channelId) }
+            return
+        }
         val channelId = element.getAttribute("data-channel-id")
         val mediaId = element.getAttribute("data-media-id")
         if (channelId != null) {
@@ -477,6 +495,8 @@ internal class ScreenShell(
     }
 
     private companion object {
+        const val SEE_ALL_ROUTE = "seeall"
+
         /** DEB-5648 (FR-50) — how long the reads for a series tile's target may take before nothing is warmed. */
         const val PREWARM_READ_MS = 5_000L
     }

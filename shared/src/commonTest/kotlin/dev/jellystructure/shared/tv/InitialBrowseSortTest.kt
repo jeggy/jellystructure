@@ -1,4 +1,4 @@
-package dev.jellystructure.ravilo.ui.screens
+package dev.jellystructure.shared.tv
 
 import kotlin.test.Test
 import kotlin.test.assertEquals

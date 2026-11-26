@@ -286,8 +286,15 @@
     .tile-landscape .tile-art { height: 162px; }
     .tile-square .tile-art { height: 205px; }
     .tile-art img { width: 100%; height: 100%; object-fit: cover; }
+    /* DEB-5690 FR-55 — a row's See all: a tile of the row's size, no picture holder. */
+    .tile-see-all { box-sizing: border-box; width: 100%; height: 265px; border-radius: 11px; background: #202431; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+    .tile-landscape .tile-see-all { height: 162px; }
+    .tile-square .tile-see-all { height: 205px; }
+    .see-all-arrow { font-size: 36px; font-weight: 600; color: var(--accent); }
+    .see-all-label { margin-top: 6px; font-size: 20px; font-weight: 600; }
+    .home-tile.focused .tile-see-all { background: #2b3040; }
     .tile-title { font-size: 18px; font-weight: 600; padding: 10px 2px 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .home-channel.focused, .home-tile.focused .tile-art { box-shadow: 0 0 0 4px var(--ring); }
+    .home-channel.focused, .home-tile.focused .tile-art, .home-tile.focused .tile-see-all { box-shadow: 0 0 0 4px var(--ring); }
     .hero-logo { display: block; max-width: 430px; max-height: 140px; object-fit: contain; object-position: left bottom; }
     .hero-badge { display: inline-block; margin-top: 14px; padding: 6px 12px; border-radius: 7px; background: rgba(0,0,0,.62); font-size: 17px; }
     .tile-progress { height: 4px; background: rgba(255,255,255,.28); margin-top: 6px; }

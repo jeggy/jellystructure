@@ -2722,8 +2722,8 @@ fun RaviloApp(
                 val storeKey = "seededBrowse:${dest.displayName}:${dest.title}:${dest.continueWatching}:${dest.channelId}:${dest.recommendations}"
                 val store = keptStore(storeKey) {
                     SeededBrowseStore(apiClient, dest.seedQuery, dest.seedMediaKind, dest.continueWatching, dest.personTmdbId, dest.channelId,
-                        initialSort = if (dest.recommendations) dev.jellystructure.ravilo.ui.screens.SortField.SOURCE to dev.jellystructure.ravilo.ui.screens.SortDir.DESC
-                            else dev.jellystructure.ravilo.ui.screens.initialBrowseSort(dest.sortBy, dest.sortDescending),
+                        initialSort = if (dest.recommendations) dev.jellystructure.shared.tv.SortField.SOURCE to dev.jellystructure.shared.tv.SortDir.DESC
+                            else dev.jellystructure.shared.tv.initialBrowseSort(dest.sortBy, dest.sortDescending),
                         recommendations = dest.recommendations, sourceLabel = dest.title)
                 }
                 SeededBrowseScreen(

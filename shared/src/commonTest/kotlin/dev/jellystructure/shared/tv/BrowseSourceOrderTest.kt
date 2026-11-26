@@ -1,7 +1,5 @@
-package dev.jellystructure.ravilo.ui.screens
+package dev.jellystructure.shared.tv
 
-import dev.jellystructure.shared.tv.BrowseCard
-import dev.jellystructure.shared.tv.MediaCard
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
