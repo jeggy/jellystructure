@@ -55,6 +55,8 @@ type Opts = {
   images?: boolean;
   /** DEB-5649 — more title pages the mock serves, by path (`/api/tv/movie/m2`), for a *More like this* tile to open. */
   pages?: Record<string, object>;
+  /** DEB-5696 (FR-60) — what the film's page is answered, one entry per read (then the usual answer): a status, or "hang" for a read that never answers. */
+  movieAnswers?: (number | "hang")[];
 };
 const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==", "base64");
 
@@ -86,6 +88,11 @@ async function boot(page: Page, opts: Opts = {}): Promise<Seen> {
     if (path === "/api/tv/home") return json(route, 200, opts.home ?? feed);
     if (/^\/api\/tv\/(movie|series)\//.test(path)) seen.titles.push(path);
     if (opts.pages?.[path]) return json(route, 200, opts.pages[path]);
+    if (path === "/api/tv/movie/m1" && opts.movieAnswers?.length) {
+      const answer = opts.movieAnswers.shift()!;
+      if (answer === "hang") return new Promise(() => {});
+      if (answer !== 200) return json(route, answer);
+    }
     if (path === "/api/tv/movie/m1") return opts.movie === null ? json(route, 404) : json(route, 200, opts.movie ?? movieDetail);
     if (path === "/api/tv/series/sr1") return opts.series ? json(route, 200, opts.series) : json(route, 404);
     if (path === "/api/tv/playstate") {
@@ -230,7 +237,7 @@ test.describe("DEB-4660 — a title's page on the Samsung TV (FR-7)", () => {
   test("a title the server does not have says so, and Back leaves", async ({ page }) => {
     await boot(page, { movie: null });
     await open(page);
-    await expect(page.locator("#shell-body")).toHaveText("This isn't here any more");
+    await expect(page.locator("#shell-body .load-failure-title")).toHaveText("This isn't here any more");
     await page.keyboard.press("Escape");
     await expect(page.locator("#home-row-0-tile-0")).toHaveClass(/focused/);
   });
@@ -1143,5 +1150,74 @@ test.describe("DEB-5699 FR-56 — a title's header carries Android TV's facts, a
     await boot(page, { series: seriesDetail(), playstate: { sr1: state(), s1e1: state({ played: true }), s1e2: state({ played: true }), s1e3: state() } });
     await openPage(page);
     await expect(page.locator(".detail-season-check")).toHaveCount(0);
+  });
+});
+
+// DEB-5696 (DEB-5685 FR-60): a title's page says its cause and offers what fixes it, replacing DEB-4660's bare line, and its Retry loads again.
+test.describe("a failed title's page says its cause (DEB-5685, FR-60)", () => {
+  const failure = (page: Page) => page.locator("#shell-body .load-failure");
+
+  test("500 then 200: the unreachable lines and Retry, and OK on Retry draws the page", async ({ page }) => {
+    const seen = await boot(page, { movieAnswers: [500] });
+    await open(page);
+    await expect(failure(page).locator(".load-failure-title")).toHaveText("Couldn't reach the server");
+    await expect(failure(page).locator(".load-failure-body")).toHaveText("Check the connection and try again.");
+    await expect(page.locator("#shell-page-target")).toHaveText("Retry");
+    await expect(page.locator("#shell-page-target")).toHaveClass(/focused/);
+    expect(seen.titles.filter((t) => t === "/api/tv/movie/m1")).toHaveLength(1);
+    await page.keyboard.press("Enter");
+    await expect(page.locator(".detail-title")).toHaveText("Paper Moon");
+    await expect(label(page, "detail-play")).toHaveClass(/focused/);
+    await expect(failure(page)).toHaveCount(0);
+    expect(seen.titles.filter((t) => t === "/api/tv/movie/m1")).toHaveLength(2);
+  });
+
+  test("a Retry that fails again shows the failure again, and Back is Back", async ({ page }) => {
+    await boot(page, { movieAnswers: [500, 500] });
+    await open(page);
+    await expect(page.locator("#shell-page-target")).toHaveText("Retry");
+    await page.keyboard.press("Enter");
+    await expect(page.locator("#shell-page-target")).toHaveText("Retry");
+    await expect(page.locator("#shell-page-target")).toHaveClass(/focused/);
+    await page.keyboard.press("Escape");
+    await expect(page.locator("#home-row-0-tile-0")).toHaveClass(/focused/);
+  });
+
+  test("404: the gone line and Back, no body and no Retry; OK on Back is Back", async ({ page }) => {
+    await boot(page, { movie: null });
+    await open(page);
+    await expect(failure(page).locator(".load-failure-title")).toHaveText("This isn't here any more");
+    await expect(failure(page).locator(".load-failure-body")).toHaveCount(0);
+    await expect(page.locator("#shell-page-target")).toHaveText("Back");
+    await page.keyboard.press("Enter");
+    await expect(page.locator("#home-row-0-tile-0")).toHaveClass(/focused/);
+    await expect(failure(page)).toHaveCount(0);
+  });
+
+  test("403: the forbidden lines and Back", async ({ page }) => {
+    await boot(page, { movieAnswers: [403] });
+    await open(page);
+    await expect(failure(page).locator(".load-failure-title")).toHaveText("Not available on this profile");
+    await expect(failure(page).locator(".load-failure-body")).toHaveText("This profile can't see this.");
+    await expect(page.locator("#shell-page-target")).toHaveText("Back");
+  });
+
+  test("401: the reauth lines and Sign in, which opens the sign-in screen", async ({ page }) => {
+    await boot(page, { movieAnswers: [401] });
+    await open(page);
+    await expect(failure(page).locator(".load-failure-title")).toHaveText("Sign in again");
+    await expect(page.locator("#shell-page-target")).toHaveText("Sign in");
+    await page.keyboard.press("Enter");
+    await expect(page.locator("#signin")).toHaveClass(/\bon\b/);
+    expect(await page.evaluate(() => localStorage.getItem("ravilo.screen.profiles"))).toBe("[]");
+  });
+
+  test("a read that never answers is the unreachable lines at the 10 s deadline (FR-58)", async ({ page }) => {
+    await boot(page, { movieAnswers: ["hang"], fakeClock: true });
+    await open(page);
+    await expect(page.locator("#shell-body .skeleton")).toBeVisible();
+    await page.clock.fastForward(11_000);
+    await expect(failure(page).locator(".load-failure-title")).toHaveText("Couldn't reach the server");
+    await expect(page.locator("#shell-page-target")).toHaveText("Retry");
   });
 });

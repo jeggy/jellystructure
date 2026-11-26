@@ -402,7 +402,7 @@ test.describe("DEB-4661 — Ravilo on a Samsung TV plays from its own remote", (
     test.setTimeout(60_000);
     const seen = await boot(page, { series: null });
     await page.keyboard.press("Enter");
-    await expect(page.locator("#shell-body")).toHaveText("This isn't here any more");
+    await expect(page.locator("#shell-body .load-failure-title")).toHaveText("This isn't here any more");
     await page.keyboard.press("Enter");
     expect(seen.starts).toHaveLength(0);
     expect((await avplayCalls(page)).some((c) => c[0] === "open")).toBe(false);
@@ -650,7 +650,22 @@ test.describe("DEB-4932 — the TV starts an episode in the audio and subtitle t
       storage: { "ravilo.screen.tracks.viewer": JSON.stringify({ global: { audio: "dan" }, series: {} }) },
     });
     await playSeries(page);
-    await expect.poll(() => page.evaluate(() => localStorage.getItem("ravilo.screen.tracks.viewer"))).toBeNull();
+    await expect.poll(() => page.evaluate(() => localStorage.getItem("ravilo.screen.tracks.viewer")), { timeout: 10_000 }).toBeNull();
+  });
+
+  // DEB-5696 (DEB-5685 FR-60): a start answered 401 says so for 3 s, and only then removes the profile and opens sign-in (the last profile).
+  test("FR-60: a start answered 401 shows the reauth line for 3 s, then the profile goes and sign-in opens", async ({ page }) => {
+    test.setTimeout(60_000);
+    await page.clock.install();
+    await boot(page, { series: binge, start: async () => ({ status: 401, body: {} }) });
+    await playSeries(page);
+    await expect(page.locator("#failed")).toHaveClass(/\bon\b/);
+    await expect(page.locator("#failed-t")).toHaveText("This TV needs to be signed in again");
+    await page.clock.runFor(2_000);
+    expect(await page.evaluate(() => localStorage.getItem("ravilo.screen.profiles")), "still signed in at 2 s").toContain("viewer");
+    await page.clock.runFor(1_500);
+    await expect(page.locator("#signin")).toHaveClass(/\bon\b/);
+    expect(await page.evaluate(() => localStorage.getItem("ravilo.screen.profiles"))).toBe("[]");
   });
 });
 

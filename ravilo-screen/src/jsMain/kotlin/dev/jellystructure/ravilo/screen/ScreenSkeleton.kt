@@ -61,17 +61,21 @@ internal object ScreenSkeleton {
         return root
     }
 
-    /** A load that failed: the page's type, a title and a body line, and one Retry button that holds focus. */
-    fun failure(): HTMLElement {
+    /**
+     * A load that failed (DEB-5696, FR-60): the cause's title and body (Android TV's table, [ScreenLoadKind]) and the one button that cause
+     * allows, which holds focus — Sign in for a sign-in that is gone, Back for a verdict, Retry for the network. The router reads the
+     * button's `data-action`.
+     */
+    fun failure(kind: ScreenLoadKind = ScreenLoadKind.UNREACHABLE): HTMLElement {
         val root = node("div", "load-failure")
-        root.appendChild(text("h2", "load-failure-title", ScreenLanguage.t("error.play.unreachable.title")))
-        root.appendChild(text("p", "load-failure-body", ScreenLanguage.t("error.play.unreachable.body")))
-        val retry = text("div", "shell-target detail-btn load-failure-retry", ScreenLanguage.t("action.retry"))
-        retry.id = FOCUS_ID
-        retry.setAttribute("data-row", "body")
-        retry.setAttribute("data-action", "retry")
-        retry.setAttribute("tabindex", "-1")
-        root.appendChild(retry)
+        root.appendChild(text("h2", "load-failure-title", ScreenLanguage.t(kind.titleKey)))
+        kind.bodyKey?.let { root.appendChild(text("p", "load-failure-body", ScreenLanguage.t(it))) }
+        val button = text("div", "shell-target detail-btn load-failure-retry", ScreenLanguage.t(kind.actionKey))
+        button.id = FOCUS_ID
+        button.setAttribute("data-row", "body")
+        button.setAttribute("data-action", kind.action)
+        button.setAttribute("tabindex", "-1")
+        root.appendChild(button)
         return root
     }
 

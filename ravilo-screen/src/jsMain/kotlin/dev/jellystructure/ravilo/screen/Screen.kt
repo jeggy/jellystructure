@@ -79,6 +79,8 @@ private const val PROGRESS_EVERY_MS = 10_000L
 private val STOP_RETRY_WAITS_MS = longArrayOf(0, 1_000, 2_000)
 private val RESTREAM_RETRY_WAITS_MS = longArrayOf(0, 2_000, 4_000, 8_000)
 private const val STATUS_EVERY_MS = 5_000L
+/** DEB-5696 (FR-60) — how long a start answered 401 shows the reauth line before the profile is removed. */
+private const val REAUTH_LINE_MS = 3_000L
 /** DEB-4925 (FR-22) — away this long, the shell comes back to a freshly loaded Home. */
 private const val LONG_AWAY_MS = 5 * 60_000L
 /** R264 — the next-up card's countdown, and when it appears on a title with no credits marker. */
@@ -125,7 +127,7 @@ private class Screen(private val serverUrl: String) {
     private val qoe = ScreenQoe(::nowMs, backend::currentBandwidthBps, ::onLowestRung, ::askForLowerRung, backend::availableBitratesBps, ::askAfterFreeze, ::showFrozen) { report -> lastQoePost = GlobalScope.launch { api.postPlaybackQoe(report) } }
     /** DEB-5396 (FR-36) — the next episode's encode, started at the credits (or 60 s before the end) and dropped by anything but its own start. */
     private val nextWarm = ScreenPrewarm(api, backend::capabilities, ::rememberedAudioFor)
-    private val shell = ScreenShell(api, serverUrl, ::reopenServerSetup, onProfileMenu = { openProfileMenu() }, onPlay = ::playFromTv,
+    private val shell = ScreenShell(api, serverUrl, ::reopenServerSetup, onProfileMenu = { openProfileMenu() }, onSignIn = ::signInAgain, onPlay = ::playFromTv,
         playback = ScreenPlaybackSwitches(api, { config }, { config = it }),
         prewarmCapabilities = backend::capabilities, prewarmRemembered = ::rememberedAudioFor)
 
@@ -340,14 +342,37 @@ private class Screen(private val serverUrl: String) {
 
     private fun signOut() {
         val userId = activeUserId ?: return
-        val token = tokens[userId]
         profileUi.hide()
+        removeProfile(userId)
+        if (profiles.profiles().isEmpty()) showSignIn() else showPicker()
+    }
+
+    /**
+     * DEB-5696 (DEB-5685, FR-60) — this profile's sign-in is gone (a failure's *Sign in*, a start answered 401, the server's `signed_out`):
+     * the profile and its token are removed, the events socket stops, and the token is given up on the server as far as it can be.
+     */
+    private fun removeProfile(userId: String) {
+        val token = tokens[userId]
         eventsJob?.cancel(); eventsJob = null
-        activeUserId = null
+        if (activeUserId == userId) activeUserId = null
         tokens.remove(userId)
         profiles.remove(userId)
         // A local sign-out must complete even when the server is unreachable.
         if (token != null) GlobalScope.launch { runCatching { api.unpair(token) } }
+    }
+
+    /** FR-60 — OK on a failure's *Sign in*: this profile goes, the others stay (FR-3), and FR-2 opens with *Add user*'s path. */
+    private fun signInAgain() {
+        val userId = activeUserId ?: return
+        removeProfile(userId)
+        showSignIn()
+    }
+
+    /** FR-60 — the events socket told us `signed_out`, or a start came back 401: the profile goes; the picker opens, or FR-2 when it was the last. */
+    private fun signedOut(userId: String) {
+        if (activeUserId != userId) return
+        profileUi.hide()
+        removeProfile(userId)
         if (profiles.profiles().isEmpty()) showSignIn() else showPicker()
     }
 
@@ -392,6 +417,7 @@ private class Screen(private val serverUrl: String) {
     private suspend fun eventLoop() {
         val backoff = ReconnectBackoff()
         val catchUp = EventsCatchUp()
+        val userId = activeUserId   // FR-60 — the sign-in this socket belongs to
         var firstOpen = true
         while (true) {
             var openedAt: Long? = null
@@ -408,6 +434,7 @@ private class Screen(private val serverUrl: String) {
                         firstOpen = false
                     },
                     onEvent = { adoptLanguageOfActiveUser() },
+                    onSignedOut = { if (userId != null) signedOut(userId) },
                     onHomeChanged = { shell.stateChanged() },
                     onPlaystateChanged = { shell.stateChanged() },
                     onPlayItem = { env -> onPlayItem(env) },
@@ -684,13 +711,17 @@ private class Screen(private val serverUrl: String) {
                 }
                 continue
             }
-            if (http != null && http.status == 401) {
-                activeUserId?.let { profiles.remove(it); tokens.remove(it) }
-                activeUserId = null
-                eventsJob?.cancel(); eventsJob = null
-                if (profiles.profiles().isEmpty()) showSignIn() else showPicker()
-            }
             failPlay(http?.status ?: 0)
+            if (http != null && http.status == 401) {
+                // FR-60 — the reauth line stays for 3 s, then this profile goes and the picker (or FR-2, for the last) opens.
+                val userId = activeUserId
+                if (userId != null) GlobalScope.launch {
+                    delay(REAUTH_LINE_MS)
+                    if (activeUserId != userId) return@launch
+                    signedOut(userId)
+                    idle()
+                }
+            }
             return null
         }
     }

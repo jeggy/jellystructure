@@ -34,6 +34,8 @@ internal data class ScreenRouteEntry(
     var skeleton: Boolean = false,
     /** DEB-4893 (FR-20) — the feed's load failed: the page shows the failure and Retry instead of loading again by itself. */
     var failed: Boolean = false,
+    /** DEB-5696 (FR-60) — the cause of that failure: what the failure view says and which button it offers. */
+    var failedKind: ScreenLoadKind = ScreenLoadKind.UNREACHABLE,
     /** DEB-5487 (FR-38) — the hero slide showing, so Back from a title opened on slide 2 draws slide 2. */
     var heroSlide: Int = 0,
     /** DEB-5695 (FR-59) — the feed was told it changed while it could not be read (a page over it, the player up): it is read again when it shows. */
@@ -111,6 +113,8 @@ internal class ScreenShell(
     private val serverUrl: String,
     private val onChangeServer: () -> Unit = {},
     private val onProfileMenu: () -> Unit = {},
+    /** DEB-5696 (FR-60) — OK on a failure's *Sign in*: this profile is removed and the sign-in screen opens. */
+    private val onSignIn: () -> Unit = {},
     private val onPlay: (ScreenPlayRequest) -> Unit = {},
     private val playback: ScreenPlaybackSwitches = ScreenPlaybackSwitches(api, { null }, {}),
     prewarmCapabilities: () -> ClientCapabilities = { ClientCapabilities() },
@@ -295,7 +299,7 @@ internal class ScreenShell(
                 if (current.skeleton) ScreenSkeleton.fadeIn(body.firstElementChild as? HTMLElement)
                 current.skeleton = false
             } else if (current.failed) {
-                body.appendChild(ScreenSkeleton.failure())
+                body.appendChild(ScreenSkeleton.failure(current.failedKind))
             } else {
                 body.appendChild(ScreenSkeleton.home())
                 current.skeleton = true
@@ -373,10 +377,11 @@ internal class ScreenShell(
             // DEB-5631 (FR-49) — a person page asks the seeded endpoint, as Android TV's `openPersonBrowse` does: one read, the whole set.
             val seed = browse.seed
             val rowSeed = browse.rowSeed
-            val seeded = if (seed != null) runCatching { api.browseSeeded(seed.query, null) }.getOrNull() else null
+            var error: Throwable? = null   // DEB-5696 (FR-60) — what the failed read said, for the failure view
+            val seeded = if (seed != null) runCatching { api.browseSeeded(seed.query, null) }.onFailure { error = it }.getOrNull() else null
             // DEB-5690 (FR-55) — a row's See all is the same one read, whichever of the three Android TV's store would make.
-            val rowItems = if (rowSeed != null) runCatching { rowSeed.read(api) }.getOrNull() else null
-            val paged = if (seed == null && rowSeed == null) runCatching { api.browse(kind = browse.kind, page = browse.page + 1, pageSize = 60) }.getOrNull() else null
+            val rowItems = if (rowSeed != null) runCatching { rowSeed.read(api) }.onFailure { error = it }.getOrNull() else null
+            val paged = if (seed == null && rowSeed == null) runCatching { api.browse(kind = browse.kind, page = browse.page + 1, pageSize = 60) }.onFailure { error = it }.getOrNull() else null
             browse.loading = false
             if (generation != loadGeneration || !visible || entry !== entries.lastOrNull()) return@launch
             if (seeded != null || paged != null || rowItems != null) {
@@ -387,6 +392,7 @@ internal class ScreenShell(
             } else if (browse.page == 0) {
                 // DEB-4893 (FR-20) — a grid's first page that fails says so; the skeleton never pulses forever.
                 browse.failed = true
+                browse.failedKind = ScreenLoadKind.of(error)
                 render()
             }
         }
@@ -398,7 +404,7 @@ internal class ScreenShell(
             val result = runCatching { readFeed(entry) }
             if (generation != loadGeneration || !visible || entry !== entries.lastOrNull()) return@launch
             val feed = result.getOrNull()
-            if (feed != null) entry.feed = feed else entry.failed = true
+            if (feed != null) entry.feed = feed else { entry.failed = true; entry.failedKind = ScreenLoadKind.of(result.exceptionOrNull()) }
             render()
         }
     }
@@ -454,7 +460,7 @@ internal class ScreenShell(
      */
     private fun syncQuietRetry() {
         val entry = entries.lastOrNull()
-        val waiting = visible && !player && entry != null && entry.isFeed && entry.failed && entry.feed == null
+        val waiting = visible && !player && entry != null && entry.isFeed && entry.failed && entry.feed == null && entry.failedKind == ScreenLoadKind.UNREACHABLE
         if (!waiting) {
             quietRetryTimer?.let { window.clearTimeout(it) }
             quietRetryTimer = null
@@ -466,7 +472,7 @@ internal class ScreenShell(
 
     private fun quietRetry() {
         val entry = entries.lastOrNull() ?: return
-        if (!visible || player || !entry.isFeed || !entry.failed || entry.feed != null || entry.reading) return
+        if (!visible || player || !entry.isFeed || !entry.failed || entry.failedKind != ScreenLoadKind.UNREACHABLE || entry.feed != null || entry.reading) return
         entry.reading = true
         val generation = loadGeneration
         GlobalScope.launch {
@@ -484,6 +490,7 @@ internal class ScreenShell(
     private fun retry(entry: ScreenRouteEntry) {
         entry.failed = false
         entry.browse?.failed = false
+        entry.detail?.retry()   // DEB-5696 (FR-60) — a failed title's page loads again, which it never did before
         render()
     }
 
@@ -526,6 +533,12 @@ internal class ScreenShell(
     private fun activate() {
         val current = entries.last()
         val element = document.getElementById(current.focusId) as? HTMLElement ?: return
+        // DEB-5696 (FR-60) — a failure's one button, on any page: Retry asks again, Sign in leaves this profile, Back is Back.
+        when (element.getAttribute("data-action")?.takeIf { element.classList.contains("load-failure-retry") }) {
+            "retry" -> { retry(current); return }
+            "sign-in" -> { onSignIn(); return }
+            "back" -> { back(); return }
+        }
         // DEB-4660 (FR-7) — on a title's page OK is the page's own: its actions, a season pill, an episode.
         if (current.detail != null && !current.focusId.startsWith("nav-")) { current.detail.activate(element); return }
         // DEB-5685 (FR-57) — Clear empties the field and puts focus back in it; a failed search's Retry asks for the same text again.

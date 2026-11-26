@@ -65,6 +65,8 @@ internal class ScreenBrowse(
         private set
     /** DEB-4893 (FR-20) — the first page failed to load: the page shows the failure and Retry, not a skeleton that never ends. */
     var failed = false
+    /** DEB-5696 (FR-60) — the cause of that failure, which says what the failure view offers. */
+    var failedKind = ScreenLoadKind.UNREACHABLE
     private var total = 0
 
     fun append(result: SearchResults) {
@@ -112,7 +114,7 @@ internal class ScreenBrowse(
         }
         if (page == 0) {
             // FR-20 — the real heading stays (it is the page's title, not a stand-in); under it a skeleton, or the failure and Retry.
-            pageNode.appendChild(if (failed) ScreenSkeleton.failure() else ScreenSkeleton.grid())
+            pageNode.appendChild(if (failed) ScreenSkeleton.failure(failedKind) else ScreenSkeleton.grid())
         } else {
             val count = node("p", "browse-count").also {
                 it.textContent = if (total == 1) ScreenLanguage.t("browse.title_one")

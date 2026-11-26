@@ -124,7 +124,7 @@ test.describe("DEB-4893 — Home and a channel's feed (FR-20)", () => {
     await page.keyboard.press("ArrowDown"); await page.keyboard.press("ArrowDown");
     await expect(page.locator("#home-row-0-tile-0")).toHaveClass(/focused/);
     await page.keyboard.press("Enter");
-    await expect(page.locator("#shell-body .shell-placeholder")).toBeVisible();
+    await expect(page.locator("#shell-body .load-failure")).toBeVisible();
     await page.keyboard.press("Escape");
     await expect(page.locator("#home-row-0-tile-0")).toHaveClass(/focused/);
     expect((await animationOf(page.locator("#shell-body .home-feed"))).name).toBe("none");
@@ -298,14 +298,14 @@ test.describe("DEB-4893 — a title's page (FR-20)", () => {
     await openTile(page, "movie", async (route) => { await never.open; await route.abort(); }, true);
     await expect(page.locator("#shell-body .skeleton")).toBeVisible();
     await page.clock.fastForward(11_000);
-    await expect(page.locator("#shell-body .shell-placeholder")).toHaveText("Couldn't reach the server");   // a timeout is no HTTP status
+    await expect(page.locator("#shell-body .load-failure-title")).toHaveText("Couldn't reach the server");   // a timeout is no HTTP status
     await expect(page.locator(".skeleton")).toHaveCount(0);
     never.release();
   });
 
   test("a page that fails keeps DEB-4660's line and the skeleton is gone", async ({ page }) => {
     await openTile(page, "movie", async (route) => { await json(route, 404); });
-    await expect(page.locator("#shell-body .shell-placeholder")).toHaveText("This isn't here any more");
+    await expect(page.locator("#shell-body .load-failure-title")).toHaveText("This isn't here any more");
     await expect(page.locator(".skeleton")).toHaveCount(0);
   });
 });

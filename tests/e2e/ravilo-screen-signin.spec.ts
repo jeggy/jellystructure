@@ -326,3 +326,57 @@ test("Tizen sign-in's could-not-reach state reaches Wrong server? from Retry (DE
   await page.keyboard.press("ArrowDown");
   await expect(page.locator("#signin-change-server")).toBeFocused();
 });
+
+// DEB-5696 (DEB-5685 FR-60): the server ending this sign-in. `{"type":"signed_out"}` on the events socket removes the profile and stops the
+// socket for that token; the picker opens when other profiles remain, the sign-in screen when it was the last.
+test.describe("the server ends a sign-in (DEB-5685, FR-60)", () => {
+  const viewer = { userId: "viewer", displayName: "Test Viewer", token: "test-token" };
+  const other = { userId: "other", displayName: "Other Viewer", token: "other-token" };
+  const feed = { heroes: [], channels: [], rows: [], tile_shape: "POSTER", hero_height_pct: 48, focus_detail: "none" };
+
+  async function bootSignedIn(page: import("@playwright/test").Page, profiles: object[]) {
+    const sockets: any[] = [];
+    const seen = { sockets, opens: 0, unpaired: [] as string[], push: (message: object) => sockets.forEach((ws) => ws.send(JSON.stringify(message))) };
+    await page.addInitScript(([key, list]) => {
+      localStorage.setItem("ravilo.screen.serverUrl", "http://app:9505");
+      localStorage.setItem(key as string, JSON.stringify(list));
+    }, [PROFILES, profiles] as const);
+    await page.routeWebSocket(/\/api\/tv\/events/, (ws) => { seen.opens++; sockets.push(ws); });
+    await page.route(`${SERVER}/**`, async (route) => {
+      const req = route.request();
+      const path = new URL(req.url()).pathname;
+      if (req.method() === "OPTIONS") return route.fulfill({ status: 204 });
+      if (path === "/api/tv/home") return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(feed) });
+      if (path === "/api/tv/pair/unpair") { seen.unpaired.push(req.headers()["authorization"] ?? ""); return route.fulfill({ status: 204 }); }
+      return route.fulfill({ status: 204 });
+    });
+    await page.goto(SCREEN_URL);
+    if (profiles.length > 1) {
+      await expect(page.locator("#profile-picker")).toHaveClass(/\bon\b/);
+      await page.keyboard.press("Enter");                                          // Test Viewer
+    }
+    await expect(page.locator("#shell")).toHaveClass(/\bon\b/);
+    await expect.poll(() => seen.sockets.length).toBe(1);
+    return seen;
+  }
+
+  test("with another profile left: the profile is removed and the picker opens", async ({ page }) => {
+    const seen = await bootSignedIn(page, [viewer, other]);
+    seen.push({ type: "signed_out" });
+    await expect(page.locator("#profile-picker")).toHaveClass(/\bon\b/);
+    await expect(page.locator("#shell")).not.toHaveClass(/\bon\b/);
+    await expect(page.locator("#profile-picker button")).toHaveText(["Other Viewer", "Add user"]);
+    const kept = await page.evaluate((key) => JSON.parse(localStorage.getItem(key)!), PROFILES);
+    expect(kept.map((p: any) => p.userId)).toEqual(["other"]);
+    expect(seen.unpaired.length).toBeLessThanOrEqual(1);
+  });
+
+  test("the last profile: the sign-in screen opens, and the socket is not opened again for that token", async ({ page }) => {
+    const seen = await bootSignedIn(page, [viewer]);
+    seen.push({ type: "signed_out" });
+    await expect(page.locator("#signin")).toHaveClass(/\bon\b/);
+    expect(await page.evaluate((key) => localStorage.getItem(key), PROFILES)).toBe("[]");
+    await page.waitForTimeout(3_000);                                              // past the first reconnect delay
+    expect(seen.opens).toBe(1);
+  });
+});

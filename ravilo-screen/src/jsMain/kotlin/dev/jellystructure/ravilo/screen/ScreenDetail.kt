@@ -130,6 +130,15 @@ internal class ScreenDetail(
     /** The series whose remembered audio the prewarm asks for (FR-23); null for a film, as a start's own. */
     val prewarmSeriesId: String? get() = if (series != null) id else null
 
+    /** The cause of the failed read, for the router's failure view and its Sign in; null while the page has not failed. */
+    val failureKind get() = failure?.let(ScreenLoadKind::of)
+
+    /** DEB-5696 (FR-60) — Retry on a failed page: it is asked for again, so the router's next [load] runs. */
+    fun retry() {
+        if (loading) return
+        failure = null
+    }
+
     fun load() {
         if (loading || ready || failure != null) return   // a failed page is not retried by every redraw; leaving it and coming back is
         loading = true
@@ -310,17 +319,8 @@ internal class ScreenDetail(
                 mount.appendChild(ScreenSkeleton.detail())
                 return
             }
-            // DEB-4660's failure lines stay.
-            val placeholder = node("div", "shell-target shell-placeholder")
-            placeholder.id = "shell-page-target"
-            placeholder.setAttribute("data-row", "body")
-            placeholder.setAttribute("tabindex", "-1")
-            placeholder.textContent = when {
-                f == 404 || f == 410 -> t("error.load.gone.title", ScreenLanguage.lang)
-                f == 403 -> t("error.load.forbidden.title", ScreenLanguage.lang)
-                else -> t("error.play.unreachable.title", ScreenLanguage.lang)
-            }
-            mount.appendChild(placeholder)
+            // DEB-5696 (FR-60) — the one failure view, which replaces DEB-4660's bare line: its cause, and the button that cause allows.
+            mount.appendChild(ScreenSkeleton.failure(ScreenLoadKind.of(f)))
             return
         }
         val card = m?.card ?: s!!.card

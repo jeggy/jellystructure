@@ -116,7 +116,7 @@ test("grid requests the next page near its end and Back restores tile focus (DEB
   await expect(page.locator(".browse-grid .home-tile")).toHaveCount(61);
   expect(pages).toEqual([1, 2]);
   await page.keyboard.press("Enter");
-  await expect(page.locator("#shell-body .shell-placeholder")).toHaveText("Couldn't reach the server");   // the page opened; its facts are not mocked (FR-20: loading is a wordless skeleton)
+  await expect(page.locator("#shell-body .load-failure-title")).toHaveText("Couldn't reach the server");   // the page opened; its facts are not mocked (FR-20: loading is a wordless skeleton)
   await page.keyboard.press("Escape");
   await expect(page.locator("#browse-tile-48.focused")).toBeVisible();
 });

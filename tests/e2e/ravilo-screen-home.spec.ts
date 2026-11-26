@@ -101,7 +101,7 @@ test("Tizen Home draws server order, unknown kind as CUSTOM, and opens a channel
   await expect(page.locator("#home-row-0-tile-0")).toHaveClass(/focused/);
   await page.keyboard.press("Enter");
   // The title's page opened (its facts are not mocked, so it ends in DEB-4660's failure line; the loading state is a skeleton with no words, FR-20).
-  await expect(page.locator("#shell-body .shell-placeholder")).toHaveText("Couldn't reach the server");
+  await expect(page.locator("#shell-body .load-failure-title")).toHaveText("Couldn't reach the server");
   await page.keyboard.press("Escape");
   await expect(page.locator("#home-row-0-tile-0")).toHaveClass(/focused/);
 });
@@ -418,7 +418,7 @@ test("Tizen Back from a title opened on slide 2 shows slide 2 with a full interv
   await expect(showing(page)).toHaveText("Hero 1");
   await expect(page.locator("#home-hero")).toHaveAttribute("data-media-id", "hero-1");
   await page.keyboard.press("Enter");
-  await expect(page.locator("#shell-body .shell-placeholder")).toBeVisible();
+  await expect(page.locator("#shell-body .load-failure")).toBeVisible();
   // Nothing counts under the title's page.
   await page.clock.fastForward(10_000);
   await page.keyboard.press("Escape");
@@ -1001,4 +1001,74 @@ test("Tizen a watched tile is dimmed at rest and at full opacity when focused (D
   await expect(page.locator("#home-row-0-tile-1")).toHaveClass(/focused/);
   await expect.poll(() => opacity("#home-row-0-tile-1 .tile-art")).toBe(1);
   await expect.poll(() => opacity("#home-row-0-tile-2 .tile-art")).toBeLessThan(0.7);
+});
+
+// DEB-5696 (DEB-5685 FR-60): a failure says its cause and offers what fixes it, as Android TV's LoadError does.
+test.describe("a failure says its cause and offers what fixes it (DEB-5685, FR-60)", () => {
+  const API = "http://app:9505";
+  const two = [{ userId: "viewer", displayName: "Test Viewer", token: "test-token" }, { userId: "other", displayName: "Other Viewer", token: "other-token" }];
+
+  async function bootAnswering(page: Page, status: number) {
+    const seen = { homeReads: 0, unpaired: [] as string[] };
+    await page.addInitScript((profiles) => {
+      localStorage.setItem("ravilo.screen.serverUrl", "http://app:9505");
+      localStorage.setItem("ravilo.screen.profiles", JSON.stringify(profiles));
+    }, two);
+    await page.routeWebSocket(/\/api\/tv\/events/, () => {});
+    await page.route(`${API}/**`, async (route) => {
+      const req = route.request();
+      const path = new URL(req.url()).pathname;
+      if (req.method() === "OPTIONS") return route.fulfill({ status: 204 });
+      if (path === "/api/tv/home") { seen.homeReads++; return route.fulfill({ status, contentType: "application/json", body: "{}" }); }
+      if (path === "/api/tv/pair/unpair") { seen.unpaired.push(req.headers()["authorization"] ?? ""); return route.fulfill({ status: 204 }); }
+      return route.fulfill({ status: 204 });
+    });
+    await page.goto(SCREEN_URL);
+    await expect(page.locator("#profile-picker")).toHaveClass(/\bon\b/);
+    await page.keyboard.press("Enter");                                                  // Test Viewer
+    await expect(page.locator("#shell-body .load-failure")).toBeVisible();
+    return seen;
+  }
+
+  test("401: the reauth lines and Sign in, no Retry; OK removes this profile, unpairs it and opens sign-in with the other kept", async ({ page }) => {
+    const seen = await bootAnswering(page, 401);
+    await expect(page.locator("#shell-body .load-failure-title")).toHaveText("Sign in again");
+    await expect(page.locator("#shell-body .load-failure-body")).toHaveText("This device's session has ended. Sign in again to carry on.");
+    await expect(page.locator("#shell-page-target")).toHaveText("Sign in");
+    await expect(page.locator("#shell-page-target")).toHaveClass(/focused/);
+    await page.keyboard.press("Enter");
+    await expect(page.locator("#signin")).toHaveClass(/\bon\b/);
+    await expect(page.locator("#shell")).not.toHaveClass(/\bon\b/);
+    const kept = await page.evaluate(() => JSON.parse(localStorage.getItem("ravilo.screen.profiles")!));
+    expect(kept.map((p: any) => p.userId)).toEqual(["other"]);
+    await expect.poll(() => seen.unpaired).toEqual(["Bearer test-token"]);
+  });
+
+  test("401 is not asked again by itself", async ({ page }) => {
+    await page.clock.install();
+    const seen = await bootAnswering(page, 401);
+    await page.clock.runFor(16_000);
+    expect(seen.homeReads).toBe(1);
+  });
+
+  test("409 is a sign-in that is gone too", async ({ page }) => {
+    await bootAnswering(page, 409);
+    await expect(page.locator("#shell-page-target")).toHaveText("Sign in");
+  });
+
+  test("403: the forbidden lines and Back, no Retry", async ({ page }) => {
+    await bootAnswering(page, 403);
+    await expect(page.locator("#shell-body .load-failure-title")).toHaveText("Not available on this profile");
+    await expect(page.locator("#shell-body .load-failure-body")).toHaveText("This profile can't see this.");
+    await expect(page.locator("#shell-page-target")).toHaveText("Back");
+    await expect(page.locator("#shell-page-target")).toHaveClass(/focused/);
+  });
+
+  test("500: the unreachable lines and Retry, which asks again", async ({ page }) => {
+    const seen = await bootAnswering(page, 500);
+    await expect(page.locator("#shell-body .load-failure-title")).toHaveText("Couldn't reach the server");
+    await expect(page.locator("#shell-page-target")).toHaveText("Retry");
+    await page.keyboard.press("Enter");
+    await expect.poll(() => seen.homeReads).toBeGreaterThanOrEqual(2);
+  });
 });

@@ -468,6 +468,7 @@
     /* A load that failed replaces the skeleton: the page's own type, a title, a body line, one focused Retry. */
     .load-failure { padding-top: 40px; }
     #shell-body .load-failure-title { font-size: 36px; font-weight: 700; color: var(--ink); margin: 0 0 12px; }
+    #shell-body .load-failure-title + .load-failure-retry { margin-top: 28px; }
     .load-failure-body { font-size: 22px; color: var(--ink-soft); margin: 0 0 28px; }
 
     /* Content that replaces a skeleton fades in over 220 ms; a hero or backdrop image fades in over its surface block (opacity only). */
