@@ -430,7 +430,7 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
              <div id="genre-add-row" style="display:none;position:relative;gap:6px;margin-top:6px;align-items:center;">
                <input id="genre-input" class="input" type="text" placeholder="pick or type a genre…" maxlength="40" style="width:200px;" autocomplete="off">
                <button id="genre-add-btn" class="btn sm ghost">Add</button>
-               <div id="genre-suggest" style="display:none;flex-wrap:wrap;gap:5px;align-content:flex-start;position:absolute;top:100%;left:0;z-index:60;margin-top:4px;width:300px;max-height:230px;overflow:auto;background:var(--fill);border:1px solid var(--line);border-radius:8px;box-shadow:0 10px 30px rgba(0,0,0,.5);padding:8px;"></div>
+               <div id="genre-suggest" style="display:none;flex-wrap:wrap;gap:5px;align-content:flex-start;position:absolute;top:100%;left:0;z-index:60;margin-top:4px;width:300px;max-height:230px;overflow:auto;background:var(--fill);border:1px solid var(--line-2);border-radius:12px;box-shadow:0 18px 50px rgba(0,0,0,.45);padding:8px;"></div>
              </div>
            </div>"""
 
@@ -470,7 +470,7 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
       <div class="row center" style="gap:8px;position:relative;flex-wrap:wrap;">
         <div style="position:relative">
           <input id="tag-input" class="input" type="text" placeholder="＋ add a tag…" maxlength="40" style="max-width:260px;" autocomplete="off">
-          <div id="tag-dropdown" class="card" style="display:none;position:absolute;top:calc(100% + 4px);left:0;z-index:50;width:240px;padding:6px;box-shadow:var(--shadow);">$tagSuggestions</div>
+          <div id="tag-dropdown" style="display:none;position:absolute;top:calc(100% + 4px);left:0;z-index:50;width:240px;padding:6px;background:var(--fill);border:1px solid var(--line-2);border-radius:12px;box-shadow:0 18px 50px rgba(0,0,0,.45);">$tagSuggestions</div>
         </div>
         <button id="tag-add-btn" class="btn sm ghost">Add</button>
         <span class="tiny muted">Jellystructure tags (dotted) survive re-syncs.</span>
@@ -1340,23 +1340,23 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
                 (el as? HTMLElement)?.style?.display = if (visible) "" else "none"
                 if (visible) anyVisible = true
             }
-            tagDropdown.style.display = if (anyVisible) "block" else "none"
+            tagDropdown.setPopup(anyVisible)
         }
         tagInput.addEventListener("focus") { _ ->
-            if (jsTagsInScope.isNotEmpty()) tagDropdown.style.display = "block"
+            if (jsTagsInScope.isNotEmpty()) tagDropdown.setPopup(true)
         }
         tagInput.addEventListener("blur") { _ ->
             // Delay so click on suggestion fires first
-            kotlinx.browser.window.setTimeout({ tagDropdown.style.display = "none"; null }, 150)
+            kotlinx.browser.window.setTimeout({ tagDropdown.setPopup(false); null }, 150)
         }
         tagInput.addEventListener("keydown") { ev ->
             val ke = ev as? KeyboardEvent ?: return@addEventListener
             if (ke.key == "Enter") {
                 ke.preventDefault()
                 val tag = tagInput.value.trim()
-                if (tag.isNotBlank()) { addTagChip(tag); tagInput.value = ""; tagDropdown.style.display = "none" }
+                if (tag.isNotBlank()) { addTagChip(tag); tagInput.value = ""; tagDropdown.setPopup(false) }
             } else if (ke.key == "Escape") {
-                tagDropdown.style.display = "none"
+                tagDropdown.setPopup(false)
             }
         }
         // Wire suggestion clicks
@@ -1366,7 +1366,7 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
             el.addEventListener("mousedown") { ev ->
                 ev.preventDefault()
                 val name = el.getAttribute("data-tag") ?: return@addEventListener
-                addTagChip(name); tagInput.value = ""; tagDropdown.style.display = "none"
+                addTagChip(name); tagInput.value = ""; tagDropdown.setPopup(false)
             }
         }
     }
@@ -1377,7 +1377,7 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
         val tag = input.value.trim()
         if (tag.isBlank()) return@addEventListener
         input.value = ""
-        tagDropdown?.style?.display = "none"
+        tagDropdown?.setPopup(false)
         addTagChip(tag)
     }
     // Wire existing tag removes
@@ -1438,7 +1438,7 @@ private fun renderDetailView(container: Element, item: MediaItem, scope: Corouti
         }
     }
     fun showGenreSuggest(show: Boolean) {
-        (document.getElementById("genre-suggest") as? HTMLElement)?.style?.display = if (show) "flex" else "none"
+        (document.getElementById("genre-suggest") as? HTMLElement)?.setPopup(show, "flex")
         if (show) renderGenreSuggest()
     }
     document.querySelectorAll("#genres-chips .genre-rm").let { nodes ->

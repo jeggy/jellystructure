@@ -2329,7 +2329,7 @@ private fun renderDiscover(container: Element) {
 
     val addBtn = sect.querySelector("#req-add-btn") as? HTMLElement
     val addMenu = sect.querySelector("#req-addmenu") as? HTMLElement
-    addBtn?.addEventListener("click") { _ -> addMenu?.style?.display = if (addMenu.style.display == "none") "block" else "none" }
+    addBtn?.addEventListener("click") { _ -> addMenu?.setPopup(addMenu.style.display == "none") }
     val endpointSel = sect.querySelector("#req-add-endpoint") as? HTMLSelectElement
     val fieldsEl = sect.querySelector("#req-add-fields") as? HTMLElement
     val paramLabelEl = sect.querySelector("#req-add-param-label") as? HTMLElement
@@ -2345,7 +2345,7 @@ private fun renderDiscover(container: Element) {
     val pickerResultsEl = sect.querySelector("#req-add-picker-results") as? HTMLElement
 
     fun closeAddMenu() {
-        addMenu?.style?.display = "none"
+        addMenu?.setPopup(false)
         fieldsEl?.style?.display = "none"
         if (endpointSel != null) endpointSel.value = ""
     }

@@ -46,7 +46,12 @@ an open popup, and every such ancestor of it: `position: relative; z-index: 30`.
 - Code that opens a popup by setting an inline style or by inserting it gives the popup the class `pop-open` while it is
   shown, and removes the class when it hides the popup.
 - A popup opened by a class it already has is named in that same rule. Those are `.menu-wrap.open`, `.split.open` and
-  `.lmenu.open`, and `.cw-pick`, which exists only while it is open.
+  `.lmenu.open`, and `.cw-pick`, which exists only while it is open. FR-4's check added `.rc-add.open` (Settings' add-region
+  menu), `.sp-menu.open` (the season picker), `.chk-pop.open` (a blocked check's reason), `.mu-fc.open` (a music filter
+  facet) and `.help-dot:hover` (a help tip, which is hover-only and has no class to name).
+- The marker is set and cleared by one helper, `HTMLElement.setPopup(show, display)` in `ui/Popup.kt`, so no call site
+  writes `style.display` for a popup by hand. It is used by the title page's tag list and genre suggestions and by the Ravilo
+  Discover page's add-row menu (`#req-addmenu`).
 - The `.card:has(.cw-pick)` line folds into this rule.
 
 A new popup is covered by using the marker. It never needs a lift line of its own.
