@@ -436,6 +436,7 @@ private class Screen(private val serverUrl: String) {
                     },
                     onEvent = { adoptLanguageOfActiveUser() },
                     onSignedOut = { if (userId != null) signedOut(userId) },
+                    onSignInRemoved = { if (userId != null) signedOut(userId) },   // DEB-5781 (DEB-5777 FR-143-5) — the same removal as signed_out
                     onHomeChanged = { shell.stateChanged() },
                     onPlaystateChanged = { shell.stateChanged() },
                     onPlayItem = { env -> onPlayItem(env) },

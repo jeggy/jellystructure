@@ -380,3 +380,45 @@ test.describe("the server ends a sign-in (DEB-5685, FR-60)", () => {
     expect(seen.opens).toBe(1);
   });
 });
+
+// DEB-5781 (DEB-5777, FR-143-5; FR-143's Playwright proof): an admin removing the open Samsung profile's sign-in on the real backend. The
+// server pushes `{"type":"sign_in_removed"}` to that sign-in's own socket; the screen runs the same signedOut(userId) as for `signed_out`.
+test.describe("an admin removes the open sign-in (DEB-5777, FR-143-5)", () => {
+  async function revokeOpenProfile(page: import("@playwright/test").Page, request: import("@playwright/test").APIRequestContext, displayName: string) {
+    const login = await request.post("/api/auth/login", { data: { username: "admin", password: "password" } });
+    expect(login.status(), await login.text()).toBe(200);
+    const profiles = JSON.parse((await page.evaluate(() => localStorage.getItem("ravilo.screen.profiles")))!) as { userId: string; displayName: string }[];
+    const userId = profiles.find(p => p.displayName === displayName)!.userId;
+    const devices = await (await request.get(`/api/tv/admin/devices?userId=${encodeURIComponent(userId)}`)).json() as { deviceId: string; name: string }[];
+    const tv = devices.find(d => d.name === "Samsung TV")!;
+    expect(tv, JSON.stringify(devices)).toBeTruthy();
+    const del = await request.delete(`/api/tv/admin/devices/${encodeURIComponent(tv.deviceId)}?userId=${encodeURIComponent(userId)}`);
+    expect(del.status(), await del.text()).toBe(200);
+    return userId;
+  }
+
+  test("the last profile: the sign-in screen opens", async ({ page, browser, request }) => {
+    await boot(page);
+    await signInByCode(page, browser);
+    await expect(page.locator("#shell-body .home-feed")).toBeVisible();
+    await revokeOpenProfile(page, request, "admin");
+    await expect(page.locator("#signin")).toHaveClass(/\bon\b/);
+    expect(await page.evaluate(() => localStorage.getItem("ravilo.screen.profiles"))).toBe("[]");
+  });
+
+  test("with another profile left: the picker opens, with that profile only", async ({ page, browser, request }) => {
+    await boot(page);
+    await signInByCode(page, browser);
+    await openProfileMenu(page);
+    await page.keyboard.press("Enter");                                            // Switch profile
+    await expect(page.locator("#profile-picker")).toHaveClass(/\bon\b/);
+    await page.keyboard.press("ArrowRight");                                       // Add user
+    await page.keyboard.press("Enter");
+    await signInByCode(page, browser, "qa-viewer", "qa-password");                 // the open profile is now qa-viewer
+    await revokeOpenProfile(page, request, "qa-viewer");
+    await expect(page.locator("#profile-picker")).toHaveClass(/\bon\b/);
+    await expect(page.locator("#shell")).not.toHaveClass(/\bon\b/);
+    const kept = await page.evaluate(() => JSON.parse(localStorage.getItem("ravilo.screen.profiles")!)) as { displayName: string }[];
+    expect(kept.map(p => p.displayName)).toEqual(["admin"]);
+  });
+});

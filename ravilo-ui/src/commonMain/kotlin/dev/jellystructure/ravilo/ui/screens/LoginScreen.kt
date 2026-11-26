@@ -164,7 +164,7 @@ fun LoginScreen(
      *  to be an overlay pinned to the screen's foot, which the system keyboard pushed up over *Sign in*. */
     onCancel: (() -> Unit)? = null,
     /** DEB-1933 (FR-R234-7) — the device was signed out by a password change elsewhere; says so under the title. */
-    signedOutNotice: Boolean = false,
+    signedOutNotice: String? = null,
 ) {
     val colors = RaviloTheme.colors
     val state by store.state.collectAsState()
@@ -232,10 +232,10 @@ fun LoginScreen(
                         str("login.subtitle"), color = colors.textSecondary, fontSize = 14.sp,
                         textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                     )
-                    if (signedOutNotice) {
+                    signedOutNotice?.let { noticeKey ->
                         Spacer(Modifier.height(12.dp))
                         Text(
-                            str("account.pw_signed_out"), color = colors.accent, fontSize = 14.sp,
+                            str(noticeKey), color = colors.accent, fontSize = 14.sp,
                             textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                         )
                     }

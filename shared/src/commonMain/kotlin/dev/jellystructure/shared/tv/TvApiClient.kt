@@ -1286,6 +1286,10 @@ class TvApiClient(
         // change it could not be re-signed through). It belongs to the profile this socket was opened for. Never through
         // [onEvent]: an unknown type there would be read as "the config changed".
         onSignedOut: suspend () -> Unit = {},
+        // DEB-5781 (DEB-5777, FR-143-1, FR-143-5) — `{"type":"sign_in_removed"}`: someone else removed this sign-in (an admin's revoke,
+        // Sign out everywhere, another device's revoke, the gone-user sweep). Same profile as [onSignedOut], a different reason, so its
+        // own callback. Never through [onEvent], for the same reason.
+        onSignInRemoved: suspend () -> Unit = {},
     ): String {
         val token = deviceToken() ?: return "no-token"
         var ended = "eof"
@@ -1347,7 +1351,7 @@ class TvApiClient(
                         runCatching { json.decodeFromString<PlaystateChangedEnvelope>(text).patch }.getOrNull()?.let { onPlaystateChanged(it) }
                     }
                     "home_changed" -> onHomeChanged(ev.rev)
-                    "signed_out" -> onSignedOut()
+                    "signed_out", "sign_in_removed" -> routeSignInEnded(ev.type, onSignedOut, onSignInRemoved)
                     "support_changed" -> onSupportChanged(runCatching { json.decodeFromString<SupportChangedEnvelope>(text).ticket }.getOrDefault(0L))
                     // R368 — never `else`: an unknown type would be read as "the config changed".
                     "session_list" -> runCatching { json.decodeFromString<SessionListEnvelope>(text) }.getOrNull()?.let { onSessionList(it) }
@@ -1587,5 +1591,13 @@ class TvApiClient(
             }
         }
         append('"')
+    }
+}
+
+/** DEB-5781 — the two events that end a socket's own sign-in, each to its own callback and to nothing else. */
+internal suspend fun routeSignInEnded(type: String, onSignedOut: suspend () -> Unit, onSignInRemoved: suspend () -> Unit) {
+    when (type) {
+        "signed_out" -> onSignedOut()
+        "sign_in_removed" -> onSignInRemoved()
     }
 }

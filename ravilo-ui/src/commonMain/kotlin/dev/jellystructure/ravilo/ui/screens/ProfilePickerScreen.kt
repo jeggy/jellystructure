@@ -112,7 +112,7 @@ fun ProfilePickerScreen(
     onProfileSelected: (LocalSession) -> Unit,
     onSettings: () -> Unit = {},
     /** DEB-1933 (FR-R234-7) — the device was signed out by a password change elsewhere; says so under the title. */
-    signedOutNotice: Boolean = false,
+    signedOutNotice: String? = null,
 ) {
     val colors = RaviloTheme.colors
     val state by store.state.collectAsState()
@@ -131,10 +131,10 @@ fun ProfilePickerScreen(
                 val showSettings = remember(s.sessions) { MultiTokenStore.getActive() != null }
                 Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.testTag(ProfilePickerTags.PICKING)) {
                     Text(str("profile.who"), color = colors.text, fontSize = 28.sp, fontWeight = FontWeight.Bold)
-                    if (signedOutNotice) {
+                    signedOutNotice?.let { noticeKey ->
                         Spacer(Modifier.height(12.dp))
                         Text(
-                            str("account.pw_signed_out"), color = colors.textSecondary, fontSize = 14.sp,
+                            str(noticeKey), color = colors.textSecondary, fontSize = 14.sp,
                             textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                             modifier = Modifier.padding(horizontal = 24.dp),
                         )

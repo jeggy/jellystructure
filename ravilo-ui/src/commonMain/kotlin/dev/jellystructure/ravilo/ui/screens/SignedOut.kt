@@ -10,6 +10,14 @@ import dev.jellystructure.shared.tv.TvApiClient
 enum class SignedOutRoute { LOGIN, PICKER }
 
 /**
+ * DEB-5781 (DEB-5777, FR-143-5) — the line Login, the profile picker and the TV sign-in show after the server ended a sign-in,
+ * by which event did it. `signed_out` is a password change elsewhere; `sign_in_removed` is someone removing this sign-in, which
+ * must not say the password changed. No new string: both keys exist in every language.
+ */
+const val SIGNED_OUT_NOTICE_KEY = "account.pw_signed_out"
+const val SIGN_IN_REMOVED_NOTICE_KEY = "error.load.reauth.body"
+
+/**
  * Applies the event and says where the screen goes, or `null` when it stays.
  *
  * - **The active profile** does what *Sign in again* does ([signOutActive] is [signOutActiveSession]): signed out, then

@@ -81,7 +81,7 @@ fun TvSignInScreen(
     apiClient: TvApiClient,
     onSignedIn: () -> Unit,
     onBack: (() -> Unit)? = null,
-    signedOutNotice: Boolean = false,
+    signedOutNotice: String? = null,
     passwordForm: @Composable () -> Unit,
 ) {
     val store = remember { TvSignInStore(TvClientSignInApi(apiClient), { DeviceIdStore.get() }, { deviceDisplayName() }, ::persistSignIn) }
@@ -177,7 +177,7 @@ fun TvSignInScreen(
 }
 
 @Composable
-private fun CodeBody(s: TvSignInState.ShowingCode, signedOutNotice: Boolean) {
+private fun CodeBody(s: TvSignInState.ShowingCode, signedOutNotice: String?) {
     val colors = RaviloTheme.colors
     val hasQr = s.linkUrl != null
     // A composable value, not `val text = Column(...)`: that would emit the column here, beside the QR's row, not inside it.
@@ -186,9 +186,9 @@ private fun CodeBody(s: TvSignInState.ShowingCode, signedOutNotice: Boolean) {
         horizontalAlignment = if (hasQr) Alignment.Start else Alignment.CenterHorizontally,
     ) {
         Text(str("tvsignin.title"), color = colors.text, fontSize = 29.sp, fontWeight = FontWeight.SemiBold)
-        if (signedOutNotice) {
+        signedOutNotice?.let { noticeKey ->
             Spacer(Modifier.height(8.dp))
-            Text(str("account.pw_signed_out"), color = colors.accent, fontSize = 13.sp)
+            Text(str(noticeKey), color = colors.accent, fontSize = 13.sp)
         }
         Spacer(Modifier.height(15.dp))
         Text(str("tvsignin.code_label").uppercase(), color = colors.textSecondary, fontSize = 11.sp, letterSpacing = 0.7.sp)

@@ -81,4 +81,15 @@ class SignedOutTest {
         assertEquals("Some of your other devices will ask you to sign in again.", t("account.pw_ok_others", "en"))
         assertEquals("Your password was changed on another device. Sign in with the new one.", t("account.pw_signed_out", "en"))
     }
+
+    // DEB-5781 (DEB-5777, FR-143-5) — one route, two lines: a removed sign-in must not say the password changed.
+    @Test fun `each event keeps its own line`() {
+        assertEquals("account.pw_signed_out", SIGNED_OUT_NOTICE_KEY)
+        assertEquals("error.load.reauth.body", SIGN_IN_REMOVED_NOTICE_KEY)
+        for (lang in listOf("en", "da", "fo")) {
+            assertNotEquals(SIGN_IN_REMOVED_NOTICE_KEY, t(SIGN_IN_REMOVED_NOTICE_KEY, lang), "$lang has no line for a removed sign-in")
+            assertNotEquals(t(SIGNED_OUT_NOTICE_KEY, lang), t(SIGN_IN_REMOVED_NOTICE_KEY, lang))
+        }
+        assertEquals("This device's session has ended. Sign in again to carry on.", t(SIGN_IN_REMOVED_NOTICE_KEY, "en"))
+    }
 }

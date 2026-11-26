@@ -661,9 +661,10 @@ fun RaviloApp(
     val liveNavigate = remember { MutableSharedFlow<NavigateEnvelope>(replay = 0, extraBufferCapacity = 8) }
     // DEB-1933 (FR-R234-7) — a `signed_out` event, carrying the profile whose socket heard it; collected below, where the
     // stack can be reset. Never dropped off screen: the sign-in is already gone, so the device must not wake into the player.
-    val liveSignedOut = remember { MutableSharedFlow<String>(replay = 0, extraBufferCapacity = 4) }
-    // The line Login and the profile picker show after it, until a profile is signed in or picked.
-    var signedOutNotice by remember { mutableStateOf(false) }
+    // DEB-5781 — (the socket's profile, the notice key for the event that ended it): `signed_out` and `sign_in_removed` take one route, two lines.
+    val liveSignedOut = remember { MutableSharedFlow<Pair<String, String>>(replay = 0, extraBufferCapacity = 4) }
+    // The line's key Login and the profile picker show after it (null = none), until a profile is signed in or picked.
+    var signedOutNotice by remember { mutableStateOf<String?>(null) }
     // R248 (FR-R248-2) — the server folded a stop into this user's Home feed; collected below against
     // the retained Home/channel stores (not the screens), so a push that lands while the player is still
     // on top refreshes the feed the viewer is about to return to.
@@ -781,7 +782,8 @@ fun RaviloApp(
                         if (cmd != null && acceptsPlayerCommand(onScreenNow, socketWanted.value)) liveRemote.emit(cmd) else if (cmd != null) println("R293: dropped player_command while off screen")
                     },
                     onHomeChanged = { liveHome.emit(it) },
-                    onSignedOut = { liveSignedOut.emit(socketUserId.orEmpty()) },
+                    onSignedOut = { liveSignedOut.emit(socketUserId.orEmpty() to dev.jellystructure.ravilo.ui.screens.SIGNED_OUT_NOTICE_KEY) },
+                    onSignInRemoved = { liveSignedOut.emit(socketUserId.orEmpty() to dev.jellystructure.ravilo.ui.screens.SIGN_IN_REMOVED_NOTICE_KEY) },
                     // Home-feed playstate cache/concurrency fix — a live Jellyfin fetch made to satisfy
                     // this or another device's own /api/tv/home request lands here; reuse the existing
                     // R147 patch-in-place path (WatchedBus) instead of forcing a re-fetch.
@@ -1058,7 +1060,7 @@ fun RaviloApp(
                 dev.jellystructure.ravilo.ui.downloads.Reconnect.OK -> {}
                 dev.jellystructure.ravilo.ui.downloads.Reconnect.UNREACHABLE -> serverOffline = true
                 dev.jellystructure.ravilo.ui.downloads.Reconnect.REJECTED -> {
-                    signedOutNotice = false
+                    signedOutNotice = null
                     configScope.launch {
                         signOutActiveSession(apiClient)
                         resetTo(if (MultiTokenStore.getAll().isEmpty()) Dest.Login else Dest.ProfilePicker)
@@ -1323,9 +1325,9 @@ fun RaviloApp(
         // DEB-1933 (FR-R234-7) — the server ended a profile's sign-in. The active one returns to sign-in at once, wherever the
         // viewer is (the player included) and says why; a stored profile that is not active is dropped without a sound.
         LaunchedEffect(Unit) {
-            liveSignedOut.collect { userId ->
+            liveSignedOut.collect { (userId, noticeKey) ->
                 val route = dev.jellystructure.ravilo.ui.screens.applySignedOutToDevice(apiClient, userId.ifEmpty { null }) ?: return@collect
-                signedOutNotice = true
+                signedOutNotice = noticeKey
                 activeUserId = null
                 activeAvatarUrl = null
                 activeDisplayName = null
@@ -2321,7 +2323,7 @@ fun RaviloApp(
             LocalBackToTop provides backToTop,
             LocalLiveConfig provides liveConfig, LocalLiveAcquisition provides liveAcquisition, LocalServerMessages provides liveServerMessages, LocalTileScale provides tileScale, LocalGridColumns provides gridColumns, LocalPortraitGridColumns provides portraitGridColumns, LocalCompact provides compact, LocalHandset provides handset, dev.jellystructure.ravilo.ui.theme.LocalLayoutFamily provides family, dev.jellystructure.ravilo.ui.theme.LocalWindowWidth provides windowWidth, dev.jellystructure.ravilo.ui.focus.LocalFocusVisible provides dev.jellystructure.ravilo.ui.focus.focusVisibleFor(isDesktopPlatform, isWebPlatform, handset, deskKeyboardNav), dev.jellystructure.ravilo.ui.theme.LocalReducedMotion provides reducedMotion, dev.jellystructure.ravilo.ui.components.LocalShimmerOnScreen provides appOnScreen, LocalPortrait provides portrait, LocalServerBaseUrl provides apiClient.baseUrl, LocalUserAvatarUrl provides activeAvatarUrl, LocalUserProfile provides UserProfile(activeUserId ?: "", activeDisplayName ?: ""),
             LocalReauthRequired provides {
-                signedOutNotice = false   // DEB-1933 — this is the 401 route, not the event's
+                signedOutNotice = null   // DEB-1933 — this is the 401 route, not the event's
                 configScope.launch {
                     signOutActiveSession(apiClient)
                     resetTo(if (MultiTokenStore.getAll().isEmpty()) Dest.Login else Dest.ProfilePicker)
@@ -2542,7 +2544,7 @@ fun RaviloApp(
                     apiClient = apiClient,
                     signedOutNotice = signedOutNotice,
                     onProfileSelected = { session ->
-                        signedOutNotice = false
+                        signedOutNotice = null
                         activeUserId = session.userId
                         activeAvatarUrl = session.avatarUrl
                         activeDisplayName = session.displayName
@@ -2560,7 +2562,7 @@ fun RaviloApp(
                 // DEB-2233 (FR-6) — single sign-on leaves this page in the same tab, so the hold travels with the attempt and comes back with its claim.
                 val store = remember { LoginStore(apiClient, heldRoute = { heldRoute }, onHeldRestored = { if (heldRoute == null) heldRoute = it }) }
                 val onLoginSignedIn = {
-                    signedOutNotice = false
+                    signedOutNotice = null
                     val active = MultiTokenStore.getActive()
                     activeUserId = active?.userId
                     activeAvatarUrl = active?.avatarUrl
