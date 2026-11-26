@@ -38,6 +38,8 @@ internal class ScreenFocus(
         val current = route()
         current.focusId = element.id
         element.getAttribute("data-row")?.let { current.rowFocus[it] = element.id }
+        // DEB-5651 (FR-53): an episode tile and the toggle under it are twins, so Up/Down between the two rows lands on the one beside it, not on the row's older pick.
+        element.getAttribute("data-twin")?.let { twin -> document.getElementById(twin)?.getAttribute("data-row")?.let { current.rowFocus[it] = twin } }
         val shell = root()
         val body = shell.querySelector("#shell-body") as? HTMLElement
         val laneOn = body?.firstElementChild?.classList?.contains("lane-page") == true

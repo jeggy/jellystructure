@@ -12,11 +12,13 @@ import dev.jellystructure.shared.tv.SeriesDetail
 import dev.jellystructure.shared.tv.TileShape
 import dev.jellystructure.shared.tv.TvApiClient
 import dev.jellystructure.shared.tv.TvApiError
+import dev.jellystructure.shared.tv.airDateText
 import dev.jellystructure.shared.tv.countFlagStrip
 import dev.jellystructure.shared.tv.episodeCode
 import kotlinx.browser.document
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
+import kotlin.js.Date
 import org.w3c.dom.HTMLElement
 
 /** What the primary button of a series' page does with [episode]. */
@@ -184,6 +186,7 @@ internal class ScreenDetail(
             "start-over" -> play(startOver = true)
             "list" -> write { api.setFavorite(id, overlay[id]?.favorite != true)?.let { mapOf(id to it) } }
             "watched" -> write { api.setPlayed(id, overlay[id]?.played != true) }
+            "watched-ep" -> element.getAttribute("data-episode-id")?.let(::toggleEpisode)
             "season" -> element.getAttribute("data-season")?.toIntOrNull()?.let { season = it; onChange(this) }
             "related" -> element.getAttribute("data-related")?.toIntOrNull()?.let { index -> related().getOrNull(index)?.let(onTitle) }
             "person" -> element.getAttribute("data-person")?.toIntOrNull()?.let { index ->
@@ -203,6 +206,16 @@ internal class ScreenDetail(
             busy = false
             onChange(this@ScreenDetail)
         }
+    }
+
+    /**
+     * DEB-5651 (DEB-5640, FR-53) — Android TV's `markGroup`: the toggle under an episode tile writes the opposite of what the server last
+     * said for the whole file (a multi-episode file's every episode). The page does not flip it; the answer's play-state map redraws it.
+     */
+    private fun toggleEpisode(episodeId: String) {
+        val group = series?.seasons?.firstOrNull { it.index == season }?.episodes.orEmpty().filter { it.playable() && it.id == episodeId }
+        if (group.isEmpty()) return
+        write { api.setPlayed(episodeId, overlay[episodeId]?.played != true, group.map { it.id }) }
     }
 
     private fun play(startOver: Boolean) {
@@ -271,6 +284,7 @@ internal class ScreenDetail(
         val oldRail = oldTrack?.parentElement as? HTMLElement
         val oldCast = previous?.querySelector(".detail-cast .rail-track") as? HTMLElement
         val oldRelated = previous?.querySelector(".detail-related .rail-track") as? HTMLElement
+        val oldToggles = previous?.querySelector(".detail-ep-toggles .rail-track") as? HTMLElement
         val keepRail = previous != null && drawnSeason == season
         val keptBackdrop = if (previous != null) backdrop else null
         val keptLogo = if (previous != null) logo else null
@@ -348,6 +362,8 @@ internal class ScreenDetail(
             if (castTrack != null && oldCast != null) carryRail(oldCast, castTrack, (oldCast.parentElement as? HTMLElement)?.scrollLeft ?: 0.0)
             val relatedTrack = page.querySelector(".detail-related .rail-track") as? HTMLElement
             if (relatedTrack != null && oldRelated != null) carryRail(oldRelated, relatedTrack, 0.0)
+            val toggleTrack = page.querySelector(".detail-ep-toggles .rail-track") as? HTMLElement
+            if (keepRail && toggleTrack != null && oldToggles != null) carryRail(oldToggles, toggleTrack, 0.0)
         }
     }
 
@@ -432,11 +448,17 @@ internal class ScreenDetail(
             }
             section.appendChild(strip)
         }
+        seasonLine(s)?.let { section.appendChild(it) }
         val rail = node("div", "detail-rail")
         val lane = node("div", "rail-track")
         rail.appendChild(lane)
+        val toggles = node("div", "detail-rail detail-ep-toggles")
+        val toggleLane = node("div", "rail-track")
+        toggles.appendChild(toggleLane)
         val list = seasonEpisodes()
         val groups = series?.seasons?.firstOrNull { it.index == season }?.episodes.orEmpty().filter { it.playable() }
+        val thisYear = Date().getUTCFullYear()
+        val upNext = overlay[id]?.continueEpisodeId
         list.forEachIndexed { index, (seasonIndex, episode) ->
             val tile = node("div", "shell-target detail-ep")
             tile.id = "detail-ep-$index"
@@ -444,6 +466,7 @@ internal class ScreenDetail(
             tile.setAttribute("tabindex", "-1")
             tile.setAttribute("data-action", "episode")
             tile.setAttribute("data-episode-id", episode.id)
+            tile.setAttribute("data-twin", "detail-ep-toggle-$index")
             val art = node("div", "detail-ep-art")
             episode.stillUrl?.let(::image)?.let { art.appendChild(it) }
             val state = overlay[episode.id]
@@ -459,10 +482,45 @@ internal class ScreenDetail(
             val last = groups.filter { it.id == episode.id }.maxOfOrNull { it.episodeNumber } ?: episode.episodeNumber
             tile.appendChild(label("div", "detail-ep-code", episodeCode(seasonIndex, episode.episodeNumber, last)))
             tile.appendChild(label("div", "tile-title", episode.title))
+            // DEB-5651 (FR-53) — the runtime and the date on one line, the overview clamped to two.
+            val facts = listOfNotNull(
+                episode.runtime.takeIf { it > 0 }?.let { t("up.runtime_min", ScreenLanguage.lang, it) },
+                airDateText(episode.airDate, thisYear) { key, vars -> t(key, ScreenLanguage.lang, vars) },
+            )
+            if (facts.isNotEmpty()) tile.appendChild(label("div", "detail-ep-facts", facts.joinToString(" · ")))
+            episode.overview?.takeIf { it.isNotBlank() }?.let { tile.appendChild(label("div", "detail-ep-overview", it)) }
+            // FR-53 names `up.new_episode` for this ribbon (Android TV's own resume ribbon reads `player.up_next`); the spec wins.
+            if (episode.id == upNext && !(state != null && !state.played && state.resumeMs > 0)) art.appendChild(label("span", "detail-ep-ribbon", t("up.new_episode", ScreenLanguage.lang)))
             lane.appendChild(tile)
+            val watched = state?.played == true
+            val toggle = label("div", if (watched) "shell-target detail-ep-toggle on" else "shell-target detail-ep-toggle",
+                if (watched) "✓ ${t("action.watched", ScreenLanguage.lang)}" else t("action.mark_watched", ScreenLanguage.lang))
+            toggle.id = "detail-ep-toggle-$index"
+            toggle.setAttribute("data-row", "episode-toggles")
+            toggle.setAttribute("tabindex", "-1")
+            toggle.setAttribute("data-action", "watched-ep")
+            toggle.setAttribute("data-episode-id", episode.id)
+            toggle.setAttribute("data-twin", "detail-ep-$index")
+            toggleLane.appendChild(toggle)
         }
         section.appendChild(rail)
+        if (list.isNotEmpty()) section.appendChild(toggles)
         return section
+    }
+
+    /**
+     * DEB-5651 (FR-53) — the season's line above the rail: watched / total over its counted episodes (R346: season 1 or later with a file),
+     * read from the page's overlay. Every one watched, it reads `detail.all_watched`. No line for the specials, an empty season or a page
+     * whose playstate has not arrived (it would say 0 of N on a guess).
+     */
+    private fun seasonLine(s: SeriesDetail): HTMLElement? {
+        if (season < 1 || overlay.isEmpty()) return null
+        val counted = s.seasons.firstOrNull { it.index == season }?.episodes.orEmpty().filter { it.playable() }
+        if (counted.isEmpty()) return null
+        val watched = counted.count { overlay[it.id]?.played == true }
+        val text = if (watched == counted.size) t("detail.all_watched", ScreenLanguage.lang, counted.size)
+        else t("detail.episodes_watched", ScreenLanguage.lang, mapOf("watched" to watched.toString(), "total" to counted.size.toString()))
+        return label("div", "detail-ep-count", text)
     }
 
     private fun cast(): List<Person> = movie?.cast ?: series?.cast.orEmpty()

@@ -339,6 +339,16 @@
     .detail-ep-check { position: absolute; top: 8px; right: 8px; width: 30px; height: 30px; line-height: 30px; border-radius: 50%; text-align: center; background: var(--accent); font-size: 19px; font-weight: 700; }
     .detail-ep-code { font-size: 16px; font-weight: 700; letter-spacing: 1px; color: var(--accent-2); padding: 10px 2px 0; }
     .detail-ep.focused .detail-ep-art { box-shadow: 0 0 0 4px var(--ring); }
+    /* DEB-5651 (FR-53) — what an episode tile says: the facts line, the overview clamped to two lines (as #ov-showname does, so Chromium 63 draws it),
+       the ribbon on the art, the season's count above the rail and the toggle rail under it (same 288 px columns, so each toggle sits under its tile). */
+    .detail-ep-facts { font-size: 15px; color: var(--ink-soft); padding: 2px 2px 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .detail-ep-overview { font-size: 15px; line-height: 20px; max-height: 40px; color: var(--ink-soft); padding: 4px 2px 0; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+    .detail-ep-ribbon { position: absolute; left: 0; bottom: 0; padding: 4px 12px; border-radius: 0 9px 0 0; background: var(--accent); font-size: 15px; font-weight: 700; }
+    .detail-ep-count { font-size: 19px; color: var(--ink-soft); padding: 8px 5px 0; }
+    .detail-ep-toggles { margin-top: -25px; }
+    .detail-ep-toggle { box-sizing: border-box; flex: 0 0 288px; min-width: 0; padding: 8px 14px; border-radius: 9px; background: rgba(255,255,255,.12); font-size: 19px; font-weight: 650; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .detail-ep-toggle.on { color: var(--accent-2); }
+    .detail-ep-toggle.focused { box-shadow: 0 0 0 4px var(--ring); background: rgba(255,255,255,.22); }
     /* DEB-5631 (FR-7 amended) — the cast row: Android TV's CastCircle in DOM. The photo's holder is a .tile-art (FR-42's image cap counts
        it); the initials sit under it, so a person with no photo, or an image that fails, shows them on the plain circle. */
     .detail-cast { position: relative; z-index: 1; margin-top: 30px; }

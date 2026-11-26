@@ -771,10 +771,11 @@ test.describe("DEB-5631 FR-7 — a title's page shows its cast", () => {
     // The page's order is the actions, the season pills, the episodes, then the cast.
     const after = await page.evaluate(() => !!(document.querySelector(".detail-episodes")!.compareDocumentPosition(document.querySelector(".detail-cast")!) & Node.DOCUMENT_POSITION_FOLLOWING));
     expect(after).toBe(true);
-    for (let i = 0; i < 3; i++) await page.keyboard.press("ArrowDown");
+    // Play, the season pills, an episode, its watched toggle (DEB-5651, FR-53), then the cast.
+    for (let i = 0; i < 4; i++) await page.keyboard.press("ArrowDown");
     await expect(page.locator("#detail-cast-0")).toHaveClass(/focused/);
     await page.keyboard.press("ArrowUp");
-    await expect(page.locator(".detail-ep.focused")).toHaveCount(1);
+    await expect(page.locator(".detail-ep-toggle.focused")).toHaveCount(1);
   });
 });
 
@@ -814,10 +815,10 @@ test.describe("DEB-5649 FR-51 — a title's page ends in More like this", () => 
     await openPage(page);
     const after = await page.evaluate(() => !!(document.querySelector(".detail-episodes")!.compareDocumentPosition(document.querySelector(".detail-related")!) & Node.DOCUMENT_POSITION_FOLLOWING));
     expect(after).toBe(true);
-    for (let i = 0; i < 3; i++) await page.keyboard.press("ArrowDown");
+    for (let i = 0; i < 4; i++) await page.keyboard.press("ArrowDown");
     await expect(page.locator("#detail-related-0")).toHaveClass(/focused/);
     await page.keyboard.press("ArrowUp");
-    await expect(page.locator(".detail-ep.focused")).toHaveCount(1);
+    await expect(page.locator(".detail-ep-toggle.focused")).toHaveCount(1);
   });
 
   test("a film: Down from the actions reaches the first tile, Right moves along, Up returns to the actions", async ({ page }) => {
@@ -870,5 +871,117 @@ test.describe("DEB-5649 FR-51 — a title's page ends in More like this", () => 
     await openPage(page);
     await expect(page.locator(".detail-related")).toHaveCount(0);
     await expect(page.locator("#shell-body")).not.toContainText("More Like This");
+  });
+});
+
+// DEB-5651 (DEB-5640 FR-53) — an episode tile says what it is, and each one can be marked watched.
+test.describe("DEB-5651 FR-53 — episode tiles", () => {
+  const long = "A very long overview that goes on and on about the reel, the projector, the audience in the dark and everything that happened after the lights came up again that night.";
+  const rich = (extra: object = {}) => seriesDetail({
+    seasons: [
+      { index: 1, name: "Season 1", episodes: [
+        { ...episode("s1e1", 1, "Opening Reel"), runtime: 42, air_date: "2020-03-05", overview: long },
+        { ...episode("s1e2", 2, "Second Reel"), runtime: 0, overview: null },
+        episode("s1e3", 3, "Third Reel"),
+      ] },
+      { index: 2, name: "Season 2", episodes: [episode("s2e1", 1, "Return Reel")] },
+    ],
+    ...extra,
+  });
+  const tile = (page: Page, n: number) => page.locator(`#detail-ep-${n}`);
+
+  test("a tile shows its runtime and date on one line and an overview clamped to two lines; none of them is drawn without its fact", async ({ page }) => {
+    await boot(page, { series: rich() });
+    await openPage(page);
+    await expect(tile(page, 0).locator(".detail-ep-facts")).toHaveText("42 min · Mar 5, 2020");
+    const overview = tile(page, 0).locator(".detail-ep-overview");
+    await expect(overview).toHaveText(long);
+    const box = await overview.evaluate((e) => ({ h: e.getBoundingClientRect().height, line: parseFloat(getComputedStyle(e).lineHeight) }));
+    expect(box.h).toBeLessThanOrEqual(box.line * 2 + 6);
+    // A runtime of 0 and no date, no overview: no facts line, no overview.
+    await expect(tile(page, 1).locator(".detail-ep-facts")).toHaveCount(0);
+    await expect(tile(page, 1).locator(".detail-ep-overview")).toHaveCount(0);
+  });
+
+  test("the continue_episode_id tile wears the ribbon, unless it is in progress", async ({ page }) => {
+    await boot(page, { series: rich(), playstate: { sr1: state({ continue_episode_id: "s1e2" }), s1e1: state({ played: true }) } });
+    await openPage(page);
+    await expect(page.locator(".detail-ep-ribbon")).toHaveCount(1);
+    await expect(tile(page, 1).locator(".detail-ep-ribbon")).toHaveText("New Episode");
+  });
+
+  test("an in-progress continue episode wears no ribbon", async ({ page }) => {
+    await boot(page, { series: rich(), playstate: { sr1: state({ continue_episode_id: "s1e2" }), s1e2: state({ resume_ms: 60_000, played_pct: 0.3 }) } });
+    await openPage(page);
+    await expect(page.locator(".detail-ep-ribbon")).toHaveCount(0);
+  });
+
+  test("the season line counts the overlay for the chosen season, and reads all-watched when every one is", async ({ page }) => {
+    await boot(page, { series: rich(), playstate: { sr1: state(), s1e1: state({ played: true }), s1e2: state(), s2e1: state({ played: true }) } });
+    await openPage(page);
+    await expect(page.locator(".detail-ep-count")).toHaveText("1 of 3 episodes watched");
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("ArrowRight");
+    await page.keyboard.press("Enter");
+    await expect(page.locator(".detail-ep-count")).toHaveText("All 1 episodes watched");
+  });
+
+  test("Down from a tile reaches its toggle, Right moves along the toggles, Up returns to the tile under it", async ({ page }) => {
+    const seen = await boot(page, { series: rich(), playstate: { sr1: state(), s1e1: state({ played: true }) } });
+    await openPage(page);
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("ArrowDown");
+    await expect(tile(page, 0)).toHaveClass(/focused/);
+    await page.keyboard.press("ArrowDown");
+    await expect(page.locator("#detail-ep-toggle-0")).toHaveClass(/focused/);
+    await expect(page.locator("#detail-ep-toggle-0")).toHaveText("✓ Watched");
+    await expect(page.locator("#detail-ep-toggle-1")).toHaveText("Mark Watched");
+    await page.keyboard.press("ArrowRight");
+    await expect(page.locator("#detail-ep-toggle-1")).toHaveClass(/focused/);
+    await page.keyboard.press("ArrowUp");
+    await expect(tile(page, 1)).toHaveClass(/focused/);
+    // The tile itself still plays its episode.
+    await page.keyboard.press("Enter");
+    await expect.poll(() => seen.starts.map((b) => b.item_id)).toEqual(["s1e2"]);
+  });
+
+  test("OK on a toggle writes the opposite for the file; the answer redraws the ✓ and the line, and the toggle did not flip first", async ({ page }) => {
+    let release: () => void = () => {};
+    const held = new Promise<void>((r) => { release = r; });
+    const seen = await boot(page, {
+      series: rich(), playstate: { sr1: state(), s1e1: state(), s1e2: state(), s1e3: state() },
+      played: async (body) => { await held; return { status: 200, body: { [body.item_id]: state({ played: body.played }) } }; },
+    });
+    await openPage(page);
+    await expect(page.locator(".detail-ep-count")).toHaveText("0 of 3 episodes watched");
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("ArrowDown");
+    await expect(page.locator("#detail-ep-toggle-0")).toHaveClass(/focused/);
+    await page.keyboard.press("Enter");
+    await expect.poll(() => seen.played.length).toBe(1);
+    expect(seen.played[0]).toEqual({ item_id: "s1e1", played: true, episode_ids: ["s1e1"] });
+    // Nothing flips while the call is out.
+    await expect(page.locator("#detail-ep-toggle-0")).toHaveText("Mark Watched");
+    release();
+    await expect(page.locator("#detail-ep-toggle-0")).toHaveText("✓ Watched");
+    await expect(tile(page, 0).locator(".detail-ep-check")).toHaveCount(1);
+    await expect(page.locator(".detail-ep-count")).toHaveText("1 of 3 episodes watched");
+    // Focus stays on the toggle through the redraw; a second OK writes played: false.
+    await expect(page.locator("#detail-ep-toggle-0")).toHaveClass(/focused/);
+    await page.keyboard.press("Enter");
+    await expect.poll(() => seen.played.length).toBe(2);
+    expect(seen.played[1]).toEqual({ item_id: "s1e1", played: false, episode_ids: ["s1e1"] });
+  });
+
+  test("a refused call changes nothing", async ({ page }) => {
+    const seen = await boot(page, { series: rich(), playstate: { sr1: state(), s1e1: state(), s1e2: state(), s1e3: state() }, played: async () => ({ status: 500 }) });
+    await openPage(page);
+    for (let i = 0; i < 3; i++) await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("Enter");
+    await expect.poll(() => seen.played.length).toBe(1);
+    await expect(page.locator("#detail-ep-toggle-0")).toHaveText("Mark Watched");
+    await expect(page.locator(".detail-ep-count")).toHaveText("0 of 3 episodes watched");
+    await expect(tile(page, 0).locator(".detail-ep-check")).toHaveCount(0);
   });
 });
