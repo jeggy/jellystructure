@@ -92,6 +92,9 @@ class DownloadsController(
     /** DEB-4072 (FR-16) — what is saved beside each download, for an offline play. Null on a platform that cannot play one. */
     private val media: LocalMediaSource? = null,
 ) {
+    /** DEB-4891 (FR-9) — the series the viewer has unfolded on the Downloads page; lives as long as the app runs, never saved. */
+    var openSeries: Set<String> = emptySet()
+
     private val _allowed = MutableStateFlow(true)
     /** False after a `403` (FR-2): the control hides and `download.not_allowed` shows. Reset by [resetAllowed] on the next config read. */
     val allowed: StateFlow<Boolean> = _allowed.asStateFlow()

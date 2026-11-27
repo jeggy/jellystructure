@@ -25,6 +25,15 @@ class DownloadsPageState(private val controller: DownloadsController) {
     var pending by mutableStateOf<PendingDelete?>(null)
         private set
 
+    /** DEB-4891 (FR-9) — the unfolded series; seeded from the controller so it outlives this page, written back on every change. */
+    private var open by mutableStateOf(controller.openSeries)
+
+    fun isOpen(seriesId: String): Boolean = seriesId in open
+    fun toggleOpen(seriesId: String) {
+        open = if (seriesId in open) open - seriesId else open + seriesId
+        controller.openSeries = open
+    }
+
     private fun page() = buildDownloadsPage(controller.records.value, controller.phases.value)
 
     // ─── selecting (FR-10: long-press to select several) ───

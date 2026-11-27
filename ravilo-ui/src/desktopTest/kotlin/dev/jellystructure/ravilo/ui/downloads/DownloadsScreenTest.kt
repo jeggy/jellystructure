@@ -18,6 +18,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.dp
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -60,6 +62,7 @@ class DownloadsScreenTest {
         var played: String? = null
         setContent { WithLocale("en") { DownloadsScreen(r.controller, onBack = {}, onPlay = { played = it.itemId }) } }
         onNodeWithTag(DownloadsTags.row("f1")).assertIsDisplayed()
+        onNodeWithTag(DownloadsTags.series("s")).performClick()
         onNodeWithTag(DownloadsTags.row("ep")).assertIsDisplayed()
         onNodeWithText("Delete").assertDoesNotExist()
         onNodeWithTag(DownloadsTags.row("f1")).performClick()
@@ -199,5 +202,58 @@ class DownloadsScreenTest {
             val b = onNodeWithTag("line").fetchSemanticsNode().boundsInRoot
             assertTrue(b.width <= density.run { 360.dp.toPx() } + 1f, "$lang $reason is ${b.width} px wide")
         }
+    }
+
+    private fun foldRig() = PageRig().apply {
+        add("alice", "a1", done, 1_000_000_000L, title = "One", kind = "episode", seriesId = "sa", seriesTitle = "Nordvest", season = 1, episode = 1)
+        add("alice", "a2", done, 1_000_000_000L, title = "Two", kind = "episode", seriesId = "sa", seriesTitle = "Nordvest", season = 2, episode = 1)
+        add("alice", "b1", done, 500_000_000L, title = "Three", kind = "episode", seriesId = "sb", seriesTitle = "Sydvest", season = 1, episode = 1)
+    }
+
+    @Test fun `a series folds to its header and one tap unfolds and folds it, leaving the others`() = runComposeUiTest {
+        val r = foldRig()
+        setContent { WithLocale("en") { DownloadsScreen(r.controller, onBack = {}) } }
+        onNodeWithTag(DownloadsTags.series("sa")).assertIsDisplayed()
+        onNodeWithTag(DownloadsTags.series("sb")).assertIsDisplayed()
+        onNodeWithTag(DownloadsTags.row("a1")).assertDoesNotExist()
+        onNodeWithTag(DownloadsTags.row("b1")).assertDoesNotExist()
+        onNodeWithTag(DownloadsTags.series("sa")).performClick()
+        onNodeWithTag(DownloadsTags.row("a1")).assertIsDisplayed()
+        onNodeWithTag(DownloadsTags.row("a2")).assertIsDisplayed()
+        onNodeWithTag(DownloadsTags.row("b1")).assertDoesNotExist()
+        onNodeWithTag(DownloadsTags.series("sa")).performClick()
+        onNodeWithTag(DownloadsTags.row("a1")).assertDoesNotExist()
+    }
+
+    @Test fun `an open series is still open on a new screen over the same controller`() = runComposeUiTest {
+        val r = foldRig()
+        var show by androidx.compose.runtime.mutableStateOf(true)
+        setContent { WithLocale("en") { if (show) DownloadsScreen(r.controller, onBack = {}) } }
+        onNodeWithTag(DownloadsTags.series("sa")).performClick()
+        onNodeWithTag(DownloadsTags.row("a1")).assertIsDisplayed()
+        show = false; waitForIdle(); show = true; waitForIdle()
+        onNodeWithTag(DownloadsTags.row("a1")).assertIsDisplayed()
+        onNodeWithTag(DownloadsTags.row("b1")).assertDoesNotExist()
+    }
+
+    @Test fun `in select mode a header tap selects the whole series and the chevron only unfolds`() = runComposeUiTest {
+        val r = foldRig()
+        setContent { WithLocale("en") { DownloadsScreen(r.controller, onBack = {}) } }
+        onNodeWithTag(DownloadsTags.OVERFLOW).performClick()
+        onNodeWithText("Select").performClick()
+        onNodeWithTag(DownloadsTags.series("sa")).performClick()
+        onNodeWithText("Delete · 2.0 GB").assertIsDisplayed()
+        onNodeWithTag(DownloadsTags.chevron("sa"), useUnmergedTree = true).performClick()
+        onNodeWithTag(DownloadsTags.row("a1")).assertIsDisplayed()
+        onNodeWithText("Delete · 2.0 GB").assertIsDisplayed()
+    }
+
+    @Test fun `the header exposes expand when folded and collapse when open`() = runComposeUiTest {
+        val r = foldRig()
+        setContent { WithLocale("en") { DownloadsScreen(r.controller, onBack = {}) } }
+        val cfg = { onNodeWithTag(DownloadsTags.series("sa")).fetchSemanticsNode().config }
+        assertTrue(androidx.compose.ui.semantics.SemanticsActions.Expand in cfg() && androidx.compose.ui.semantics.SemanticsActions.Collapse !in cfg())
+        onNodeWithTag(DownloadsTags.series("sa")).performClick()
+        assertTrue(androidx.compose.ui.semantics.SemanticsActions.Collapse in cfg() && androidx.compose.ui.semantics.SemanticsActions.Expand !in cfg())
     }
 }

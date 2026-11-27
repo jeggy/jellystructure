@@ -43,7 +43,9 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.collapse
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.expand
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -71,6 +73,9 @@ object DownloadsTags {
     const val DOWNLOADING = "downloads-block"
     const val OVERFLOW = "downloads-overflow"
     fun row(itemId: String) = "downloads-row-$itemId"
+    /** DEB-4891 (FR-9) — a series' header, and the chevron on it. */
+    fun series(seriesId: String) = "downloads-series-$seriesId"
+    fun chevron(seriesId: String) = "downloads-chevron-$seriesId"
     /** DEB-4258 — the waiting line of a copy that waits for the server, and the text action under it. */
     fun waitLine(itemId: String) = "downloads-wait-$itemId"
     fun getOriginal(itemId: String) = "downloads-original-$itemId"
@@ -563,8 +568,13 @@ private fun SeriesCard(group: SeriesGroup, state: DownloadsPageState, onPlay: (D
     val deleteSeriesLabel = "${str("download.delete")} ${group.title}"
     val seasonLine = (if (group.seasons.size == 1 && group.seasons.first().season != null) "${str("detail.season")} ${group.seasons.first().season}" else "${group.seasons.size} ${str("detail.season").lowercase()}") +
         " · ${group.episodeCount} ${str(if (group.episodeCount == 1) "detail.episode" else "detail.episodes").lowercase()}"
+    val open = state.isOpen(group.seriesId)
     Column(cardModifier(allPicked).padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Row(Modifier.fillMaxWidth().clickable(enabled = state.selecting) { state.toggleAll(ids) }, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        // FR-9 (amended) — a tap on the header folds or unfolds; in select mode it selects the series and the chevron alone folds.
+        Row(
+            Modifier.fillMaxWidth().testTag(DownloadsTags.series(group.seriesId)).clickable { if (state.selecting) state.toggleAll(ids) else state.toggleOpen(group.seriesId) }
+                .semantics { if (open) collapse { state.toggleOpen(group.seriesId); true } else expand { state.toggleOpen(group.seriesId); true } },
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             if (state.selecting) SelectDot(allPicked)
             Thumb(group.seriesId, group.title, poster = true, artworkId = group.episodes.first().itemId)
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -574,13 +584,19 @@ private fun SeriesCard(group: SeriesGroup, state: DownloadsPageState, onPlay: (D
                     Text("·  ${formatBytes(group.bytes)}", color = colors.text, fontSize = 12.5.sp, fontWeight = FontWeight.Bold, fontFamily = Sora)
                 }
             }
+            Box(
+                Modifier.then(if (state.selecting) Modifier.size(44.dp).clickable { state.toggleOpen(group.seriesId) } else Modifier),
+                contentAlignment = Alignment.Center,
+            ) {
+                ChevronGlyph(if (open) GlyphDirection.UP else GlyphDirection.DOWN, colors.textSecondary, 20.dp, Modifier.testTag(DownloadsTags.chevron(group.seriesId)))
+            }
             // FR-10 — the header deletes the whole series, behind the same confirm.
             if (!state.selecting) Box(
                 Modifier.size(44.dp).clickable { state.askSeries(group) }.semantics { contentDescription = deleteSeriesLabel },
                 contentAlignment = Alignment.Center,
             ) { CloseGlyph(colors.textSecondary, 20.dp) }
         }
-        group.seasons.forEach { season ->
+        if (open) group.seasons.forEach { season ->
             if (group.seasons.size > 1 || season.season != null) Text(
                 (if (season.season != null) "${str("detail.season")} ${season.season}" else str("detail.episodes")).uppercase(),
                 color = colors.textDim, fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = Sora, letterSpacing = 1.2.sp, modifier = Modifier.padding(start = 2.dp, top = 2.dp),
