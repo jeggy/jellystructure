@@ -303,8 +303,9 @@ On an adaptive play (any laddered master, ours or Jellyfin's):
 
 **Tests.** `LadderRulesTest` covers the pure parts (`estimateStepDown`: below the 0.8 line it picks the rung under the line, the
 lowest when none fits, nothing with fewer than 3 segments, with a buffer of 20 s or more, or when the rung is already under the
-line; the stall cap's target and its 120 s hold). The wrapper itself is JavaScript over the CAF framework's Shaka and cannot run
-under Gradle; it is covered by the QA ticket for this task, which repeats B1 on a Chromecast with the server-side cap and an
+line; the stall cap's target and its 120 s hold). The wrapper itself is JavaScript over the CAF framework's Shaka. `scripts/receiver/receiver-abr-test.js` (run by
+`scripts/check-receiver-abr.sh` in CI) runs its real source under Node against a fake Shaka manager and covers the estimate
+clause, the stall cap, its 10 s gap and the hook's release; whether CAF's own Shaka honours the switch is the QA ticket for this task, which repeats B1 on a Chromecast with the server-side cap and an
 uncapped control: no `buffer_empty` stall of 2 s or more after the first minute, and a `309 abr: step down` line within a minute of
 the start.
 
