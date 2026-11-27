@@ -308,31 +308,41 @@ class RaviloArtworkService(
         return Pair(bytes, ct)
     }
 
+    internal data class PresizeTarget(val key: String, val source: String?, val type: String, val width: Int?)
+
+    internal fun presizeTargets(item: MediaItem): List<PresizeTarget> {
+        val targets = mutableListOf<PresizeTarget>()
+        val ids = listOfNotNull(item.jellyfinId, item.id).distinct()
+        for (id in ids) {
+            targets += PresizeTarget(cacheKey(id, "poster", null), sourceFile(item, "poster"), "poster", null)
+            targets += PresizeTarget(cacheKey(id, "backdrop", null), sourceFile(item, "backdrop"), "backdrop", null)
+            // The landscape tiles (Continue Watching, 16:9 rows) ask for backdrop?w=640 (FR-220-1).
+            targets += PresizeTarget(cacheKey(id, "backdrop", 640), sourceFile(item, "backdrop"), "backdrop", 640)
+            targets += PresizeTarget(cacheKey(id, "logo", null), sourceFile(item, "logo"), "logo", null)
+        }
+        val seasons = item.episodes.mapNotNull { it.seasonNumber }.distinct()
+        for (season in seasons) targets += PresizeTarget(seasonPosterCacheKey(item.id, season), artwork.seasonPosterPath(item, season), "poster", null)
+        for (ep in item.episodes) targets += PresizeTarget(stillCacheKey(item.id, ep), artwork.episodeStillPath(ep), "still", null)
+        return targets
+    }
+
     /**
      * Phase 220 (FR-220-1/4) — produce, at pipeline time, every variant the TV will ask for: poster 320,
-     * backdrop 1920, logo h300 (under BOTH ids a card can carry — the Jellyfin id the browse/home cards
+     * backdrop 1920 and 640 (the landscape tiles), logo h300 (under BOTH ids a card can carry — the Jellyfin id the browse/home cards
      * use and the slug the detail page uses), each season's poster, and every episode still at 640.
      * Keys are the exact ones the request path computes. Already-fresh entries are skipped, so a
      * re-run after a restart resumes rather than repeats. Returns how many files were produced.
      */
     suspend fun presize(item: MediaItem): Int {
         var produced = 0
-        suspend fun ensure(key: String, source: String?, type: String) {
+        suspend fun ensure(key: String, source: String?, type: String, width: Int?) {
             source ?: return
             val srcSize = SystemFileSystem.metadataOrNull(Path(source))?.size ?: return
             val cachePath = "$cacheDir/$key"
             if (readFresh(cachePath, "$cachePath.ct", srcSize) != null) return
-            if (resizeInto(key, source, type, null, srcSize) != null) { produced++; inFlightMutex.withLock { presizedTotal++ } }
+            if (resizeInto(key, source, type, width, srcSize) != null) { produced++; inFlightMutex.withLock { presizedTotal++ } }
         }
-        val ids = listOfNotNull(item.jellyfinId, item.id).distinct()
-        for (id in ids) {
-            ensure(cacheKey(id, "poster", null), sourceFile(item, "poster"), "poster")
-            ensure(cacheKey(id, "backdrop", null), sourceFile(item, "backdrop"), "backdrop")
-            ensure(cacheKey(id, "logo", null), sourceFile(item, "logo"), "logo")
-        }
-        val seasons = item.episodes.mapNotNull { it.seasonNumber }.distinct()
-        for (season in seasons) ensure(seasonPosterCacheKey(item.id, season), artwork.seasonPosterPath(item, season), "poster")
-        for (ep in item.episodes) ensure(stillCacheKey(item.id, ep), artwork.episodeStillPath(ep), "still")
+        for (t in presizeTargets(item)) ensure(t.key, t.source, t.type, t.width)
         return produced
     }
 
@@ -430,7 +440,7 @@ class RaviloArtworkService(
     }
 
     // R93: include width in the cache key only when non-default so default-size entries are shared.
-    private fun cacheKey(itemId: String, type: String, width: Int?): String {
+    internal fun cacheKey(itemId: String, type: String, width: Int?): String {
         val defaultW = when (type) { "backdrop" -> 1920; "poster" -> 320; "still" -> 640; else -> null }
         return if (width != null && width > 0 && width != defaultW) "$itemId-$type-$width" else "$itemId-$type"
     }

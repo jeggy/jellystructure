@@ -21,6 +21,7 @@ import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
+import kotlin.test.assertTrue
 
 /**
  * Phase 220 — verification 1: under a saturated process gate the request path serves the ORIGINAL
@@ -85,6 +86,16 @@ class RaviloArtworkServiceTest {
         assertEquals(key, service.stillCacheKey("show", ep, width = 640), "the default width adds no suffix")
         assertEquals("$key-320", service.stillCacheKey("show", ep, width = 320))
         assertEquals("show-season1-poster", service.seasonPosterCacheKey("show", 1))
+    }
+
+    @Test
+    fun `the pre-sizer writes backdrop 640 under the request path's key for both ids`() {
+        val targets = service.presizeTargets(series())
+        for (id in listOf("jf-show", "show")) {
+            assertTrue(targets.any { it.key == "$id-backdrop-640" && it.type == "backdrop" && it.width == 640 }, "no backdrop 640 target for $id")
+        }
+        assertEquals("jf-show-backdrop-640", service.cacheKey("jf-show", "backdrop", 640))
+        assertEquals("jf-show-backdrop", service.cacheKey("jf-show", "backdrop", 1920))
     }
 
     // DEB-5847 (FR-3) — the admin's resized music picture and studio logo ride the same gate fallback as every
