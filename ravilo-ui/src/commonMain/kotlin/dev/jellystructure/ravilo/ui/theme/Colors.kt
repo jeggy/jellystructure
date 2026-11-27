@@ -34,6 +34,10 @@ data class RaviloColors(
     val isLight: Boolean = false,
     // R338 — where the accent gradient ends: accentSecondary, except Graphite, whose gradient is its one blue, flat.
     val gradientEnd: Color = accentSecondary,
+    // DEB-5905 (FR-10f) — the Samsung TV badges' green and red. Defaults are the dark skins' (Aurora, Midnight, Noir, Graphite); the shipped
+    // #2dd49a reaches only about 1.9 : 1 on Daylight's near-white pill, so Daylight overrides both.
+    val good: Color = Color(0xFF2DD49A),
+    val bad: Color = Color(0xFFF2797F),
 )
 
 val AuroraColors = RaviloColors(
@@ -150,6 +154,8 @@ val DaylightColors = RaviloColors(
     tileRadius      = 12.dp,
     fg              = Color(0xFF10121E),
     isLight         = true,
+    good            = Color(0xFF0F7A52),
+    bad             = Color(0xFFB3242C),
 )
 
 /**

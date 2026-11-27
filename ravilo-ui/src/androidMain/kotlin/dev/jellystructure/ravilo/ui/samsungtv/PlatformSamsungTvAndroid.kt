@@ -49,6 +49,19 @@ private object AndroidSamsungTv : SamsungTvPlatform {
         } catch (_: Exception) { null }
     }
 
+    /** FR-11 — the status and body of the TV's own answer about Ravilo, a 404 included; null when nothing answered. */
+    override suspend fun appReply(ip: String): TvAppReply? = withContext(Dispatchers.IO) {
+        try {
+            probeClient.newCall(Request.Builder().url("http://$ip:8001/api/v2/applications/${SamsungGuide.APP_ID}").build()).execute().use { r ->
+                TvAppReply(r.code, r.body?.source()?.let { it.request(MAX_PROBE); it.buffer.snapshot().utf8() }.orEmpty())
+            }
+        } catch (_: Exception) { null }
+    }
+
+    private val prefs get() = RaviloAppContext.get().getSharedPreferences("ravilo_samsung_tv", android.content.Context.MODE_PRIVATE)
+    override fun lastInstalledTag(duid: String): String? = prefs.getString("tag.$duid", null)
+    override fun rememberInstalledTag(duid: String, tag: String) { prefs.edit().putString("tag.$duid", tag).apply() }
+
     override suspend fun download(url: String, onProgress: (Long, Long?) -> Unit): ByteArray = withContext(Dispatchers.IO) {
         require(url.startsWith("https://")) { "refusing a non-HTTPS package" }
         RaviloAppContext.okHttp.newCall(Request.Builder().url(url).build()).execute().use { r ->

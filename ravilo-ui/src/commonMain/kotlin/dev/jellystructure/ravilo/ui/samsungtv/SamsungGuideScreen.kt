@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
@@ -24,6 +25,12 @@ import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -49,9 +56,11 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
@@ -65,6 +74,13 @@ import dev.jellystructure.ravilo.ui.theme.accentGradient
 
 const val SAMSUNG_GUIDE_TAG = "samsung-guide"
 const val SAMSUNG_GUIDE_PRIMARY_TAG = "samsung-guide-primary"
+/** DEB-5905 — the overview page; its cards are `samsung-card-<index>`, each card's one action `-action`, an up-to-date card's *Reinstall* `samsung-card-reinstall`. */
+const val SAMSUNG_OVERVIEW_TAG = "samsung-overview"
+/** DEB-5905 — the overview's cards are `-<index>`; each card's one action (button or quiet link) is `-action`, and `-reinstall` the *Reinstall* on an up-to-date card. */
+const val SAMSUNG_CARD_TAG = "samsung-card"
+const val SAMSUNG_CARD_ACTION_TAG = "samsung-card-action"
+const val SAMSUNG_CARD_REINSTALL_TAG = "samsung-card-reinstall"
+const val SAMSUNG_OVERVIEW_SEARCH_TAG = "samsung-overview-search"
 /** DEB-5504 (FR-13) — `-keys` / `-nokeys` on the two cards of the question and on the two tabs of the instruction. */
 const val SAMSUNG_GUIDE_REMOTE_CARD_TAG = "samsung-guide-remote-card"
 const val SAMSUNG_GUIDE_REMOTE_TAB_TAG = "samsung-guide-remote-tab"
@@ -80,20 +96,23 @@ fun SamsungGuideScreen(guide: SamsungGuide, onBack: () -> Unit) {
     val screen by guide.screen.collectAsState()
     LaunchedEffect(guide) { guide.open() }
     Column(Modifier.fillMaxSize().background(colors.background).testTag(SAMSUNG_GUIDE_TAG)) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("‹", color = colors.text, fontSize = 26.sp,
-                modifier = Modifier.clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onBack).padding(horizontal = 10.dp, vertical = 4.dp))
-        }
-        Column(
-            Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            GuideBody(screen, guide)
+        val ov = screen as? GuideScreen.Overview
+        if (ov != null) OverviewPage(ov, guide, onBack) else {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("‹", color = colors.text, fontSize = 26.sp,
+                    modifier = Modifier.clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onBack).padding(horizontal = 10.dp, vertical = 4.dp))
+            }
+            Column(
+                Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                GuideBody(screen, guide)
+            }
         }
     }
 }
 
-/** The guide's screen for [screen], without the page chrome — what the screenshots render. */
+/** The guide's screen for [screen], without the page chrome — what the screenshots render. The overview is a list page and draws its own head. */
 @Composable
 internal fun GuideBody(screen: GuideScreen, guide: SamsungGuide) {
     when (val s = screen) {
@@ -107,9 +126,9 @@ internal fun GuideBody(screen: GuideScreen, guide: SamsungGuide) {
         )
         is GuideScreen.Pick -> Page(
             null, if (s.tvs.size == 1) "samsungtv.found.title" else "samsungtv.found.pick", art = Art.TV,
-            cta = if (s.tvs.size == 1) "samsungtv.found.confirm" else null, onCta = { guide.choose(s.tvs[0], s.forInstall) },
+            cta = if (s.tvs.size == 1) "samsungtv.found.confirm" else null, onCta = { guide.choose(s.tvs[0]) },
         ) {
-            s.tvs.forEach { tv -> TvChoice(tv, selectable = s.tvs.size > 1) { guide.choose(tv, s.forInstall) } }
+            s.tvs.forEach { tv -> TvChoice(tv, selectable = s.tvs.size > 1) { guide.choose(tv) } }
         }
         GuideScreen.NotFound -> Page(null, "samsungtv.notfound.title", body = "samsungtv.notfound.body", art = Art.TV, cta = "samsungtv.retry", onCta = { guide.find() })
         is GuideScreen.Step1 -> if (s.remote == null) {
@@ -136,19 +155,7 @@ internal fun GuideBody(screen: GuideScreen, guide: SamsungGuide) {
             4, "samsungtv.ask.title", art = Art.TV, body = "samsungtv.ask.body",
             cta = "samsungtv.ask.cta", onCta = { if (!s.busy) guide.sendRequest() }, busy = s.busy,
         )
-        is GuideScreen.Waiting -> {
-            val approved = s.request.state == "APPROVED"
-            Page(
-                null, if (approved) "samsungtv.waiting.approved_title" else "samsungtv.waiting.title", art = Art.WAIT,
-                body = if (approved) "samsungtv.waiting.approved_body" else "samsungtv.waiting.body",
-                quiet = if (s.request.state == "REQUESTED") "samsungtv.waiting.withdraw" else null, onQuiet = { guide.withdraw() },
-            )
-        }
-        is GuideScreen.Ready -> Page(null, "samsungtv.ready.title", art = Art.TV, body = "samsungtv.ready.body", cta = "samsungtv.ready.cta", onCta = { guide.install() })
-        is GuideScreen.Rejected -> Page(
-            null, "samsungtv.rejected.title", art = Art.TV, body = if (s.request.decisionNote.isNullOrBlank()) "samsungtv.rejected.body" else null,
-            bodyText = s.request.decisionNote?.takeIf { it.isNotBlank() }, cta = "samsungtv.rejected.again", onCta = { guide.askAgain() },
-        )
+        is GuideScreen.Overview -> OverviewPage(s, guide, onBack = {})
         is GuideScreen.Installing -> Page(null, "samsungtv.installing.title", art = Art.WAIT) {
             val label = when (s.stage) {
                 GuideScreen.Stage.DOWNLOADING -> "samsungtv.installing.downloading"
@@ -275,10 +282,10 @@ private fun TvChoice(tv: SamsungTv, selectable: Boolean, onPick: () -> Unit) {
 }
 
 @Composable
-private fun GuideButton(label: String, busy: Boolean, onClick: () -> Unit) {
+private fun GuideButton(label: String, busy: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
     val colors = RaviloTheme.colors
     Box(
-        Modifier.fillMaxWidth().heightIn(min = 54.dp).testTag(SAMSUNG_GUIDE_PRIMARY_TAG)
+        modifier.fillMaxWidth().heightIn(min = 54.dp).testTag(SAMSUNG_GUIDE_PRIMARY_TAG)
             .background(colors.accentGradient, RoundedCornerShape(27.dp))
             .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onClick),
         contentAlignment = Alignment.Center,
@@ -466,4 +473,237 @@ private fun DrawScope.drawSmartRemote(u: Float, dy: Float, face: Color, fg: Colo
     disc(u, dy, 32f, 148f, 4.8f, key); disc(u, dy, 50f, 148f, 4.8f, key); disc(u, dy, 68f, 148f, 4.8f, key)
     drawRoundRect(key, Offset(26 * u, 166 * u + dy), Size(17 * u, 34 * u), CornerRadius(8.5f * u))
     drawRoundRect(key, Offset(57 * u, 166 * u + dy), Size(17 * u, 34 * u), CornerRadius(8.5f * u))
+}
+
+// ─── DEB-5905 — Your Samsung TVs (FR-10a–FR-10g), direction A, *Stack* ───────────────────────────────────────
+
+/** The hairline every card carries: on Daylight the card is 2 % from the page and without an edge does not read as an object. */
+@Composable private fun hairline() = RaviloTheme.colors.fg.copy(alpha = 0.09f)
+
+/** FR-10a — the page: a 44 dp back target, the title left-aligned on the 18 dp gutter, then the list and its footer. */
+@Composable
+internal fun OverviewPage(ov: GuideScreen.Overview, guide: SamsungGuide, onBack: () -> Unit) {
+    val colors = RaviloTheme.colors
+    Column(Modifier.fillMaxSize().testTag(SAMSUNG_OVERVIEW_TAG)) {
+        Row(Modifier.fillMaxWidth().padding(start = 6.dp, end = 18.dp, top = 2.dp, bottom = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                Modifier.size(44.dp).clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, role = Role.Button, onClick = onBack),
+                contentAlignment = Alignment.Center,
+            ) { Text("‹", color = colors.text, fontSize = 28.sp) }
+            Spacer(Modifier.size(2.dp))
+            Text(str("samsungtv.ov.title"), color = colors.text, fontSize = 24.sp, lineHeight = 29.sp, fontWeight = FontWeight.Bold, fontFamily = SpaceGrotesk, modifier = Modifier.weight(1f))
+        }
+        Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()).padding(start = 18.dp, end = 18.dp, bottom = 24.dp)) {
+            if (ov.sent) { Notice("samsungtv.waiting.title", check = true); Spacer(Modifier.height(14.dp)) }
+            if (!ov.wifi) { Notice("samsungtv.intro.nowifi", check = false); Spacer(Modifier.height(14.dp)) }
+            if (ov.scanning) ScanLine()
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                ov.cards.forEachIndexed { i, card -> OverviewCard(ov, card, guide, Modifier.testTag("$SAMSUNG_CARD_TAG-$i")) }
+                if (ov.scanning) Box(Modifier.fillMaxWidth().height(72.dp).background(colors.fg.copy(alpha = 0.05f), RoundedCornerShape(14.dp)))
+            }
+            if (!ov.scanning) OverviewFooter(ov, guide)
+        }
+    }
+}
+
+/** FR-10e, FR-10g — a notice: 14 sp, `fg` at 6 %, radius 14, with a hairline. [check] is *Request sent*; otherwise it is the no-Wi‑Fi sentence. */
+@Composable
+private fun Notice(key: String, check: Boolean) {
+    val colors = RaviloTheme.colors
+    val shape = RoundedCornerShape(14.dp)
+    Row(
+        Modifier.fillMaxWidth().background(colors.fg.copy(alpha = 0.06f), shape).border(1.dp, hairline(), shape).padding(horizontal = 14.dp, vertical = 13.dp),
+        horizontalArrangement = Arrangement.spacedBy(11.dp), verticalAlignment = Alignment.Top,
+    ) {
+        val ink = if (check) colors.good else colors.textDim
+        Canvas(Modifier.padding(top = 1.dp).size(20.dp)) {
+            val w = 2.dp.toPx(); val st = Stroke(width = w, cap = StrokeCap.Round)
+            if (check) {
+                drawCircle(ink, size.minDimension / 2 - w, style = st)
+                drawLine(ink, Offset(size.width * 0.3f, size.height * 0.52f), Offset(size.width * 0.45f, size.height * 0.66f), w, StrokeCap.Round)
+                drawLine(ink, Offset(size.width * 0.45f, size.height * 0.66f), Offset(size.width * 0.72f, size.height * 0.36f), w, StrokeCap.Round)
+            } else {
+                val c = Offset(size.width / 2, size.height * 0.84f)
+                for (r in listOf(0.22f, 0.42f, 0.62f).map { it * size.width }) drawArc(ink, 225f, 90f, false, Offset(c.x - r, c.y - r), Size(2 * r, 2 * r), style = st)
+                drawCircle(ink, 1.6.dp.toPx(), c)
+                drawLine(ink, Offset(size.width * 0.12f, size.height * 0.1f), Offset(size.width * 0.9f, size.height * 0.92f), w, StrokeCap.Round)
+            }
+        }
+        Text(str(key), color = colors.textSecondary, fontSize = 14.sp, lineHeight = 20.sp, fontFamily = Sora, modifier = Modifier.weight(1f))
+    }
+}
+
+/** FR-10d — the scan line, a turning arc and *Looking for TVs on this Wi‑Fi…*. The cards below it are already the server's. */
+@Composable
+private fun ScanLine() {
+    val colors = RaviloTheme.colors
+    val turn by rememberInfiniteTransition(label = "stvScan")
+        .animateFloat(0f, 360f, infiniteRepeatable(tween(900, easing = LinearEasing), RepeatMode.Restart), label = "stvScanRot")
+    Row(Modifier.fillMaxWidth().heightIn(min = 44.dp), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+        Canvas(Modifier.size(18.dp)) {
+            drawArc(colors.accentSecondary, turn - 45f, 270f, false, style = Stroke(2.dp.toPx(), cap = StrokeCap.Round))
+        }
+        Text(str("samsungtv.ov.searching"), color = colors.textSecondary, fontSize = 14.5.sp, lineHeight = 20.sp, fontFamily = Sora)
+    }
+    Spacer(Modifier.height(10.dp))
+}
+
+/** FR-10 item 4, FR-10e — *n TVs found on this Wi‑Fi* with *Search again*; with no Wi‑Fi, the shipped *Try again* alone. */
+@Composable
+private fun OverviewFooter(ov: GuideScreen.Overview, guide: SamsungGuide) {
+    val colors = RaviloTheme.colors
+    Row(
+        Modifier.fillMaxWidth().padding(top = 14.dp).heightIn(min = 44.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.CenterHorizontally), verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (ov.wifi) {
+            val count = when (ov.found) { 0 -> str("samsungtv.ov.found_none"); 1 -> str("samsungtv.ov.found_one"); else -> str("samsungtv.ov.found_n", mapOf("n" to ov.found.toString())) }
+            Text(count, color = colors.textDim, fontSize = 12.5.sp, lineHeight = 17.sp, fontFamily = Sora, textAlign = TextAlign.Center, modifier = Modifier.weight(1f, fill = false))
+        }
+        Text(
+            str(if (ov.wifi) "samsungtv.ov.search_again" else "samsungtv.retry"), color = colors.accentSecondary, fontSize = 12.5.sp, lineHeight = 17.sp,
+            fontWeight = FontWeight.SemiBold, fontFamily = Sora, softWrap = false, maxLines = 1,
+            modifier = Modifier.testTag(SAMSUNG_OVERVIEW_SEARCH_TAG)
+                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, role = Role.Button) { guide.refresh() }.padding(horizontal = 4.dp, vertical = 12.dp),
+        )
+    }
+}
+
+/** FR-10b — one card: the big card for an Approved or Ready TV, a small one for every other. */
+@Composable
+private fun OverviewCard(ov: GuideScreen.Overview, card: TvCard, guide: SamsungGuide, modifier: Modifier) {
+    val colors = RaviloTheme.colors
+    val notFound = ov.notFound(card)
+    val showVersions = card.big && (card.tv != null || ov.scanning) && !notFound
+    val shape = RoundedCornerShape(if (card.big) 18.dp else 14.dp)
+    Column(
+        modifier.fillMaxWidth().background(colors.card, shape).border(1.dp, hairline(), shape)
+            .padding(start = if (card.big) 16.dp else 14.dp, end = if (card.big) 16.dp else 14.dp, top = if (card.big) 15.dp else 13.dp, bottom = if (card.big) 16.dp else 12.dp),
+    ) {
+        CardHead(card)
+        if (notFound) Text(str("samsungtv.ov.not_found"), color = colors.textDim, fontSize = 13.sp, lineHeight = 18.sp, fontFamily = Sora, modifier = Modifier.padding(top = 7.dp))
+        if (card.badge == Badge.REJECTED) card.request?.decisionNote?.takeIf { it.isNotBlank() }?.let {
+            Text(it, color = colors.textSecondary, fontSize = 13.5.sp, lineHeight = 19.sp, fontFamily = Sora, modifier = Modifier.padding(top = 10.dp))
+        }
+        if (showVersions) Versions(card, scanning = ov.scanning && card.tv == null)
+        CardAction(card, guide)
+    }
+}
+
+/** FR-10b — name over model code, the badge at the row's end; the name keeps 130 sp and the badge drops to its own line when it would not fit beside it. */
+@Composable
+private fun CardHead(card: TvCard) {
+    val colors = RaviloTheme.colors
+    val measurer = rememberTextMeasurer()
+    val density = LocalDensity.current
+    val badgeText = str(when (card.badge) {
+        Badge.APPROVED -> "samsungtv.badge.approved"; Badge.WAITING -> "samsungtv.badge.waiting"
+        Badge.REJECTED -> "samsungtv.badge.rejected"; Badge.NOT_SET_UP -> "samsungtv.badge.notsetup"
+    })
+    val badgeStyle = badgeTextStyle()
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val badgeWidth = with(density) { measurer.measure(badgeText.uppercase(), badgeStyle, softWrap = false).size.width.toDp() } + 12.dp
+        val beside = maxWidth - badgeWidth - 10.dp >= with(density) { 130.sp.toDp() }
+        val name: @Composable (Modifier) -> Unit = { m ->
+            Column(m) {
+                Text(card.name, color = colors.text, fontSize = if (card.big) 18.5.sp else 17.sp, lineHeight = if (card.big) 24.sp else 22.sp, fontWeight = FontWeight.SemiBold, fontFamily = Sora, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (card.model.isNotBlank()) Text(card.model, color = colors.textDim, fontSize = 12.sp, lineHeight = 16.sp, letterSpacing = 0.24.sp, fontFamily = FontFamily.Monospace, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(top = 2.dp))
+            }
+        }
+        if (beside) Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.Top) {
+            name(Modifier.weight(1f)); BadgePill(card.badge, badgeText)
+        } else Column(verticalArrangement = Arrangement.spacedBy(6.dp)) { name(Modifier.fillMaxWidth()); BadgePill(card.badge, badgeText) }
+    }
+}
+
+@Composable private fun badgeTextStyle() = TextStyle(fontSize = 10.sp, lineHeight = 14.sp, fontWeight = FontWeight.Bold, fontFamily = Sora, letterSpacing = 0.8.sp)
+
+/** FR-10f — the geometry of the shipped *Experimental* badge. Never wraps inside itself. */
+@Composable
+private fun BadgePill(badge: Badge, text: String) {
+    val colors = RaviloTheme.colors
+    val shape = RoundedCornerShape(6.dp)
+    val (ink, fill) = when (badge) {
+        Badge.APPROVED -> colors.good to colors.good.copy(alpha = if (colors.isLight) 0.14f else 0.16f)
+        Badge.WAITING -> colors.textSecondary to colors.fg.copy(alpha = 0.10f)
+        Badge.REJECTED -> colors.bad to colors.bad.copy(alpha = if (colors.isLight) 0.12f else 0.15f)
+        Badge.NOT_SET_UP -> colors.textDim to Color.Transparent
+    }
+    Text(
+        text.uppercase(), color = ink, style = badgeTextStyle(), softWrap = false, maxLines = 1,
+        modifier = Modifier.background(fill, shape).let { if (badge == Badge.NOT_SET_UP) it.border(1.dp, colors.fg.copy(alpha = 0.16f), shape) else it }.padding(horizontal = 6.dp, vertical = 2.dp),
+    )
+}
+
+/** FR-10b — *On the TV* and *Latest* under a hairline, label left and value right; or the sentence for a release that does not cover the TV yet. */
+@Composable
+private fun Versions(card: TvCard, scanning: Boolean) {
+    val colors = RaviloTheme.colors
+    Spacer(Modifier.height(13.dp))
+    Box(Modifier.fillMaxWidth().height(1.dp).background(hairline()))
+    Spacer(Modifier.height(12.dp))
+    if (scanning) VersionRow("samsungtv.ov.on_tv") { Box(Modifier.size(width = 54.dp, height = 11.dp).background(colors.fg.copy(alpha = 0.14f), RoundedCornerShape(6.dp))) }
+    else if (card.tv != null) when (val on = card.onTv) {
+        is InstalledRavilo.Version -> VersionRow("samsungtv.ov.on_tv") { VersionValue(on.version.toString()) }
+        InstalledRavilo.NotInstalled -> VersionRow("samsungtv.ov.on_tv") { VersionValue(str("samsungtv.ov.not_installed"), word = true) }
+        else -> VersionRow("samsungtv.ov.on_tv") { VersionValue(str("samsungtv.ov.unknown"), dim = true) }
+    }
+    card.latestText?.let { latest -> Spacer(Modifier.height(3.dp)); VersionRow("samsungtv.ov.latest") { VersionValue(latest, hi = card.action == CardAction.UPDATE) } }
+    if (card.nextRelease) Text(str("samsungtv.ov.next_release"), color = colors.textSecondary, fontSize = 13.5.sp, lineHeight = 19.sp, fontFamily = Sora, modifier = Modifier.padding(top = 6.dp))
+}
+
+@Composable
+private fun VersionRow(label: String, value: @Composable () -> Unit) {
+    Row(Modifier.fillMaxWidth().heightIn(min = 24.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(str(label), color = RaviloTheme.colors.textSecondary, fontSize = 13.5.sp, lineHeight = 19.sp, fontFamily = Sora, modifier = Modifier.weight(1f))
+        value()
+    }
+}
+
+/** A version is JetBrains Mono's job; a value that is a word (*Not installed*) is Sora, or it reads as something the TV returned. */
+@Composable
+private fun VersionValue(text: String, word: Boolean = false, dim: Boolean = false, hi: Boolean = false) {
+    val colors = RaviloTheme.colors
+    Text(
+        text, color = if (hi) colors.accentSecondary else if (dim || word) colors.textDim else colors.text, fontSize = 15.sp, lineHeight = 20.sp,
+        fontWeight = if (word || dim) FontWeight.Medium else FontWeight.SemiBold, fontFamily = if (word) Sora else FontFamily.Monospace,
+    )
+}
+
+/** FR-10 item 3 and FR-10g — the card's one action: a primary button on a big card, a quiet link on the text column's left edge on a small one. */
+@Composable
+private fun CardAction(card: TvCard, guide: SamsungGuide) {
+    val colors = RaviloTheme.colors
+    when (card.action) {
+        CardAction.INSTALL, CardAction.UPDATE -> {
+            Spacer(Modifier.height(14.dp))
+            GuideButton(
+                if (card.action == CardAction.UPDATE) str("samsungtv.ov.update_to", mapOf("v" to card.latestText.orEmpty())) else str("samsungtv.ready.cta"),
+                busy = false, onClick = { guide.install(card) },
+                modifier = Modifier.testTag(SAMSUNG_CARD_ACTION_TAG),
+            )
+        }
+        CardAction.UP_TO_DATE -> Row(Modifier.fillMaxWidth().heightIn(min = 44.dp).padding(top = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Canvas(Modifier.size(17.dp)) {
+                val w = 2.2.dp.toPx()
+                drawLine(colors.good, Offset(size.width * 0.15f, size.height * 0.55f), Offset(size.width * 0.4f, size.height * 0.8f), w, StrokeCap.Round)
+                drawLine(colors.good, Offset(size.width * 0.4f, size.height * 0.8f), Offset(size.width * 0.88f, size.height * 0.22f), w, StrokeCap.Round)
+            }
+            Text(str("samsungtv.ov.up_to_date"), color = colors.good, fontSize = 14.5.sp, lineHeight = 20.sp, fontWeight = FontWeight.SemiBold, fontFamily = Sora)
+            Spacer(Modifier.weight(1f))
+            QuietLink("samsungtv.ov.reinstall", Modifier.testTag(SAMSUNG_CARD_REINSTALL_TAG)) { guide.install(card) }
+        }
+        CardAction.SET_UP -> QuietLink("samsungtv.ov.set_up", Modifier.testTag(SAMSUNG_CARD_ACTION_TAG)) { guide.setUp(card) }
+        CardAction.ASK_AGAIN -> QuietLink("samsungtv.rejected.again", Modifier.testTag(SAMSUNG_CARD_ACTION_TAG)) { guide.askAgain(card) }
+        CardAction.WITHDRAW -> QuietLink("samsungtv.waiting.withdraw", Modifier.testTag(SAMSUNG_CARD_ACTION_TAG)) { guide.withdraw(card) }
+        CardAction.NONE -> {}
+    }
+}
+
+@Composable
+private fun QuietLink(key: String, modifier: Modifier, onClick: () -> Unit) {
+    Text(
+        str(key), color = RaviloTheme.colors.accentSecondary, fontSize = 13.5.sp, lineHeight = 19.sp, fontWeight = FontWeight.SemiBold, fontFamily = Sora,
+        modifier = modifier.heightIn(min = 44.dp).clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, role = Role.Button, onClick = onClick).wrapContentHeight(Alignment.CenterVertically),
+    )
 }

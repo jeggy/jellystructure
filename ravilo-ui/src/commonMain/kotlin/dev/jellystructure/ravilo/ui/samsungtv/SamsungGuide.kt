@@ -21,6 +21,11 @@ interface SamsungTvPlatform {
     fun phoneAddress(): String?
     /** The body of `http://<ip>:8001/api/v2/`, or null when nothing answers within a short timeout. */
     suspend fun probe(ip: String): String?
+    /** DEB-5409 (FR-11) — `http://<ip>:8001/api/v2/applications/RaviloScrn.RaviloScrn`: the status and body the TV answered, or null when nothing did. */
+    suspend fun appReply(ip: String): TvAppReply? = null
+    /** DEB-5409 (FR-11) — the release tag this phone itself last installed on [duid]; the version when the TV's own answer is not known. */
+    fun lastInstalledTag(duid: String): String? = null
+    fun rememberInstalledTag(duid: String, tag: String) {}
     suspend fun download(url: String, onProgress: (Long, Long?) -> Unit): ByteArray
     /** The device ids named by the package's distributor certificate; null if it cannot be read. */
     fun packageDeviceIds(wgt: ByteArray): Set<String>?
@@ -42,7 +47,7 @@ fun TvApiClient.asSamsungBackend(): SamsungTvBackend = object : SamsungTvBackend
 }
 
 /** Where a failure's one button leads. */
-enum class Target { FIND, STEP1, STEP2, STEP3, ASK, WAITING }
+enum class Target { FIND, STEP1, STEP2, STEP3, ASK, OVERVIEW }
 
 /** DEB-5504 (FR-13) — which remote the viewer holds: a long one with real number keys, or a Smart Remote with the *123* key. */
 enum class Remote { KEYS, NOKEYS }
@@ -52,7 +57,7 @@ sealed interface GuideScreen {
     data object Loading : GuideScreen
     data class Intro(val wifi: Boolean) : GuideScreen
     data object Searching : GuideScreen
-    data class Pick(val tvs: List<SamsungTv>, val forInstall: Boolean) : GuideScreen
+    data class Pick(val tvs: List<SamsungTv>) : GuideScreen
     data object NotFound : GuideScreen
     /** [remote] is null on the question and set on the instruction (DEB-5504, FR-13). */
     data class Step1(val tv: SamsungTv, val remote: Remote? = null) : GuideScreen
@@ -60,9 +65,20 @@ sealed interface GuideScreen {
     data class Step3(val tv: SamsungTv) : GuideScreen
     data class Checking(val tv: SamsungTv) : GuideScreen
     data class Ask(val tv: SamsungTv, val busy: Boolean = false) : GuideScreen
-    data class Waiting(val request: SamsungTvRequest) : GuideScreen
-    data class Ready(val request: SamsungTvRequest) : GuideScreen
-    data class Rejected(val request: SamsungTvRequest) : GuideScreen
+    /** DEB-5905 (FR-10, FR-14) — *Your Samsung TVs*, the home of any viewer with a request. */
+    data class Overview(
+        val cards: List<TvCard>,
+        /** The scan of the phone's subnet is still running: the cards are the server's rows and no TV has answered yet. */
+        val scanning: Boolean,
+        val found: Int,
+        /** False: the phone is not on Wi-Fi, no scan ran, so no card may say *Not found on this Wi-Fi*. */
+        val wifi: Boolean,
+        /** FR-15 — the server answered a request sent from this guide; stays until the guide is closed. */
+        val sent: Boolean = false,
+    ) : GuideScreen {
+        /** FR-10 item 4: a request whose TV the finished scan did not find. */
+        fun notFound(card: TvCard) = wifi && !scanning && card.tv == null && card.request != null && card.candidates.isEmpty()
+    }
     data class Installing(val stage: Stage, val fraction: Float?) : GuideScreen
     data class Done(val request: SamsungTvRequest) : GuideScreen
     /** One sentence ([key] with [vars]) and one button, [back], to the step that fixes it. */
@@ -73,7 +89,8 @@ sealed interface GuideScreen {
 
 /**
  * DEB-4843 (FR-2–FR-7) — the guide's state machine. Server state is only ever the last read of the viewer's routes; a screen is
- * a value of [GuideScreen], and every failure is a [GuideScreen.Problem] with one way back.
+ * a value of [GuideScreen], and every failure is a [GuideScreen.Problem] with one way back. DEB-5905 (FR-14) — a viewer with a
+ * request lives on [GuideScreen.Overview]; every flow that starts from a card ends there.
  */
 class SamsungGuide(
     private val platform: SamsungTvPlatform,
@@ -86,58 +103,84 @@ class SamsungGuide(
     private var chosen: SamsungTv? = null
     /** DEB-5504 (FR-13) — held for as long as the guide is open, forgotten on [open], never persisted. */
     private var remote: Remote? = null
-    private var request: SamsungTvRequest? = null
+    /** DEB-5905 (FR-15) — *Request sent* stays above the list until the guide is closed; [open] forgets it. */
+    private var sent = false
+    /** Where a failed check sends a viewer who has no TV chosen from a card: the overview if they have requests, else the scan. */
+    private var home = Target.FIND
 
     private fun go(block: suspend () -> Unit) {
         job?.cancel()
         job = scope.launch {
             try { block() } catch (e: CancellationException) { throw e } catch (e: Exception) {
                 platform.log("samsung guide: ${e::class.simpleName}: ${e.message}")
-                _screen.value = GuideScreen.Problem("samsungtv.problem.generic", emptyMap(), Target.FIND)
+                _screen.value = GuideScreen.Problem("samsungtv.problem.generic", emptyMap(), Target.OVERVIEW)
             }
         }
     }
 
-    /** Opens the guide: re-reads the viewer's requests and lands on the screen their state says. */
+    /** Opens the guide: re-reads the viewer's requests and lands on *Your Samsung TVs*, or on the intro when there is none (FR-14). */
     fun open() = go {
         _screen.value = GuideScreen.Loading
         remote = null
-        val mine = backend.list().firstOrNull { it.state != "WITHDRAWN" }
-        request = mine
-        _screen.value = when (mine?.state) {
-            null -> GuideScreen.Intro(wifi = platform.phoneAddress() != null)
-            "READY" -> GuideScreen.Ready(mine)
-            "REJECTED" -> GuideScreen.Rejected(mine)
-            else -> GuideScreen.Waiting(mine)
-        }
+        sent = false
+        showOverview()
     }
+
+    /**
+     * The overview (FR-10, FR-10d): the server's cards at once, then the scan fills them in. A viewer whose requests are all
+     * withdrawn or gone has none, and gets the intro.
+     */
+    private suspend fun showOverview() {
+        val rows = backend.list().filter { it.state != "WITHDRAWN" }
+        val wifi = platform.phoneAddress() != null
+        if (rows.isEmpty()) { home = Target.FIND; _screen.value = GuideScreen.Intro(wifi); return }
+        home = Target.OVERVIEW
+        _screen.value = GuideScreen.Overview(serverCards(rows), scanning = wifi, found = 0, wifi = wifi, sent = sent)
+        if (!wifi) return
+        val found = scan(withVersions = true)
+        _screen.value = GuideScreen.Overview(overviewCards(rows, found, platform::lastInstalledTag), scanning = false, found = found.size, wifi = true, sent = sent)
+    }
+
+    /** *Search again* on the overview, and the footer's *Try again* with no Wi-Fi. */
+    fun refresh() = go { showOverview() }
 
     /** *Start*, *Try again* and the first button of every flow that needs the TV located. */
-    fun find(forInstall: Boolean = false) = go {
+    fun find() = go {
         if (platform.phoneAddress() == null) { _screen.value = GuideScreen.Intro(wifi = false); return@go }
         _screen.value = GuideScreen.Searching
-        val tvs = scan()
+        val tvs = scan().map(FoundTv::tv)
         _screen.value = when {
             tvs.isEmpty() -> GuideScreen.NotFound
-            tvs.size == 1 && forInstall -> { chosen = tvs[0]; checkThenInstall(tvs[0]); return@go }
-            else -> GuideScreen.Pick(tvs, forInstall)
+            else -> GuideScreen.Pick(tvs)
         }
     }
 
-    private suspend fun scan(): List<SamsungTv> {
+    /** The /24 sweep (FR-2). With [withVersions] each TV that answers is also asked what Ravilo version it has (FR-11), during the same sweep. */
+    private suspend fun scan(withVersions: Boolean = false): List<FoundTv> {
         val phone = platform.phoneAddress() ?: return emptyList()
         val gate = Semaphore(48)
         return coroutineScope {
             Subnet.hosts(phone).map { ip ->
-                async { gate.withPermit { platform.probe(ip)?.let { SamsungTv.parse(ip, it) } } }
-            }.awaitAll().filterNotNull().sortedBy { it.ip.substringAfterLast('.').toInt() }
+                async {
+                    gate.withPermit {
+                        platform.probe(ip)?.let { SamsungTv.parse(ip, it) }?.let { tv ->
+                            FoundTv(tv, if (withVersions) InstalledRavilo.read(platform.appReply(ip)) else InstalledRavilo.Unknown)
+                        }
+                    }
+                }
+            }.awaitAll().filterNotNull().sortedBy { it.tv.ip.substringAfterLast('.').toInt() }
         }.also { platform.log("samsung guide: found ${it.size} TV(s) on ${phone.substringBeforeLast('.')}.0/24") }
     }
 
-    fun choose(tv: SamsungTv, forInstall: Boolean) {
+    /** A TV picked from the scan's list, or from its card: FR-3's step 1 for that TV. */
+    fun choose(tv: SamsungTv) {
+        job?.cancel()
         chosen = tv
-        if (forInstall) go { checkThenInstall(tv) } else _screen.value = GuideScreen.Step1(tv, remote)
+        _screen.value = GuideScreen.Step1(tv, remote)
     }
+
+    /** *Set up this TV* on a *Not set up* card (FR-15): FR-3's steps for that TV, not a scan of every TV. */
+    fun setUp(card: TvCard) { card.tv?.let(::choose) }
 
     /** A tap on one of step 1's two remotes, or on the other tab: the instruction changes in place. */
     fun pickRemote(r: Remote) {
@@ -170,16 +213,16 @@ class SamsungGuide(
             Target.STEP2 -> { val ip = platform.phoneAddress(); _screen.value = if (tv != null && ip != null) GuideScreen.Step2(tv, ip) else GuideScreen.Intro(ip != null) }
             Target.STEP3 -> _screen.value = if (tv != null) GuideScreen.Step3(tv) else GuideScreen.Intro(platform.phoneAddress() != null)
             Target.ASK -> _screen.value = if (tv != null) GuideScreen.Ask(tv) else GuideScreen.Intro(platform.phoneAddress() != null)
-            Target.WAITING -> open()
+            Target.OVERVIEW -> refresh()
         }
     }
 
     /** Re-reads the TV's own answer and says what is wrong with it, or null when Developer Mode is on and points at this phone. */
     private suspend fun verify(tv: SamsungTv): GuideScreen.Problem? {
-        val body = platform.probe(tv.ip) ?: return GuideScreen.Problem("samsungtv.problem.tv_silent", emptyMap(), Target.FIND)
-        val now = SamsungTv.parse(tv.ip, body) ?: return GuideScreen.Problem("samsungtv.problem.tv_silent", emptyMap(), Target.FIND)
+        val body = platform.probe(tv.ip) ?: return GuideScreen.Problem("samsungtv.problem.tv_silent", emptyMap(), home)
+        val now = SamsungTv.parse(tv.ip, body) ?: return GuideScreen.Problem("samsungtv.problem.tv_silent", emptyMap(), home)
         chosen = now
-        val phone = platform.phoneAddress() ?: return GuideScreen.Problem("samsungtv.problem.no_wifi", emptyMap(), Target.FIND)
+        val phone = platform.phoneAddress() ?: return GuideScreen.Problem("samsungtv.problem.no_wifi", emptyMap(), home)
         return when {
             !now.developerMode -> GuideScreen.Problem("samsungtv.problem.devmode_off", emptyMap(), Target.STEP1)
             now.developerIp != phone -> GuideScreen.Problem(
@@ -189,7 +232,7 @@ class SamsungGuide(
         }
     }
 
-    /** Step 4: read the TV's id over `sdb`, send the request. */
+    /** Step 4: read the TV's id over `sdb`, send the request, and go home to the overview, which shows the server's answer (FR-15). */
     fun sendRequest() {
         val tv = chosen ?: return find()
         go {
@@ -202,41 +245,58 @@ class SamsungGuide(
             val made = try {
                 backend.create(SamsungTvRequestCreate(duid = duid, model = tv.model.take(120), tizenVersion = tv.tizenVersion, name = tv.name.take(120)))
             } catch (e: CancellationException) { throw e } catch (e: Exception) {
-                platform.log("samsung guide: request refused: ${e.message}")
+                platform.log("samsung guide: request refused: ${e::class.simpleName}: ${e.message}")
                 _screen.value = GuideScreen.Problem("samsungtv.problem.request_failed", emptyMap(), Target.ASK); return@go
             }
-            request = made
-            _screen.value = if (made.state == "READY") GuideScreen.Ready(made) else GuideScreen.Waiting(made)
+            platform.log("samsung guide: request sent (${made.state})")
+            sent = true
+            showOverview()
         }
     }
 
-    fun withdraw() {
-        val r = request ?: return
+    /** *Withdraw request* on a Requested card. */
+    fun withdraw(card: TvCard) {
+        val r = card.request?.takeIf { card.action == CardAction.WITHDRAW } ?: return   // only a Requested row can be withdrawn (FR-6)
         go {
             val after = backend.withdraw(r.id)
-            request = null
             platform.log("samsung guide: request withdrawn (${after.state})")
-            _screen.value = GuideScreen.Intro(wifi = platform.phoneAddress() != null)
+            showOverview()
         }
     }
 
-    /** *Ask again* after a rejection. */
-    fun askAgain() = find()
+    /** *Ask again* on a Rejected card: FR-3's steps for that TV when the scan found it, the scan otherwise. */
+    fun askAgain(card: TvCard) { if (card.tv != null) setUp(card) else find() }
 
-    /** *Install on TV*, *Update* and *Reinstall*: locate the TV, check it, install. */
-    fun install() = find(forInstall = true)
+    /**
+     * *Install on TV*, *Update* and *Reinstall* on a card (FR-15): the checks and the install run for **that card's request**. A
+     * card whose TV the scan could not tell from another reads each candidate's id and takes the one the request names.
+     */
+    fun install(card: TvCard) {
+        val r = card.request ?: return
+        val tvs = listOfNotNull(card.tv) + card.candidates
+        go {
+            val tv = when (tvs.size) {
+                0 -> return@go
+                1 -> tvs[0]
+                else -> tvs.firstOrNull { c -> runCatching { platform.sdb.readDuid(c.ip) }.getOrNull() == r.duid }
+                    ?: run { _screen.value = GuideScreen.Problem("samsungtv.problem.wrong_tv", emptyMap(), Target.OVERVIEW); return@go }
+            }
+            chosen = tv
+            checkThenInstall(tv, r)
+        }
+    }
 
-    private suspend fun checkThenInstall(tv: SamsungTv) {
-        val r = request ?: run { _screen.value = GuideScreen.Intro(platform.phoneAddress() != null); return }
+    private suspend fun checkThenInstall(tv: SamsungTv, r: SamsungTvRequest) {
         _screen.value = GuideScreen.Searching
         verify(tv)?.let { _screen.value = it; return }
         val now = chosen ?: tv
-        val url = r.wgtUrl ?: run { _screen.value = GuideScreen.Problem("samsungtv.problem.not_covered", emptyMap(), Target.WAITING); return }
+        val url = r.wgtUrl ?: run { _screen.value = GuideScreen.Problem("samsungtv.problem.not_covered", emptyMap(), Target.OVERVIEW); return }
         val duid = try { platform.sdb.readDuid(now.ip) } catch (e: SdbException) {
             platform.log("samsung guide: ${e.message}")
             _screen.value = GuideScreen.Problem(if (e.message?.contains("ID") == true) "samsungtv.problem.no_duid" else "samsungtv.problem.sdb", emptyMap(), Target.STEP2); return
         }
-        if (duid != r.duid) { _screen.value = GuideScreen.Problem("samsungtv.problem.wrong_tv", emptyMap(), Target.FIND); return }
+        // FR-15 — a TV that belongs to another of the viewer's requests goes back to the overview, where each card has its own button.
+        if (duid != r.duid) { _screen.value = GuideScreen.Problem("samsungtv.problem.wrong_tv", emptyMap(), Target.OVERVIEW); return }
         _screen.value = GuideScreen.Installing(GuideScreen.Stage.DOWNLOADING, 0f)
         val wgt = try {
             platform.download(url) { got, total ->
@@ -244,17 +304,17 @@ class SamsungGuide(
             }
         } catch (e: CancellationException) { throw e } catch (e: Exception) {
             platform.log("samsung guide: download failed: ${e.message}")
-            _screen.value = GuideScreen.Problem("samsungtv.problem.download", emptyMap(), Target.WAITING); return
+            _screen.value = GuideScreen.Problem("samsungtv.problem.download", emptyMap(), Target.OVERVIEW); return
         }
         // FR-7 — a package whose certificate does not name this TV is never pushed.
         if (platform.packageDeviceIds(wgt)?.contains(duid) != true) {
             platform.log("samsung guide: the package does not name this TV")
-            _screen.value = GuideScreen.Problem("samsungtv.problem.not_covered", emptyMap(), Target.WAITING); return
+            _screen.value = GuideScreen.Problem("samsungtv.problem.not_covered", emptyMap(), Target.OVERVIEW); return
         }
         try {
-            platform.sdb.install(now.ip, wgt, PACKAGE_ID, APP_ID) { stage, sent ->
+            platform.sdb.install(now.ip, wgt, PACKAGE_ID, APP_ID) { stage, bytes ->
                 _screen.value = when (stage) {
-                    SdbClient.Stage.SENDING -> GuideScreen.Installing(GuideScreen.Stage.SENDING, (sent.toFloat() / wgt.size).coerceIn(0f, 1f))
+                    SdbClient.Stage.SENDING -> GuideScreen.Installing(GuideScreen.Stage.SENDING, (bytes.toFloat() / wgt.size).coerceIn(0f, 1f))
                     SdbClient.Stage.INSTALLING -> GuideScreen.Installing(GuideScreen.Stage.INSTALLING, null)
                 }
             }
@@ -262,10 +322,13 @@ class SamsungGuide(
             platform.log("samsung guide: install failed: ${e.message}")
             _screen.value = GuideScreen.Problem("samsungtv.problem.install", emptyMap(), Target.STEP3); return
         }
+        // FR-11 — what this phone installed is the version to show when the TV's own answer is not known.
+        r.readyFromRelease?.let { platform.rememberInstalledTag(r.duid, it) }
         _screen.value = GuideScreen.Done(r)
     }
 
-    fun done() = open()
+    /** *Done* goes back to the overview, which now shows the version just installed (FR-7, FR-14). */
+    fun done() = refresh()
 
     companion object {
         const val PACKAGE_ID = "RaviloScrn"

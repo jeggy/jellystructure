@@ -42,8 +42,8 @@ class GuideScreenshotsTest {
     private val screens: List<Pair<String, GuideScreen>> = listOf(
         "01-intro" to GuideScreen.Intro(true),
         "02-searching" to GuideScreen.Searching,
-        "03-found" to GuideScreen.Pick(listOf(tv), false),
-        "04-found-several" to GuideScreen.Pick(listOf(tv, tvNew), false),
+        "03-found" to GuideScreen.Pick(listOf(tv)),
+        "04-found-several" to GuideScreen.Pick(listOf(tv, tvNew)),
         "05-not-found" to GuideScreen.NotFound,
         "06-step1-question" to GuideScreen.Step1(tv),
         "06a-step1-keys" to GuideScreen.Step1(tv, Remote.KEYS),
@@ -56,13 +56,40 @@ class GuideScreenshotsTest {
         "11-problem-devmode" to GuideScreen.Problem("samsungtv.problem.devmode_off", emptyMap(), Target.STEP1),
         "12-problem-address" to GuideScreen.Problem("samsungtv.problem.ip_differs", mapOf("tv" to "192.168.1.40", "phone" to "192.168.1.52"), Target.STEP2),
         "13-step4-ask" to GuideScreen.Ask(tv),
-        "14-waiting" to GuideScreen.Waiting(req("REQUESTED")),
-        "15-approved" to GuideScreen.Waiting(req("APPROVED")),
-        "16-ready" to GuideScreen.Ready(req("READY")),
-        "17-rejected" to GuideScreen.Rejected(req("REJECTED", "We can only add a few TVs right now.")),
         "18-installing" to GuideScreen.Installing(GuideScreen.Stage.SENDING, 0.4f),
         "19-done" to GuideScreen.Done(req("READY")),
         "20-no-wifi" to GuideScreen.Intro(false),
+    )
+
+    // ─── DEB-5905 (FR-10, FR-12, FR-14) — Your Samsung TVs. The names and model codes are invented stand-ins; nothing here is the household's. ───
+
+    private fun found(ip: String, name: String, model: String) = SamsungTv(ip, model, name, "5.0", developerMode = true, developerIp = "192.168.1.52")
+    private val living = found("192.168.1.9", "Living Room TV", "UE50TU7105")
+    private val bedroom = found("192.168.1.10", "Bedroom TV", "QE43Q60B")
+    private fun row(id: Long, tv: SamsungTv, state: String, release: String? = null, note: String? = null) =
+        SamsungTvRequest(id, "DUID$id", tv.model, "5.0", tv.name, state, 1, decisionNote = note, readyFromRelease = release, wgtUrl = release?.let { "https://x/y.wgt" })
+    private val ready = row(1, living, "READY", "v1.71")
+    private fun on(v: String) = InstalledRavilo.Version(RaviloVersion.parse(v)!!)
+    private fun ov(vararg cards: TvCard, found: Int = cards.count { it.tv != null }, scanning: Boolean = false, wifi: Boolean = true, sent: Boolean = false) =
+        GuideScreen.Overview(cards.toList(), scanning, found, wifi, sent)
+
+    private val overviews: List<Pair<String, GuideScreen>> = listOf(
+        "30-ov-uptodate" to ov(TvCard(living, ready, on("1.71"))),
+        "31-ov-update-and-notsetup" to ov(TvCard(living, ready, on("1.70")), TvCard(bedroom, null)),
+        "32-ov-next-release" to ov(TvCard(living, row(1, living, "APPROVED"), InstalledRavilo.Unknown)),
+        "33-ov-not-found" to ov(TvCard(bedroom, null), TvCard(null, ready), found = 1),
+        "34-ov-no-wifi" to ov(TvCard(null, ready), wifi = false),
+        "35-ov-approved-and-waiting" to ov(TvCard(living, ready, on("1.71")), TvCard(bedroom, row(2, bedroom, "REQUESTED"))),
+        "36-ov-request-sent" to ov(TvCard(living, ready, on("1.71")), TvCard(bedroom, row(2, bedroom, "REQUESTED")), sent = true),
+        "37-ov-rejected-note" to ov(TvCard(living, ready, on("1.71")), TvCard(bedroom, row(2, bedroom, "REJECTED", note = "Not this one: it is the one in the guest room."))),
+        "38-ov-server-first-scanning" to ov(TvCard(null, ready), scanning = true, found = 0),
+        "39-ov-not-installed" to ov(TvCard(living, ready, InstalledRavilo.NotInstalled)),
+        "40-ov-two-approved" to ov(TvCard(living, ready, on("1.70")), TvCard(bedroom, row(2, bedroom, "READY", "v1.71"), InstalledRavilo.NotInstalled)),
+        "41-ov-version-unknown" to ov(TvCard(living, ready, InstalledRavilo.Unknown)),
+        "42-ov-all-badges" to ov(
+            TvCard(living, ready, on("1.70")), TvCard(bedroom, row(2, bedroom, "REQUESTED")),
+            TvCard(null, row(3, living, "REJECTED", note = "Not this one.")), TvCard(found("192.168.1.11", "Hallway TV", "QE32Q50A"), null), found = 3,
+        ),
     )
 
     private val stub = object : SamsungTvPlatform {
@@ -87,7 +114,9 @@ class GuideScreenshotsTest {
                 CompositionLocalProvider(LocalDensity provides Density(d.density, fontScale)) {
                     WithLocale(locale) {
                         CompositionLocalProvider(LocalRaviloColors provides colors) {
-                            Column(Modifier.size(412.dp, 860.dp).background(colors.background).padding(horizontal = 24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                            // The overview is a list page with its own 18 dp gutter; every other screen is a centred 24 dp page.
+                            val listPage = screen is GuideScreen.Overview
+                            Column(Modifier.size(412.dp, 860.dp).background(colors.background).padding(horizontal = if (listPage) 0.dp else 24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                                 GuideBody(screen, guide)
                             }
                         }
@@ -115,6 +144,26 @@ class GuideScreenshotsTest {
             render(dir, "06c-step1-question-fo-200", themeName, colors, GuideScreen.Step1(tv), locale = "fo", fontScale = 2f)
             render(dir, "06d-step1-question-da", themeName, colors, GuideScreen.Step1(tv), locale = "da")
             render(dir, "06e-step1-nokeys-fo-200", themeName, colors, GuideScreen.Step1(tv, Remote.NOKEYS), locale = "fo", fontScale = 2f)
+        }
+    }
+
+    /** FR-12, FR-14, FR-10h — the overview in every state the spec names, light and dark. */
+    @Test fun `the overview renders in every state in light and dark`() {
+        val dir = shots()
+        for ((themeName, colors) in themes) for ((name, screen) in overviews) render(dir, name, themeName, colors, screen)
+    }
+
+    /** FR-10h — `da` and `fo`, and the `fo` overview at the 200 % font setting, where the *Waiting for approval* badge drops to its own line. */
+    @Test fun `the overview renders in da and fo and at the largest font`() {
+        val dir = shots()
+        val two = overviews.first { it.first == "35-ov-approved-and-waiting" }.second
+        val update = overviews.first { it.first == "31-ov-update-and-notsetup" }.second
+        for ((themeName, colors) in themes) {
+            render(dir, "50-ov-da", themeName, colors, two, locale = "da")
+            render(dir, "51-ov-fo", themeName, colors, two, locale = "fo")
+            render(dir, "52-ov-fo-200", themeName, colors, two, locale = "fo", fontScale = 2f)
+            render(dir, "53-ov-update-fo-200", themeName, colors, update, locale = "fo", fontScale = 2f)
+            render(dir, "54-ov-update-en-200", themeName, colors, update, fontScale = 2f)
         }
     }
 }

@@ -67,3 +67,40 @@ object Subnet {
     /** Spaces a dotted address's digits for reading off a screen while typing it with a remote: `192.168.1.52` → `192 . 168 . 1 . 52`. */
     fun spaced(ip: String): String = ip.split('.').joinToString(" . ")
 }
+
+/** DEB-5409 (FR-11) — Ravilo's version as the overview compares it: major and minor only, so `v1.71`, `1.71.0` and `1.71` are one version. */
+data class RaviloVersion(val major: Int, val minor: Int) : Comparable<RaviloVersion> {
+    override fun compareTo(other: RaviloVersion) = compareValuesBy(this, other, { it.major }, { it.minor })
+    override fun toString() = "$major.$minor"
+
+    companion object {
+        private val tag = Regex("^v?(\\d+)\\.(\\d+)(?:\\.\\d+)*")
+        fun parse(text: String?): RaviloVersion? =
+            text?.trim()?.let(tag::find)?.destructured?.let { (major, minor) -> RaviloVersion(major.toInt(), minor.toInt()) }
+    }
+}
+
+/** What `GET :8001/api/v2/applications/RaviloScrn.RaviloScrn` returned, before it is read: the HTTP status and the body. */
+data class TvAppReply(val status: Int, val body: String)
+
+/** DEB-5409 (FR-11) — whether Ravilo is on the TV, as the TV itself says. */
+sealed interface InstalledRavilo {
+    data class Version(val version: RaviloVersion) : InstalledRavilo
+    data object NotInstalled : InstalledRavilo
+    /** Anything the TV answers that is neither a version nor a 404, or no answer at all. */
+    data object Unknown : InstalledRavilo
+
+    companion object {
+        private val json = Json { ignoreUnknownKeys = true; isLenient = true }
+
+        /** A JSON object with a `version` is the version; a 404, or an object with `code` 404, is not installed; everything else is not known. */
+        fun read(reply: TvAppReply?): InstalledRavilo {
+            if (reply == null) return Unknown
+            val obj = runCatching { json.parseToJsonElement(reply.body) as? JsonObject }.getOrNull()
+            val code = (obj?.get("code") as? JsonPrimitive)?.contentOrNull?.toIntOrNull()
+            if (reply.status == 404 || code == 404) return NotInstalled
+            val version = (obj?.get("version") as? JsonPrimitive)?.contentOrNull
+            return RaviloVersion.parse(version)?.let(::Version) ?: Unknown
+        }
+    }
+}
