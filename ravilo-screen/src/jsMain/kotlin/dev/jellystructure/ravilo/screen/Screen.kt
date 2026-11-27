@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.screen
 
+import dev.jellystructure.ravilo.i18n.t
 import dev.jellystructure.ravilo.receiver.audioTracksOf
 import dev.jellystructure.ravilo.receiver.hms
 import dev.jellystructure.ravilo.receiver.nowMs
@@ -1293,7 +1294,7 @@ private class Screen(private val serverUrl: String) {
             }
             card.appendChild(art)
             card.appendChild(railNode("div", "rl-t", ep.number?.let { "$it. ${ep.title}" } ?: ep.title))
-            if (ep.runtimeMin > 0) card.appendChild(railNode("div", "rl-d", "${ep.runtimeMin}m"))
+            if (ep.runtimeMin > 0) card.appendChild(railNode("div", "rl-d", t("up.runtime_min", ScreenLanguage.lang, ep.runtimeMin)))
             track.appendChild(card)
         }
         // The focused card is kept in view: the track slides so it sits no further right than the third column.

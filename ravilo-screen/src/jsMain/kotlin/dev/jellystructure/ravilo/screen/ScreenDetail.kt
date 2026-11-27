@@ -457,7 +457,7 @@ internal class ScreenDetail(
         line.appendChild(node("span", "detail-next-dot"))
         val title = next.title?.takeIf { it.isNotBlank() }?.let { " “$it”" } ?: ""
         line.appendChild(label("span", "detail-next-text",
-            "${t("sonarr.next_ep", ScreenLanguage.lang)} · ${episodeCode(next.season, next.episode)}$title · ${t("sonarr.airs", ScreenLanguage.lang)} ${next.airDate}"))
+            "${t("sonarr.next_ep", ScreenLanguage.lang)} · ${episodeCode(next.season, next.episode)}$title · ${t("sonarr.airs", ScreenLanguage.lang)} ${airDateText(next.airDate, Date().getUTCFullYear()) { key, vars -> t(key, ScreenLanguage.lang, vars) } ?: next.airDate}"))
         return line
     }
 
