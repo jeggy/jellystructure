@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>The page that opens when a film ends &mdash; frames</title>
+<!--
+  frames.html — every frame this round renders, built from afp-data.js through afp-kit.js.
+
+  One document, parameterised, rather than one document per picture:
+      ?set=tv | phone | desk | fit
+      &lang=en|da|fo
+      &skin=aurora|midnight|noir|graphite|daylight
+
+  EXACTLY ONE SURFACE'S STYLESHEET IS IN A DOCUMENT. ravilo.css, ravilo-phone.css and
+  desktop-directions.css are each a whole application's stylesheet with bare selectors — .row,
+  .track, .tile, .poster, .hero — so loading two of them together is a class collision, which is
+  the cost round 9 paid for linking production CSS instead of copying it. Selecting by ?set keeps
+  the trade (every token, radius, weight and font in these pictures is the production one) without
+  the cost.
+
+  ravilo-data.js is loaded for two functions only: RAVILO.grad() and RAVILO.initials(). Every
+  backdrop colour and every set of initials in these pictures therefore comes from the corpus the
+  TV and phone mockups already draw. The seven TITLES are the brief's own stand-ins (Saltwind and
+  its six picks) and nothing else is invented.
+
+  THE TV IS DARK-ONLY. design/ravilo/platform/ravilo-shell.js holds TV_SKINS = aurora, midnight,
+  noir and prints "The TV is dark-only: it shows the viewer's dark pick (Aurora here)" for any
+  light pick; i18n/en.json carries `theme.dark_only` = "This TV is always dark". So the brief's
+  "the light theme for 1 and 3" is drawn for the PHONE and cannot be drawn for the TV — Noir is
+  rendered in its place, because Noir inverts the accent to amber and is the skin that actually
+  tests the kicker. REPORT.md puts this to Bárður as a finding, not as a silent substitution.
+
+  The round's own stylesheet always comes last, so it extends the shipped system and never
+  precedes it. No network reference of any kind: the three faces resolve to design/app/fonts/,
+  and ravilo.css's Google Fonts @import is answered from the same directory by
+  scripts/render-design.sh (DEB-2922).
+
+  Opened by hand in a browser this page works exactly as the renderer sees it.
+-->
+<script>
+  (function () {
+    var q = new URLSearchParams(location.search);
+    var set = q.get('set') || 'tv';
+    var lang = q.get('lang') || 'en';
+    var skin = q.get('skin') || 'aurora';
+    document.documentElement.lang = lang;
+    document.documentElement.dataset.skin = skin;
+    if (set === 'phone') {
+      document.write('<link rel="stylesheet" href="../../ravilo/mobile/ravilo-phone.css">');
+    } else if (set === 'desk') {
+      document.write('<link rel="stylesheet" href="../../ravilo/desktop-directions.css">');
+      document.write('<link rel="stylesheet" href="../../ravilo/desktop/ravilo-desktop.css">');
+    } else {
+      /* tv and fit */
+      document.write('<link rel="stylesheet" href="../../ravilo/ravilo.css">');
+    }
+    document.write('<link rel="stylesheet" href="after-film.css">');
+    window.AFPOPT = { set: set, lang: lang, skin: skin };
+  })();
+</script>
+</head>
+<body>
+<div class="afp-sheetwrap"><div class="afp-strip" id="frames"></div></div>
+
+<script src="../../ravilo/ravilo-data.js"></script>
+<script src="afp-data.js"></script>
+<script src="afp-kit.js"></script>
+<script>
+(function () {
+  'use strict';
+  var o = window.AFPOPT, K = window.AFPKit;
+  K.setLang(o.lang);
+  var root = document.getElementById('frames');
+
+  /* An id gains its language and its skin as a suffix, so one render per combination writes PNGs
+     that cannot collide. English + aurora takes no suffix, which keeps the common case readable. */
+  var sfx = (o.lang === 'en' ? '' : '-' + o.lang)
+          + (o.skin === 'aurora' ? '' : '-' + o.skin);
+
+  function add(el, cap) {
+    var d = document.createElement('div');
+    d.className = 'afp-hold';
+    d.innerHTML = '<span class="afp-cap">' + cap + '</span>';
+    d.appendChild(el);
+    root.appendChild(d);
+  }
+
+  /* -------------------------------------------------------------------------------------------
+     TV — Android TV, 1920x1080. Option A is the title as text, option B its logo art; every
+     other thing in the frame is identical between them, so the pictures differ by the question
+     and nothing else.
+     ------------------------------------------------------------------------------------------- */
+  if (o.set === 'tv') {
+    var tv = [
+      /* the brief's state 1 — six picks, the first focused — in both options */
+      ['a-tv-six',        { mode: 'text' },  'A · TV · <i>title as TEXT</i> · 6 picks · first FOCUSED'],
+      ['b-tv-six',        { mode: 'logo' },  'B · TV · <i>LOGO art</i> · 6 picks · first FOCUSED'],
+      /* the brief's state 2 — two picks, the short row */
+      ['a-tv-two',        { mode: 'text', two: 1 }, 'A · TV · <i>text</i> · 2 picks · the SHORT row'],
+      ['b-tv-two',        { mode: 'logo', two: 1 }, 'B · TV · <i>logo</i> · 2 picks · the SHORT row'],
+      /* the app-bar variant: a layout choice the brief does not name, drawn so it is a picture */
+      ['b-tv-appbar',     { mode: 'logo', appbar: 1 },
+        'B · TV · <i>with the APP BAR</i> · the variant, <em>not recommended</em>'],
+      /* the state the brief does not name and the spec excerpt does not cover: nothing unwatched */
+      ['b-tv-empty',      { mode: 'logo', empty: 1 },
+        'B · TV · <i>ZERO picks</i> · <em>a question for Bárður, not a design</em>']
+    ];
+    tv.forEach(function (f) {
+      f[1].id = f[0] + sfx;
+      add(K.tv(f[1]), f[2]);
+    });
+  }
+
+  /* -------------------------------------------------------------------------------------------
+     PHONE — 915x412 landscape first, because that is the orientation a film was just watched
+     fullscreen in and therefore the one this page opens in; then 412x915 portrait.
+     ------------------------------------------------------------------------------------------- */
+  if (o.set === 'phone') {
+    var ph = [
+      ['a-ph-land',       { mode: 'text', land: 1 },
+        'A · phone LANDSCAPE · <i>text</i> · all 6 in one row'],
+      ['b-ph-land',       { mode: 'logo', land: 1 },
+        'B · phone LANDSCAPE · <i>logo</i> · all 6 in one row'],
+      ['b-ph-land-two',   { mode: 'logo', land: 1, two: 1 },
+        'B · phone LANDSCAPE · <i>logo</i> · 2 picks · the SHORT row'],
+      ['b-ph-port-grid',  { mode: 'logo', grid: 1 },
+        'B · phone PORTRAIT · <i>3-up grid</i> · all 6 at once · <i>recommended</i>'],
+      ['a-ph-port-grid',  { mode: 'text', grid: 1 },
+        'A · phone PORTRAIT · <i>text</i> · 3-up grid'],
+      ['b-ph-port-track', { mode: 'logo' },
+        'B · phone PORTRAIT · <i>scrolling row</i> · <em>3 of 6 visible</em>'],
+      ['b-ph-port-two',   { mode: 'logo', two: 1 },
+        'B · phone PORTRAIT · <i>2 picks</i> · the row fits']
+    ];
+    ph.forEach(function (f) {
+      f[1].id = f[0] + sfx;
+      add(K.phone(f[1]), f[2]);
+    });
+  }
+
+  /* -------------------------------------------------------------------------------------------
+     DESKTOP AND RAVILO WEB — the shipped window with the 84 px sidebar rail at 1280, and Ravilo
+     Web at the brief's 900. Both clients share ravilo-ui's pages, so one builder serves both and
+     the width is what differs.
+     ------------------------------------------------------------------------------------------- */
+  if (o.set === 'desk') {
+    var dk = [
+      ['a-desk-1280',      { mode: 'text' },
+        'A · desktop 1280 · <i>text</i> · rail · 6 at the shipped 138 px'],
+      ['b-desk-1280',      { mode: 'logo' },
+        'B · desktop 1280 · <i>logo</i> · rail · 6 at the shipped 138 px'],
+      ['b-desk-1280-header', { mode: 'logo', header: 1 },
+        'B · desktop 1280 · <i>the SHIPPED window header’s back</i> · no page control'],
+      ['b-desk-1280-two',  { mode: 'logo', two: 1 },
+        'B · desktop 1280 · <i>2 picks</i> · the SHORT row'],
+      ['b-web-900',        { mode: 'logo', web: 1 },
+        'B · Ravilo Web 900 · <i>logo</i> · 6 divide the row · <i>recommended</i>'],
+      ['b-web-900-header', { mode: 'logo', web: 1, header: 1 },
+        'B · Ravilo Web 900 · <i>the SHIPPED window header’s back</i> · <i>recommended</i>'],
+      ['a-web-900',        { mode: 'text', web: 1 },
+        'A · Ravilo Web 900 · <i>text</i> · 6 divide the row'],
+      ['b-web-900-scroll', { mode: 'logo', web: 1, scroll: 1 },
+        'B · Ravilo Web 900 · <i>shipped 138 px, row SCROLLS</i> · <em>the 6th is gone, with no hint of it</em>']
+    ];
+    dk.forEach(function (f) {
+      f[1].id = f[0] + sfx;
+      f[1].light = (o.skin === 'daylight');
+      add(K.desk(f[1]), f[2]);
+    });
+  }
+
+  /* -------------------------------------------------------------------------------------------
+     THE FIT STUDY — do six fit in one row, on each surface? Computed from GEO, not asserted.
+     ------------------------------------------------------------------------------------------- */
+  if (o.set === 'fit') {
+    add(K.fit('fit-six' + sfx), 'STUDY · <i>does a row of six fit?</i> · measured from the shipped widths');
+  }
+})();
+</script>
+</body>
+</html>

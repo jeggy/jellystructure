@@ -1,0 +1,298 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>The page that opens when a film ends — Directions</title>
+<!--
+  Self-contained, as PROCESS.md requires of a directions doc: what is fixed → the named
+  directions → how they compare → the states the recommended direction holds → decided rows →
+  new strings. It links no stylesheet and loads nothing off this host.
+
+  The three faces are the repo's own woff2 under design/app/fonts/. No network reference.
+-->
+<style>
+@font-face { font-family: 'Space Grotesk'; font-style: normal; font-weight: 100 900; font-display: block;
+  src: url('../../app/fonts/space-grotesk.woff2') format('woff2'); }
+@font-face { font-family: 'Sora'; font-style: normal; font-weight: 100 900; font-display: block;
+  src: url('../../app/fonts/sora.woff2') format('woff2'); }
+@font-face { font-family: 'JetBrains Mono'; font-style: normal; font-weight: 100 900; font-display: block;
+  src: url('../../app/fonts/jetbrains-mono.woff2') format('woff2'); }
+
+/* Canvas rules (PROCESS.md): dark ink on the light-gray backdrop, no content-visibility, no
+   backdrop-filter, no large blur, no infinite animation. */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: #e9eaef; color: #12141b; font-family: 'Sora', sans-serif; font-size: 14px;
+  line-height: 1.55; padding: 44px 40px 80px; }
+.wrap { max-width: 1120px; margin: 0 auto; }
+h1 { font-family: 'Space Grotesk', sans-serif; font-size: 34px; font-weight: 700;
+  letter-spacing: -.02em; line-height: 1.1; margin-bottom: 6px; }
+h2 { font-family: 'Space Grotesk', sans-serif; font-size: 22px; font-weight: 700;
+  letter-spacing: -.01em; margin: 40px 0 10px; padding-top: 18px; border-top: 1px solid #c9ccd6; }
+h3 { font-family: 'Space Grotesk', sans-serif; font-size: 16px; font-weight: 700; margin: 22px 0 6px; }
+p, li { color: #262a35; margin-bottom: 10px; }
+ul, ol { margin: 0 0 12px 20px; }
+.lede { font-size: 16px; color: #262a35; max-width: 800px; margin-bottom: 4px; }
+.meta { font-family: 'JetBrains Mono', monospace; font-size: 11.5px; font-weight: 700;
+  letter-spacing: .05em; text-transform: uppercase; color: #5a6075; margin-bottom: 26px; }
+code, .k { font-family: 'JetBrains Mono', monospace; font-size: 12.5px; color: #12141b;
+  background: #dfe1e9; padding: 1px 5px; border-radius: 4px; }
+table { border-collapse: collapse; width: 100%; margin: 10px 0 18px; background: #f6f6f9;
+  border: 1px solid #c9ccd6; border-radius: 6px; overflow: hidden; }
+th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid #dfe1e9;
+  font-size: 13px; vertical-align: top; color: #262a35; }
+th { background: #dfe1e9; color: #12141b; font-weight: 700; font-size: 11.5px;
+  letter-spacing: .05em; text-transform: uppercase; font-family: 'JetBrains Mono', monospace; }
+tr:last-child td { border-bottom: 0; }
+td b, th b { color: #12141b; }
+.rec { display: inline-block; font-family: 'JetBrains Mono', monospace; font-size: 10.5px;
+  font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: #184d33;
+  background: #cfe8da; border: 1px solid #8cc0a6; border-radius: 4px; padding: 2px 7px;
+  vertical-align: 2px; margin-left: 8px; }
+.no { color: #7a2030; font-weight: 600; }
+.yes { color: #184d33; font-weight: 600; }
+.q { background: #fdf3d6; border: 1px solid #e2c472; border-radius: 8px; padding: 14px 16px;
+  margin: 14px 0; }
+.q b { color: #5c4306; }
+.card { background: #f6f6f9; border: 1px solid #c9ccd6; border-radius: 10px;
+  padding: 16px 18px; margin: 12px 0; }
+.files { font-family: 'JetBrains Mono', monospace; font-size: 12px; line-height: 1.9; color: #262a35; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>The page that opens when a film ends</h1>
+<p class="lede">A new page, drawn before its UI is built. It reuses <code>Tile</code>,
+<code>ArrowRow</code> and the title page's backdrop scrim; this round draws the layout only.</p>
+<p class="meta">Round <b>after-film-page</b> · 2026‑11‑27 · Android TV, phone, desktop, Ravilo Web
+· product design</p>
+
+<h2>What is fixed</h2>
+<p>Everything in this section came with the brief or out of a shipped file and is not this round's
+to move.</p>
+<ul>
+  <li><b>What the page is.</b> When the player would close a finished film, the after-film page
+    opens instead. It shows up to six unwatched titles from that film's own <i>More Like This</i>
+    list. Picking one opens that title's page and <b>never plays it at once</b> (owner,
+    2026‑11‑27). Nothing plays and nothing loads a stream until the viewer picks. One Back leaves
+    to the finished film's page.</li>
+  <li><b>The words.</b> The kicker <i>End of film</i> with the film's title, and the heading
+    <i>More Like This</i>. Both strings already ship, in all three languages. <b>This round adds
+    no new string.</b></li>
+  <li><b>Every component.</b> The shipped tile (<code>.tile.poster</code> on TV,
+    <code>.poster</code> on the phone, <code>.po</code> on desktop and web), the shipped row, the
+    shipped kicker, and the title page's own scrim — <code>--hero-tint</code> over
+    <code>--hero-floor</code>, both skin tokens.</li>
+  <li><b>Focus.</b> Exactly one visible focus target: the first tile. Focus is a class on TV
+    (<code>.focused</code>), never a pseudo-class — a D-pad has no hover. The treatment is the
+    shipped 4&nbsp;px ring plus <code>scale(1.07)</code>, unchanged.</li>
+  <li><b>QoE first</b> (owner, on this ask). No new animation anywhere, and focus motion is the
+    shipped transform and nothing added to it. Nothing on this page triggers a network request:
+    the <i>More Like This</i> list arrives with the film's own page.</li>
+  <li><b>Jellyfin, Seerr and jellystructure are invisible</b> to a viewer. Nothing in this round
+    names them.</li>
+</ul>
+
+<h2>The composition, on every surface</h2>
+<p>One layout, four surfaces. The finished film's backdrop fills the frame under the title page's
+own scrim; the content sits bottom-left, where that scrim pair is darkest — the same corner, for
+the same reason, as the title page's hero body. Top to bottom: the kicker, the film's identity,
+the heading, the row.</p>
+<table>
+  <tr><th>Surface</th><th>Frame</th><th>The row</th><th>Back</th></tr>
+  <tr><td><b>Android TV</b></td><td>1920×1080, drawn and measured at 1920</td>
+      <td>one row of six at the shipped 210&nbsp;px, first focused</td>
+      <td class="no">none drawn — the remote's own key</td></tr>
+  <tr><td><b>Phone, landscape</b></td><td>915×412 — the orientation the film was just watched in</td>
+      <td>one row of six at the shipped 118&nbsp;px</td>
+      <td class="yes">the shipped circle, top-<b>right</b></td></tr>
+  <tr><td><b>Phone, portrait</b></td><td>412×915</td>
+      <td>a 3-up grid, two rows, all six at once</td>
+      <td class="yes">the shipped circle, top-left</td></tr>
+  <tr><td><b>Desktop</b></td><td>1280×800, the 84&nbsp;px sidebar rail</td>
+      <td>one row of six at the shipped 138&nbsp;px</td>
+      <td class="yes">the window header's own chevron</td></tr>
+  <tr><td><b>Ravilo Web</b></td><td>900 wide</td>
+      <td>six divide the row at 115&nbsp;px</td>
+      <td class="yes">the window header's own chevron</td></tr>
+</table>
+
+<h2>Question 1 — the film's title as text, or its logo art?</h2>
+
+<h3>Direction B — the logo when the film has one, text when it has not <span class="rec">Recommended</span></h3>
+<p>This is the brief's lean, and it is already how two shipped surfaces behave:
+<code>.dhero-logo</code> on the title page draws the logo and falls back to
+<code>.dhero-title</code>, and the phone player's <code>.mp-ident</code> carries a
+<code>logo</code> and a <code>name</code> variant of the same slot. A viewer who has just finished
+a film recognises its logo faster than its name set in the UI's own face, and the fallback costs
+nothing because it <i>is</i> direction A.</p>
+<ul>
+  <li><b>Gives:</b> the film is identified as itself rather than as a row of UI type, and the page
+    reads as the end of <i>that</i> film. No new component and no new string.</li>
+  <li><b>Costs:</b> two code paths where there was one, and a logo's fine detail dies at phone
+    size — see the landscape frames, where the stand-in's sub-line is a smudge at 52&nbsp;px.</li>
+</ul>
+
+<h3>Direction A — the title as text, always</h3>
+<ul>
+  <li><b>Gives:</b> one path, one size, legible at every scale in every language. The Faroese
+    frames show it holds.</li>
+  <li><b>Costs:</b> the page identifies the film the way a settings row would. On a surface whose
+    whole job is <i>you have just finished this; here is what is next</i>, that is the one place
+    worth spending a little boldness.</li>
+</ul>
+
+<div class="card">
+<p style="margin:0"><b>What the pictures cannot tell you.</b> The corpus has no logo file for an
+invented title, so direction B is drawn with a <i>wordmark stand-in</i> — a drawing standing in for
+artwork. <b>Judge the placement and the size, not the artwork.</b> A real logo is wider, looser,
+often not a wordmark at all, and sometimes dark ink on transparency (which the Studios tiles already
+handle with a light plate, <code>.taxo-card:has(.taxo-logo)</code>, R257/R308). Whether this page
+needs that plate is <b>not</b> settled by this round.</p>
+</div>
+
+<h3>Sizes, and why they differ</h3>
+<p>The logo is drawn at <b>96&nbsp;px</b> on TV, not the title page's <code>.dhero-logo</code> 116,
+and the text at <b>56&nbsp;px</b>, not <code>.dhero-title</code>'s 72. On the title page the
+identity <i>is</i> the subject; here the subject is the row, so both step back. The two numbers are
+not equal to each other because they do not measure the same thing: a logo's height includes its
+mark and whatever line sits under the word. At 96 the <i>word</i> is about 42&nbsp;px tall against
+direction A's ~40&nbsp;px cap height, so the two are drawn at the same legibility and differ only
+in character.</p>
+
+<h2>Question 2 — does a pointer client need a visible back control?</h2>
+
+<h3>Use the window header's own back <span class="rec">Recommended</span></h3>
+<p>The brief's lean was a ghost <i>Back</i> top-left on web and desktop. Both are drawn, and the
+lean turns out to add a <b>second</b> back control to a page that already has one:
+<code>header()</code> in <code>design/ravilo/desktop/ravilo-desktop.js</code> already puts a
+<code>.ghb center</code> bar with a back chevron at the top of <code>.main</code> whenever the
+navigation stack is not empty. The header variant also names the film in the bar, which the
+floating button does not.</p>
+<ul>
+  <li><b>Gives:</b> one back control, in the place every other page in the window keeps it, with
+    the film named beside it. Nothing new is built.</li>
+  <li><b>Costs:</b> the backdrop loses its top 46&nbsp;px and the page is no longer full-bleed.
+    The Daylight frames show the hard edge between a light chrome bar and the dark page.</li>
+</ul>
+
+<h3>A ghost <i>Back</i> on the page</h3>
+<ul>
+  <li><b>Gives:</b> a full-bleed backdrop, and a control the eye finds without leaving the page.</li>
+  <li><b>Costs:</b> two back controls on one page in the normal case, and a button floating on
+    artwork with no bar to belong to.</li>
+</ul>
+
+<h3>On the phone, and on the TV</h3>
+<p><b>The phone keeps a visible back</b> in both orientations: a touch surface has no Back key and
+no Esc, so the circle is the only route. In landscape it sits top-<b>right</b> — at top-left it
+landed squarely on the kicker and the logo, which the rendered frame showed and the markup did
+not. <b>The TV draws none</b>, as the brief leans: the remote has the key, and a second focusable
+thing in frame would break the constitution's "exactly one visible focus target".</p>
+
+<h2>Does a row of six fit?</h2>
+<p>Computed from the shipped tile widths and gaps, not asserted —
+<code>after-film-fit-six.png</code> draws it.</p>
+<table>
+  <tr><th>Surface</th><th>Six need</th><th>The box</th><th>Result</th></tr>
+  <tr><td>Android TV</td><td>1350&nbsp;px</td><td>1792</td><td class="yes">fits, 442 spare</td></tr>
+  <tr><td>Phone, landscape</td><td>763&nbsp;px</td><td>879</td><td class="yes">fits, 116 spare</td></tr>
+  <tr><td>Phone, portrait</td><td>763&nbsp;px</td><td>376</td><td class="no">over by 387 — 3 of 6 show</td></tr>
+  <tr><td>Desktop, 1280</td><td>898&nbsp;px</td><td>1140</td><td class="yes">fits, 242 spare</td></tr>
+  <tr><td>Ravilo Web, 900</td><td>898&nbsp;px</td><td>760</td><td class="no">over by 138 — the 6th is gone</td></tr>
+</table>
+<p>The two misses are answered the same way, and the answer is the one piece of composition this
+round argues for: <b>this page holds exactly six items and never more, so the row divides the
+width rather than scrolling.</b> A scroller on a page whose entire purpose is one choice out of six
+hides part of the choice. Portrait becomes a 3-up grid at 116&nbsp;px — within two pixels of the
+shipped 118 — and Ravilo Web's six posters take 115 each. Both alternatives are drawn
+(<code>b-ph-port-track</code>, <code>b-web-900-scroll</code>) so the cost is a picture: at 900 the
+sixth title is not merely off-screen, it is gone with no hint that it exists.</p>
+
+<h2>The states this round drew, and the ones it did not</h2>
+<table>
+  <tr><th>State</th><th>Drawn</th><th>Note</th></tr>
+  <tr><td>Six picks, first focused</td><td class="yes">yes</td><td>every surface, both directions</td></tr>
+  <tr><td>Two picks — the short row</td><td class="yes">yes</td><td>TV, phone landscape and portrait, desktop</td></tr>
+  <tr><td>10-foot focus</td><td class="yes">yes</td><td>the only focusable thing in frame is the row</td></tr>
+  <tr><td>Danish and Faroese</td><td class="yes">yes</td><td>both hold; Faroese is the longest and has room</td></tr>
+  <tr><td>Aurora, Midnight, Noir</td><td class="yes">yes</td><td>Noir inverts the kicker and the ring to amber</td></tr>
+  <tr><td>Light theme — phone and desktop</td><td class="yes">yes</td><td>Daylight; the page stays dark, see below</td></tr>
+  <tr><td>Light theme — TV</td><td class="no">cannot</td><td><b>the TV is dark-only</b>, see below</td></tr>
+  <tr><td>Poster artwork missing</td><td class="yes">yes</td><td>by construction — every tile in every frame is the no-artwork tile</td></tr>
+  <tr><td>Zero picks</td><td class="yes">drawn as a question</td><td>no words invented, see below</td></tr>
+  <tr><td>Loading, error, offline</td><td class="no">no</td><td>reasoned skip, see below</td></tr>
+</table>
+
+<h3>The light theme, and the TV</h3>
+<p><b>The TV has no light theme to draw.</b>
+<code>design/ravilo/platform/ravilo-shell.js</code> holds
+<code>TV_SKINS = ['aurora','midnight','noir']</code> and prints <i>"The TV is dark-only: it shows
+the viewer's dark pick (Aurora here)"</i> for any light pick;
+<code>i18n/en.json</code> carries <code>theme.dark_only</code> = <i>"This TV is always dark"</i>.
+Noir is rendered in its place, because it inverts the accent to amber and is the skin that actually
+tests the kicker.</p>
+<p><b>On the phone and on desktop, Daylight leaves this page dark</b>, and that is correct rather
+than a failed render: a surface that sits on artwork keeps the dark tokens
+(<code>html[data-appearance="light"] .hcard, .mp</code> in <code>ravilo-phone.css</code>, and
+<code>.lt .hero .hb</code> on desktop). This page is <i>entirely</i> artwork. What does change in
+Daylight is the chrome around it — the rail, and the window header in the recommended variant.</p>
+
+<h3>Loading, error and offline — why they are not drawn</h3>
+<p>This page requests nothing. The <i>More Like This</i> list arrives with the film's own page,
+which the viewer was on before the player opened, and the brief's own rule is that nothing loads a
+stream until the viewer picks. The one thing that can be absent is poster artwork, and every tile
+in every frame here is already the no-artwork tile. If the implementation turns out to fetch the
+list at this moment rather than carry it, that is a loading state nobody has drawn — and it is a
+question for the spec, not a gap this round can fill by inventing one.</p>
+
+<h2>Open — for the briefer</h2>
+<div class="q">
+<p><b>1. What happens when nothing in the list is unwatched?</b> "Up to 6" includes 0, the brief
+names no such state, and the spec excerpt does not say. <code>b-tv-empty.png</code> is what the
+page looks like if it opens with nothing to offer: a heading over nothing, and <b>no focus target
+at all</b> — which the constitution's "must never strand focus" forbids outright. The frame
+deliberately prints no sentence, because inventing one would be deciding this.
+<i>A lean, not a decision:</i> the page does not open, and the player closes to the film's page as
+it does today.</p>
+</div>
+<div class="q">
+<p><b>2. Does the app bar belong on this page?</b> Not named in the brief.
+<code>b-tv-appbar.png</code> draws it so the choice is a picture. <i>Recommended: no.</i> The page
+came out of fullscreen playback and offers one decision; a nav bar puts four more targets in frame
+and draws <i>Library</i> as current, which at three metres reads as a second focus.</p>
+</div>
+<div class="q">
+<p><b>3. Does a dark logo need the light plate?</b> R257/R308 found 88 of 135 production logos are
+dark ink on transparency and gave the Studios tiles a light plate for it. This page puts the logo
+on a film's own backdrop, which can be anything. Out of scope here; worth a line in the spec.</p>
+</div>
+
+<h2>Strings</h2>
+<p><b>None are new.</b> All three already ship, in all three languages, and the shipped
+<code>i18n/*.json</code> wins on any disagreement with a drawing.</p>
+<table>
+  <tr><th>Key</th><th>English</th><th>Dansk</th><th>Føroyskt</th></tr>
+  <tr><td><code>player.end_of_movie</code></td><td>End of film</td><td>Slut på filmen</td><td>Endi á filminum</td></tr>
+  <tr><td><code>section.related</code></td><td>More Like This</td><td>Mere som dette</td><td>Meira líkt hesum</td></tr>
+  <tr><td><code>action.back</code></td><td>Back</td><td>Tilbage</td><td>Aftur</td></tr>
+</table>
+
+<h2>The files</h2>
+<p class="files">
+frames.html&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;— every frame, parameterised <code>?set=tv|phone|desk|fit&amp;lang=&amp;skin=</code><br>
+afp-data.js&nbsp;&nbsp;&nbsp;&nbsp;— every title, year, width and string; one array, nothing invented downstream<br>
+afp-kit.js&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;— the four builders, using each surface's shipped class names<br>
+after-film.css&nbsp;— the round's own rules, all <code>afp-</code>-prefixed, on top of the shipped stylesheets<br>
+png/&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;— 76 frames, <code>after-film-&lt;direction&gt;-&lt;state&gt;[-lang][-skin].png</code><br>
+REPORT.md&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;— what the pictures showed that the markup did not
+</p>
+<p>Each surface's stylesheet is <b>linked, not copied</b>, and exactly one of them is in a document
+at a time — <code>ravilo.css</code>, <code>ravilo-phone.css</code> and
+<code>desktop-directions.css</code> all carry bare selectors (<code>.row</code>, <code>.track</code>,
+<code>.tile</code>, <code>.poster</code>) and would collide. So every token, radius, weight and font
+in these pictures is the production one.</p>
+
+</div>
+</body>
+</html>

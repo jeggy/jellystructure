@@ -1,0 +1,317 @@
+/* after-film.css — the round's own rules, on top of the shipped stylesheets.
+
+   Round slug `after-film-page`, 2026-11-27. The page: when the player would close a finished
+   film, the after-film page opens instead — the finished film's backdrop and the title page's own
+   scrim, the kicker "End of film" with the film's identity, the heading "More Like This", and up
+   to six unwatched titles from that film's own list, the first one focused.
+
+   WHAT IS LOADED BEFORE THIS FILE, per ?set (see frames.html):
+     set=tv       design/ravilo/ravilo.css
+     set=phone    design/ravilo/mobile/ravilo-phone.css
+     set=desk     design/ravilo/desktop-directions.css
+                  design/ravilo/desktop/ravilo-desktop.css
+     set=fit      design/ravilo/ravilo.css   (for the three faces only)
+   EXACTLY ONE SURFACE'S STYLESHEET IS IN A DOCUMENT. ravilo.css, ravilo-phone.css and
+   desktop-directions.css are each a whole application's stylesheet with bare selectors — .row,
+   .track, .tile, .poster, .hero — so loading two together is a class collision, which is the cost
+   round 9 paid for linking production CSS instead of copying it. Selecting by ?set keeps the trade
+   (every token, radius, weight and font in these pictures is the production one) without the cost.
+
+   The round's own rules are all `afp-`-prefixed and this file REDEFINES NO SHIPPED TOKEN AND NO
+   SHIPPED COMPONENT. The two exceptions are both narrowed to this round's frame class and named
+   here so they cannot be mistaken for production changes:
+     .afp-tv .hero-bg       — the shipped hero backdrop made full-bleed instead of 620 px tall,
+                              because on this page the backdrop IS the page and not a hero band.
+     .afp-ph .track         — the shipped phone track's bottom padding raised so a label is not
+                              flush with the screen's floor.
+
+   NOTHING here is production CSS. design/ravilo/ is reference only — no Gradle task consumes it —
+   so every hex, px, weight, radius and easing is written out for the Compose port rather than
+   left to the implementer.
+
+   NO NEW COMPONENT, COLOUR, ICON OR ANIMATION. Every tile is the shipped tile, the scrim is the
+   shipped `.hero-scrim`, the kicker is the shipped `.hero-kicker`, the back control is the shipped
+   `.bt` on desktop and the shipped circle on the phone with its blur flattened. QoE first (owner,
+   on this ask): nothing in this file animates, nothing transitions on its own, and focus motion is
+   the shipped `.tile.focused` transform and nothing added to it.
+
+   CANVAS RULES HELD (PROCESS.md): dark ink on the light-gray backdrop for every word printed on
+   the canvas itself; no content-visibility, no backdrop-filter, no large blur, no infinite
+   animation. The shipped `.dback` and `.hbadge` in ravilo-phone.css ARE backdrop-filter; this
+   round draws `.afp-phback` with a flat fill instead, so no blur reaches the renderer, and the
+   report says so rather than letting the picture imply the glass was dropped from the design.
+*/
+
+/* ---- the three faces, from the repo's own woff2. The render has no network, so these blocks
+   make the picture identical with or without one. No file is copied: the url points at the
+   repo's own copies. ravilo.css's Google Fonts @import is answered from the same directory by
+   scripts/render-design.sh (DEB-2922). ---------------------------------------------------- */
+@font-face { font-family: 'Space Grotesk'; font-style: normal; font-weight: 100 900; font-display: block;
+  src: url('../../app/fonts/space-grotesk.woff2') format('woff2'); }
+@font-face { font-family: 'Sora'; font-style: normal; font-weight: 100 900; font-display: block;
+  src: url('../../app/fonts/sora.woff2') format('woff2'); }
+@font-face { font-family: 'JetBrains Mono'; font-style: normal; font-weight: 100 900; font-display: block;
+  src: url('../../app/fonts/jetbrains-mono.woff2') format('woff2'); }
+
+/* =================================================================================================
+   CANVAS. ravilo.css and ravilo-phone.css both take over html/body (fixed #viewport, #fit,
+   overflow:hidden) because each is a full application's stylesheet. The canvas has to win those
+   back or the renderer sees one clipped screen instead of a page of frames.
+   ================================================================================================= */
+html, body { height: auto !important; overflow: visible !important; background: #e9eaef !important;
+  margin: 0; padding: 0; }
+#viewport, #fit { position: static !important; inset: auto !important; overflow: visible !important; }
+
+.afp-sheetwrap { padding: 30px 30px 44px; }
+.afp-sheetwrap * { box-sizing: border-box; }
+.afp-strip { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 44px 30px; }
+
+/* A holder gives a frame its box and its caption. The caption is canvas text, so it is dark ink
+   on the light backdrop and never a light gray. */
+.afp-hold { position: relative; flex: none; }
+.afp-hold > .afp-cap { display: block; margin: 0 0 9px; color: #262a35;
+  font-family: 'JetBrains Mono', monospace; font-size: 11.5px; font-weight: 700;
+  letter-spacing: .05em; text-transform: uppercase; line-height: 1.5; }
+.afp-hold > .afp-cap i { color: #12141b; font-style: normal; }
+.afp-hold > .afp-cap em { color: #7a2030; font-style: normal; }   /* a cost or a gap, named on the canvas */
+
+/* `afp-frame` is the renderer's handle and carries no style of its own, so --all '.afp-frame'
+   never mistakes a nested box for a frame in its own right. */
+
+/* =================================================================================================
+   THE IDENTITY BLOCK — the round's question, and the only part of the composition that differs
+   between option (a) and option (b).
+   ================================================================================================= */
+.afp-ident { position: relative; z-index: 3; }
+/* The title as TEXT. `.dhero-title`'s own declarations — Space Grotesk 700, line-height .98,
+   -2px tracking, and the two-layer shadow that keeps a title legible over artwork — at this
+   page's size rather than the title page's 72 px, because here the identity is not the subject.
+   The size arrives inline from afp-kit.js so one value governs every surface. */
+.afp-ttl { font-family: 'Space Grotesk', sans-serif; font-weight: 700; line-height: .98;
+  letter-spacing: -2px; color: var(--ink); text-wrap: balance;
+  text-shadow: 0 2px 18px rgba(0, 0, 0, .7), 0 1px 4px rgba(0, 0, 0, .6); }
+/* The logo art. `.dhero-logo`'s own declarations — left-bottom aligned, width from the intrinsic
+   ratio, the drop shadow that keeps a light logo off a light frame of the backdrop — with the
+   height arriving inline. `max-width` is the shipped 520 so a wide logo shrinks rather than
+   crossing the gutter. */
+.afp-logo { display: block; width: auto; max-width: 520px; object-fit: contain;
+  object-position: left bottom; filter: drop-shadow(0 8px 20px rgba(0, 0, 0, .5)); }
+
+/* =================================================================================================
+   TV — a stand-in for #stage. ravilo.css's #stage is position:fixed and transform-scaled to the
+   viewport, which a page of frames cannot use; this box repeats its declarations without the
+   positioning, so every child below it is the shipped component at the shipped size.
+   1920x1080, drawn at 1920 and measured at 1920 (SKILL-house).
+   ================================================================================================= */
+.afp-tv { width: 1920px; height: 1080px; position: relative; overflow: hidden;
+  background: var(--bg); color: var(--ink); font-family: 'Sora', sans-serif; }
+.afp-tv * { box-sizing: border-box; }
+
+/* The shipped `.hero-bg` is `position:absolute; inset:0` inside a 620 px `.dhero`. Here the
+   backdrop IS the page, so the same box fills the stage. `.hero-scrim` inside it is untouched:
+   `--hero-tint` left-to-right over `--hero-floor` bottom-up, both skin tokens, which is exactly
+   the pair the title page uses and the brief asks to reuse. */
+.afp-tv .hero-bg { position: absolute; inset: 0; z-index: 0; }
+.afp-tv .afp-art { position: absolute; inset: 0; background-size: cover; background-position: center; }
+
+/* The content stack, bottom-left — where that scrim pair is darkest, and the same corner the title
+   page puts its hero body in. Bottom 52 rather than the 72 px floor because `.track`'s own
+   shipped 20 px of bottom padding makes up the difference; the tile's label therefore ends 72 px
+   above the screen's edge, clear of overscan (R205/R250). */
+.afp-tv .afp-stack { position: absolute; left: 0; right: 0; bottom: 52px; z-index: 3; }
+/* The identity block takes the stage gutter, which `.track` and `.crow-head` already have as
+   their own padding. 34 px of air under it separates the finished film from the row of what is
+   next — the one piece of spacing in this page that is a judgement rather than a shipped number. */
+.afp-tv .afp-ident { padding: 0 64px; margin-bottom: 34px; }
+/* `.crow`'s shipped `margin-top: var(--row-gap)` (52 px) is for a page of stacked rows; this page
+   has one row and the air above it is the identity block's own margin. */
+.afp-tv .crow { margin-top: 0; }
+
+/* The empty case has no words yet — the state is a QUESTION for Bárður, not a decision taken
+   here — so the frame says that on the frame rather than inventing a sentence. */
+.afp-tv .afp-empty { padding: 28px 64px 60px; font-family: 'JetBrains Mono', monospace;
+  font-size: 19px; font-weight: 700; letter-spacing: .04em; color: var(--ink-dim); }
+
+/* =================================================================================================
+   PHONE — the screen itself at 412x915 and the same device rotated to 915x412, with no bezel: the
+   bezel is mockup chrome and the Compose port measures the screen. The film was just watched
+   fullscreen, which on a phone is landscape, so landscape is the case this page opens in.
+   ================================================================================================= */
+.afp-ph { position: relative; width: 412px; height: 915px; overflow: hidden;
+  background: var(--bg); color: var(--ink); font-family: 'Sora', sans-serif; }
+.afp-ph.land { width: 915px; height: 412px; }
+.afp-ph * { box-sizing: border-box; }
+
+.afp-ph .afp-phbg { position: absolute; inset: 0; z-index: 0;
+  background-size: cover; background-position: center; }
+/* The phone's scrim is the TV pair's values, written out, because ravilo-phone.css has no
+   `--hero-tint`/`--hero-floor` of its own: the phone hero card declares its own gradient inline.
+   A phone is read close up and held upright, so the floor does more work here than the side wash
+   does — the stops below are tuned for the portrait frame and hold in landscape, and the picture
+   is what that claim rests on. */
+.afp-ph .afp-phscrim { position: absolute; inset: 0; z-index: 1;
+  background:
+    linear-gradient(0deg, rgba(var(--bg-rgb), .97) 6%, rgba(var(--bg-rgb), .72) 34%,
+      rgba(var(--bg-rgb), .10) 72%, rgba(var(--bg-rgb), 0) 100%),
+    linear-gradient(90deg, rgba(var(--bg-rgb), .55) 0%, rgba(var(--bg-rgb), .08) 60%,
+      rgba(var(--bg-rgb), 0) 100%); }
+/* In a LIGHT theme a surface that sits on artwork stays dark (SKILL-house, and
+   ravilo-phone.css's own `html[data-appearance="light"] .hcard, .mp` rule). This page is
+   entirely on artwork, so it re-declares the dark tokens for itself exactly as the hero card and
+   the film player do, rather than drawing light ink over a picture. */
+html[data-skin="daylight"] .afp-ph, html[data-skin="graphite"] .afp-ph {
+  --bg: #0a0c13; --bg-2: #0e111b; --ink: #f3f4fb; --ink-soft: #d0d4e2; --ink-dim: #a3a9c0;
+  --line: rgba(255, 255, 255, .12); --line-2: rgba(255, 255, 255, .2); --card: #161a28;
+  --chip: rgba(255, 255, 255, .16); --fg: 255, 255, 255; --bg-rgb: 10, 12, 19; color: #f3f4fb; }
+
+/* The status strip. A flat box rather than the shipped `.statusbar`, whose
+   `background: var(--bg)` would paint over the backdrop this page is built on. Same height,
+   same 12.5 px type, same gutter. In landscape it is inset for the punch-hole edge, which
+   `env(safe-area-inset-left)` supplies on the device (SKILL-house, safe area). */
+.afp-ph .afp-phstrip { position: absolute; top: 0; left: 0; right: 0; z-index: 5; height: 44px;
+  display: flex; align-items: center; justify-content: space-between; padding: 0 20px;
+  font-size: 12.5px; font-weight: 600; color: var(--ink-soft); }
+.afp-ph .afp-phstrip.land { height: 34px; padding: 0 34px; }
+.afp-ph .afp-phsig { letter-spacing: .04em; }
+
+/* The back control. A touch surface has no Back key, so it is visible here as it is on desktop
+   and web. The shipped `.dback` circle at its shipped 38 px, radius and position — with its
+   `backdrop-filter: blur(6px)` replaced by a flat fill, because a blur breaks the screenshot
+   render (PROCESS.md). The glass belongs in the Compose port; it is only absent from the picture. */
+.afp-ph .afp-phback { position: absolute; top: 52px; left: 14px; z-index: 6; width: 38px;
+  height: 38px; border-radius: 50%; border: 0; background: rgba(8, 10, 16, .62); color: #fff;
+  display: flex; align-items: center; justify-content: center; font-size: 19px; line-height: 1;
+  font-family: 'Sora', sans-serif; cursor: pointer; }
+/* LANDSCAPE: the back circle moves to the top-RIGHT. At the top-left it landed exactly on the
+   kicker and the logo — a control sitting on the words, which is PROCESS.md's round-8 defect, and
+   only the rendered landscape frame showed it. The screen is 412 px tall there and the content
+   column reaches the top, so the left column is spoken for; the right of the strip is empty in
+   every landscape frame. */
+.afp-ph.land .afp-phback { top: 44px; left: auto; right: 28px; }
+
+.afp-ph .afp-phbody { position: absolute; left: 0; right: 0; bottom: 0; z-index: 4;
+  padding-bottom: 26px; }
+.afp-ph .afp-ident { padding: 0 20px; margin-bottom: 4px; }
+.afp-ph .afp-ttl { letter-spacing: -.01em; line-height: 1.05; }
+/* The phone's `.hero-kicker` is a TV class; the phone stylesheet has no kicker of its own, so the
+   TV's own declarations are restated at phone scale — same uppercase, same tracking ratio, same
+   `--accent-2`. A phone is read at 40 cm, so 11.5 px carries what 17 px carries at three metres. */
+.afp-ph .hero-kicker { display: inline-flex; align-items: center; gap: 8px; font-size: 11.5px;
+  font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--accent-2);
+  margin-bottom: 7px; }
+.afp-ph .hero-kicker .n { color: var(--ink-soft); letter-spacing: .06em; }
+/* `.row`'s shipped 24 px top margin is for a page of stacked rows; here the air above the heading
+   is the identity block's business. */
+.afp-ph .row { margin-top: 10px; }
+/* A label flush with the screen's floor reads as clipped. The shipped track's bottom padding is
+   2 px, which is right in a scrolling page and wrong as a page's last element. */
+.afp-ph .track { padding-bottom: 6px; }
+.afp-ph .tlabel { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* The PORTRAIT 2-up grid. Six titles at 118 px plus five 11 px gaps need 763 and the portrait
+   track's box is 376, so a single row shows three of the six and the other three are off-screen
+   to the right. This page exists to offer one choice out of six; a treatment that hides half of
+   them is a different proposition from one that does not, and both are drawn.
+
+   THREE columns, not two. The first render used two, which at 412 px makes each poster 181 px
+   wide and therefore 272 tall: three rows of those are 956 px in a 915 px screen, and the render
+   pushed the kicker, the logo and the heading clean off the top of the frame. Only the picture
+   showed it. Three columns put the poster back at 116 px — within two of the shipped 118 — and
+   six titles become two rows of three, 444 px in total, which leaves the identity and the
+   backdrop the room the TV frame gives them.
+
+   `minmax(0, 1fr)` so a long label cannot widen its column (the `.shell` lesson in SKILL-house,
+   in the small). */
+.afp-ph .afp-pgrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px 12px; padding: 0 20px; }
+.afp-ph .afp-pgrid .tile { width: auto; }
+.afp-ph .afp-pgrid .poster { width: 100%; height: 0; padding-bottom: 150%; }
+.afp-ph .afp-pgrid .poster .ini { position: absolute; left: 0; right: 0; top: 50%;
+  transform: translateY(-50%); text-align: center; }
+
+/* =================================================================================================
+   DESKTOP AND RAVILO WEB — the shipped window with the sidebar RAIL, at 1280 (SIZES.large) and at
+   the brief's 900. `.win.gn` is the two-column grid the rail sits in; `.dx-win` is the shipped
+   application skin on top of the directions stylesheet.
+   ================================================================================================= */
+.afp-desk { position: relative; }
+/* `.win`'s own 1200x760 is overridden per frame from afp-kit.js so the two widths come from
+   afp-data.js GEO and not from this file. */
+.afp-desk .afp-win { overflow: hidden; }
+.afp-desk .afp-page { position: relative; flex: 1; min-height: 0; overflow: hidden; }
+.afp-desk .afp-dbg { position: absolute; inset: 0; z-index: 0;
+  background-size: cover; background-position: center 30%; }
+/* The same scrim pair as the TV, at desktop proportions: the floor carries the stack and the side
+   wash keeps the left-hand words off the brightest part of the picture. */
+.afp-desk .afp-dscrim { position: absolute; inset: 0; z-index: 1;
+  background:
+    linear-gradient(0deg, rgba(10, 12, 19, .96) 4%, rgba(10, 12, 19, .74) 32%,
+      rgba(10, 12, 19, .12) 74%, rgba(10, 12, 19, 0) 100%),
+    linear-gradient(90deg, rgba(10, 12, 19, .82) 0%, rgba(10, 12, 19, .34) 42%,
+      rgba(10, 12, 19, 0) 78%); }
+/* In the light theme the scrim does NOT lighten: `.lt .hero .hb` already re-declares white ink
+   for text on artwork, and a page that is entirely artwork follows the same rule. The frame is
+   drawn in Daylight so that claim is a picture rather than a sentence. */
+
+/* The back control: the brief's lean, and the shipped `.bt` — 38 px, radius 10, chip fill — with
+   nothing added but its position. A pointer client also has Esc and the window's own back, so
+   this is the third route to the same place and not the only one. */
+.afp-desk .afp-dback { position: absolute; top: 18px; left: 18px; z-index: 6;
+  background: rgba(255, 255, 255, .14); color: #fff; border: 1px solid rgba(255, 255, 255, .22); }
+
+.afp-desk .afp-dstack { position: absolute; left: 0; right: 0; bottom: 26px; z-index: 4; }
+.afp-desk .afp-ident { margin-bottom: 14px; }
+.afp-desk .afp-ttl { letter-spacing: -.02em; line-height: 1.02; color: #fff; }
+.afp-desk .hero-kicker { display: inline-flex; align-items: center; gap: 9px; font-size: 11.5px;
+  font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: var(--accent-2);
+  margin-bottom: 10px; font-family: 'Sora', sans-serif; }
+.afp-desk .hero-kicker .n { color: rgba(255, 255, 255, .8); letter-spacing: .08em; font-weight: 600; }
+/* `.h1`'s shipped 30 px, with its margins taken down: on this page the heading's air above is the
+   identity block's margin and its air below is the row's own. */
+.afp-desk .afp-h1 { margin: 0 0 12px; color: #fff; }
+/* `.po` carries no label in the shipped `.row` (the home rows are posters only). This page names
+   every title, because a viewer choosing between six films by artwork alone is being asked to
+   guess — and six is few enough that the names fit. */
+.afp-desk .afp-pol { margin-top: 8px; font-size: 12.5px; font-weight: 500; color: #fff;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-family: 'Sora', sans-serif; }
+.afp-desk .afp-pos { margin-top: 1px; font-size: 11.5px; color: rgba(255, 255, 255, .62);
+  font-family: 'Sora', sans-serif; }
+/* The `scroll` variant: the shipped overflowing row, so the alternative to dividing the width is
+   a picture too. `.dx-win .row` is already `overflow-x: auto`; this only stops the flex items
+   shrinking, which is what makes the overflow visible at all. */
+.afp-desk .row.afp-scroll .po { flex: none; }
+
+/* =================================================================================================
+   THE FIT STUDY. PROCESS.md's round-11 lesson is that a defect can be invisible at 1x, and this
+   round's measurable question is "do six fit in one row" — so the measurement is drawn, in dark
+   ink on the canvas, with the box it has to fit inside drawn around it. A width quoted in
+   REPORT.md can then be checked against a picture instead of trusted.
+   ================================================================================================= */
+.afp-study { width: 1240px; color: #12141b; font-family: 'Sora', sans-serif; }
+.afp-study h3 { font-family: 'Space Grotesk', sans-serif; font-size: 19px; font-weight: 700;
+  color: #12141b; margin: 0 0 4px; }
+.afp-study p { font-size: 13px; line-height: 1.55; color: #262a35; margin: 0 0 18px; max-width: 920px; }
+.afp-study h3 u, .afp-study p u { text-decoration: none; border-bottom: 2px solid #5b4ee0; }
+.afp-study .afp-srow { margin: 0 0 20px; }
+/* The numbers live on the key line, not beside the bar: a row that OVERFLOWS prints its last
+   segment straight over anything at the box's right edge, which is exactly the frame where the
+   two readings matter most. That defect cost round 11's study a render. */
+.afp-study .afp-skey { font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 700;
+  letter-spacing: .04em; text-transform: uppercase; color: #262a35; margin-bottom: 5px; }
+.afp-study .afp-skey b { color: #12141b; }
+.afp-study .afp-skey u { color: #7a2030; text-decoration: none; }
+.afp-study .afp-box { position: relative; height: 34px; border: 1px dashed #9aa0b4;
+  border-radius: 4px; background: #f6f6f9; display: flex; align-items: center; }
+.afp-study .afp-box.over { border-color: #7a2030; }
+/* `overflow: visible` on the fill is deliberate — when a row does not fit, the segments that run
+   PAST the dashed edge are the whole finding, and clipping them would hide what the study is for. */
+.afp-study .afp-fill { height: 100%; display: flex; align-items: stretch; overflow: visible;
+  white-space: nowrap; }
+.afp-study .afp-seg { display: flex; align-items: center; justify-content: center;
+  font-size: 11.5px; font-weight: 700; color: #12141b; overflow: hidden;
+  background: rgba(123, 110, 240, .20); border: 1px solid rgba(91, 78, 224, .55);
+  border-radius: 3px; }
+.afp-study .afp-seg.alt { background: rgba(123, 110, 240, .10); }
+.afp-study .afp-fill.over .afp-seg { background: rgba(190, 40, 60, .16); border-color: #b46070;
+  color: #4a0d18; }
+.afp-study .afp-gap { flex: none; }
