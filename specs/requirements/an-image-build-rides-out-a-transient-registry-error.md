@@ -196,3 +196,94 @@ prints no cause for a failed plugin marker, only the `UnknownPluginException` te
 `Received status code 5xx/429`, and `retry-transient.sh` retries both. A version that does not exist fails on the first
 attempt with `Could not find <coordinate>`. The settings plugin (`org.meshtastic.flatpak.sources.settings`) is resolved
 before `settingsEvaluated` fires, so the init script cannot pre-resolve it; it stays covered by Gradle's own retry only.
+
+## Amendment, 2026-11-28 — Central throttles the runner for longer than any retry (DEB-5992)
+
+> CI watch (DEB-5991 → DEB-5992): Publish `46046043315` (`edd5c8ba0`), `46061404458` (`6c3b05d3e`) and
+> `46064429609` (`e8068f940`), all on 2026-11-27, failed `ci / e2e` in the app `Dockerfile`'s fetch step on
+> `429 Too Many Requests` from `repo.maven.apache.org`. `b25395bf2` and `d9a0b7ee6` passed in between and after
+> with no change to the fetch step. This is Acceptance 8's sighting. It is throttling, not an outage.
+
+**What the three logs show (read 2026-11-28).**
+
+- **DEB-5946 works as written.** The `429` reaches the log, `retry-transient.sh` retries it, and each retry prints
+  its FR-4 line.
+- **The throttle outlasted every attempt.** Every attempt in all three runs ended on the same `429`:
+
+  | Run | Fetch step, start to failure | `429` on |
+  |---|---|---|
+  | `46046043315` | 17 min 01 s | `org.robolectric:android-all-instrumented:14-robolectric-10818077-i7` (jar) |
+  | `46061404458` | 10 min 45 s | the same jar |
+  | `46064429609` | 27 min 16 s | `kotlin-gradle-plugins-bom` / `kotlin-gradle-plugin` `2.3.21` (POMs) |
+
+  One outer attempt takes 4–9 minutes, because Gradle's own retry (6 attempts per request, the pause doubling from
+  4 s) runs inside it. The 30 s and 90 s pauses are a small part of that. Central refused these runners for at
+  least 10, 17 and 27 minutes.
+- **The throttle can come before the build asks for anything.** In `46064429609` the failing request was among the
+  first the fetch step makes: FR-6 resolves the plugin markers in `settingsEvaluated`, before any configuration.
+  So the limit is not only a reaction to this build's own volume, and fewer bytes alone will not prevent it.
+- **The image build downloads 419 MB from Central that it never uses.** Since DEB-4745 (`0722db463`, 2026-11-20),
+  `ravilo-ui` declares three `robolectricAndroidAll_*` configurations. They hold the `android-all-instrumented`
+  jars (7.0, 14 and 15) for its Android unit tests. `fetchDependencies` resolves every resolvable configuration,
+  so every cold image build downloads them. No compile `RUN` in the three Dockerfiles runs a test. Two of the three
+  sightings failed on one of those jars.
+- **Every cold image build downloads everything from Central again.** Phase 250's cache mounts do not outlive the
+  runner, and the layer caches skip the fetch step only when its cache key is unchanged. That is the same gap the
+  2026-11-09 analysis found, now hit by a rate limit instead of a 5xx.
+
+**The trade-off the CI watch asked about.**
+- **A longer bound, or one that honours `Retry-After`: rejected.** Covering the measured 27 minutes means a fetch
+  step that keeps trying for over half an hour, on a run that already spends 10–27 minutes failing. A real outage
+  would then take most of the e2e job's 120-minute ceiling to report red. Gradle's transport does not read
+  `Retry-After`, and `retry-transient.sh` sees only Gradle's output, so honouring the header would mean replacing
+  Gradle's transport. FR-1's bound and pauses stay as they are. Acceptance 5 is answered here, with the measured
+  lengths, and the bound is not widened.
+- **A mirror ahead of Central: not now.** A mirror changes which host the bytes in the prod images come from. This
+  repository has no dependency verification metadata, so Gradle would trust the mirror's own checksums. That is
+  the owner's call, not a CI fix. It is the next step if FR-7 and FR-8 do not hold (Acceptance 11).
+- **Carry what the last build already had, and stop downloading what nothing uses: adopted** as FR-7 and FR-8.
+  A run whose dependencies have not changed then asks Central for nothing, and that covers all three sightings.
+
+**FR-7 — The image fetch step does not resolve test-only configurations.** A configuration that only a test task
+resolves is not fetched in an image build. The Robolectric `android-all-instrumented` configurations are the
+measured case. FR-3 still holds as Acceptance 3 measures it: nothing an image compile step downloads moves out of
+the fetch step. The runner-side jobs (`unit`, `android-release`) do not use the fetch step, so DEB-4745's offline
+Robolectric jars are unaffected.
+
+**FR-8 — A warm image build does not ask a repository for what it already had.** Both callers' image builds
+(`ci / e2e` and `publish (…)`) start from the Maven/Ivy artifacts that a recent build on `main` downloaded. Only
+an artifact missing from that set is requested from a repository. A build whose version catalog and lockfiles are
+unchanged since that build makes no request to Maven Central or the Plugin Portal. A build that bumps one
+dependency requests only what changed.
+- A missing, partial or evicted carried set falls back to today's behaviour: everything is downloaded under FR-1.
+  It never fails the build.
+- The carried set is written only by runs on `main`. A pull request run may read it but never writes it.
+- FR-5 holds. `actions/cache` already runs in `ci / e2e`. Docker's named build contexts (`additional_contexts` in
+  compose, `build-contexts` in `docker/build-push-action`) are part of Docker. Nothing new is added on the
+  publishing path.
+
+**Recommended approach (the build's call, measured).**
+1. **FR-7:** in `fetch-dependencies.init.gradle`, skip configurations that only test tasks resolve: the
+   `robolectricAndroidAll_*` ones, and those whose name marks them as test classpaths (`*Test*`, `*UnitTest*`). Use
+   Acceptance 3's cold-build method to confirm that no compile `RUN` downloads anything afterwards.
+2. **FR-8:** use Gradle's read-only dependency cache (`GRADLE_RO_DEP_CACHE`), which exists for this case. It is a
+   directory holding a `modules-2` copied from another Gradle home. Gradle reads artifacts from it and never writes
+   there. Mount it read-only into the fetch step and the compile `RUN`s from a named build context, and set the
+   variable. Then the `gradle-shared` cache mount and phase 250's fence stay as they are. Produce the set from a
+   green build's `gradle-shared` mount, for example with a small export stage built with `--output type=local`.
+   Keep it in `actions/cache`, keyed on the version catalog and the lockfiles, with a prefix `restore-keys` so that
+   a bump starts from the previous set. Check the read-only cache's layout rules against Gradle 9.2.1 before relying
+   on it. Measure the set's size against the repository's 10 GB Actions cache budget, which it shares with the
+   buildx layers and `~/.konan`.
+
+**Acceptance, added.**
+9. **Nothing unused is fetched.** A cold local build of each of the three Dockerfiles prints no
+   `android-all-instrumented` request, and Acceptance 3 still holds.
+10. **A warm build asks Central nothing.** A local cold build of `Dockerfile`, given a carried set from an earlier
+    build of the same commit, makes no request to `repo.maven.apache.org` or `plugins.gradle.org` in its fetch
+    step or after it. Point both at a local server that answers every request `429` to show it: the build passes.
+    The same build with the carried set missing still passes against the real repositories.
+11. **Watched.** The CI watch records whether a carried set was restored on each `429` sighting. If a run that
+    restored one still fails on a `429` for an artifact the set should have held, FR-8 is broken and that run is a
+    bug against this spec. If the failing runs are all dependency bumps (the set cannot hold a new version), the
+    mirror goes to the owner as a decision, with this amendment's measured lengths.
