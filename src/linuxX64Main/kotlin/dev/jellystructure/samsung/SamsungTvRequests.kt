@@ -73,13 +73,18 @@ class SamsungTvRequests(private val db: JellystructureDb, private val clock: () 
         TransitionResult(Transition.SAVED, row(id))
     }
 
-    fun decide(id: Long, decision: SamsungTvDecision, by: String): TransitionResult {
+    fun decide(id: Long, decision: SamsungTvDecision, by: String, verified: Triple<String, String, Set<String>>? = null): TransitionResult {
         val state = when (decision.decision) { "APPROVE" -> "APPROVED"; "REJECT" -> "REJECTED"; else -> return TransitionResult(Transition.INVALID) }
         if (decision.note?.let { !validNote(it) } == true) return TransitionResult(Transition.INVALID)
         return db.transactionWithResult {
             if (row(id) == null) return@transactionWithResult TransitionResult(Transition.NOT_FOUND)
             q.decideRequest(state, clock(), by, decision.note?.trim()?.ifEmpty { null }, id)
             if (q.changes().executeAsOne() != 1L) return@transactionWithResult TransitionResult(Transition.CONFLICT)
+            val decided = row(id)
+            if (state == "APPROVED" && verified != null && decided != null && decided.duid in verified.third) {
+                q.markReady(verified.first, verified.second, id)
+                q.changes().executeAsOne()
+            }
             TransitionResult(Transition.SAVED, row(id))
         }
     }

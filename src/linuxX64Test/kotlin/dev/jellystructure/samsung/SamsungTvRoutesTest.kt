@@ -90,7 +90,7 @@ class SamsungTvRoutesTest {
             val secondCreated = client.post("/api/tv/samsung-requests") { header(HttpHeaders.Authorization, "Bearer anna"); contentType(ContentType.Application.Json); setBody(body("XTCJYJZXZBZVK")) }
             val second = json.decodeFromString(SamsungTvRequest.serializer(), secondCreated.bodyAsText())
             assertEquals(HttpStatusCode.OK, client.post("/api/samsung-tv/requests/${second.id}/decision") { header(HttpHeaders.Cookie, "js_session=$adminToken"); contentType(ContentType.Application.Json); setBody("""{"decision":"APPROVE"}""") }.status)
-            assertEquals("APPROVED", requests.get(second.id)?.state)
+            assertEquals("READY", requests.get(second.id)?.state)   // DEB-5409 FR-7: covered by the verified release, so READY at approval
             assertEquals(HttpStatusCode.Conflict, client.delete("/api/tv/samsung-requests/${first.id}") { header(HttpHeaders.Authorization, "Bearer anna") }.status)
             now += 3_600L
             assertEquals("v1.70", release.refresh().tag)

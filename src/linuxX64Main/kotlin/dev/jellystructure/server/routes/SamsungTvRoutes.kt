@@ -67,7 +67,7 @@ internal fun Route.samsungTvRoutes(requests: SamsungTvRequests, release: Samsung
         val input = call.receiveSamsung<SamsungTvDecision>()
             ?: return@post call.respond(HttpStatusCode.BadRequest, mapOf("error" to "invalid_request"))
         val by = call.attributes[SessionKey].jellyfinUsername
-        val result = requests.decide(id, input, by)
+        val result = requests.decide(id, input, by, release.verifiedRelease())
         when (result.kind) {
             SamsungTvRequests.Transition.SAVED -> {
                 val names = devices.allDevices().associate { it.jellyfinUserId.lowercase().replace("-", "") to it.jellyfinUsername }

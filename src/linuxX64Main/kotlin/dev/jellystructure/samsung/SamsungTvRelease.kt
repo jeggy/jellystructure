@@ -48,6 +48,8 @@ class SamsungTvRelease(
     private var verified: Triple<String, String, Set<String>>? = null
     private var status = SamsungTvReleaseStatus()
     fun status(): SamsungTvReleaseStatus = status
+    /** (tag, wgt url, covered DUIDs) of the last verified release; null until a check has succeeded. */
+    fun verifiedRelease(): Triple<String, String, Set<String>>? = verified
 
     suspend fun refresh(): SamsungTvReleaseStatus = mutex.withLock {
         val now = clock()
