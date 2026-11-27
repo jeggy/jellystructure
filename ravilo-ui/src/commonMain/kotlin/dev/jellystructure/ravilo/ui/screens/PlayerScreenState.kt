@@ -725,6 +725,8 @@ internal class PlayerScreenState(initial: PlayerScreenInputs) {
         // Bug fix: also reset the next-up card/countdown here, not just nextUpDismissed — the poll loop is gated on
         // loadedForItemId, but this clears any next-up state left over from the outgoing episode the instant a new one
         // starts loading, rather than waiting for the (already-gated) poll loop to notice.
+        // DEB-4767 (FR-R370-10) — a replayed item's end must not meet the latches its earlier play left behind.
+        bk.beginItem()
         nextUpDismissed = false  // R111: each episode starts fresh
         nextUpVisible = false
         countdown = bk.skipSecs

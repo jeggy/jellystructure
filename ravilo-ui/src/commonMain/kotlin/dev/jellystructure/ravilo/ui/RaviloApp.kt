@@ -260,6 +260,9 @@ internal fun surpriseDest(answer: dev.jellystructure.shared.tv.SurpriseAnswer, s
     if (answer.kind == MediaKind.SERIES) Dest.SeriesDetail(answer.id, displayName, shown + answer.id)
     else Dest.MovieDetail(answer.id, displayName, shown + answer.id)
 
+/** DEB-4767 (FR-R370-9) — a play pushed over the app's own player takes its place; over any other page it is pushed. */
+internal fun playPushReplacesTop(top: Dest?): Boolean = top is Dest.Player
+
 internal sealed class Dest {
     data object Login : Dest()
     data object ProfilePicker : Dest()
@@ -1214,7 +1217,7 @@ fun RaviloApp(
                         // opened for. The queue's own next entry stands in for a push that carries no `next_id`.
                         val handover = dev.jellystructure.ravilo.ui.sessions.ServerQueueHandover.claim(env.jellyfinId)
                         val queueNext = handover?.queue?.getOrNull(handover.at + 1)
-                        push(Dest.Player(
+                        val playerDest = Dest.Player(
                             itemId = env.jellyfinId,
                             title = env.title.orEmpty(),
                             // R303 — the push carries the S·E kicker for an episode; a hand-over's comes off the
@@ -1237,7 +1240,9 @@ fun RaviloApp(
                             serverQueueAt = handover?.at ?: 0,
                             serverSessionId = handover?.sessionId,
                             shuffledNextUp = env.shuffled,
-                        ))
+                        )
+                        // DEB-4767 (FR-R370-9) — over the app's own player the push replaces it; it is not stacked above it.
+                        if (playPushReplacesTop(stack.lastOrNull())) replaceTop(playerDest) else push(playerDest)
                     }
                 }
             }

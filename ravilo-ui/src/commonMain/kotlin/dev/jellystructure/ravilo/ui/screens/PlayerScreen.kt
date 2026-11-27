@@ -373,6 +373,8 @@ internal class PlayerBookkeeping(initialCastLink: CastLinkState) {
     var endCloseRequestedForItemId: String? = null
     /** R381 — the item whose next episode was prepared and prefetched (at most once per item). */
     var prefetchedForItemId: String? = null
+    /** DEB-4767 (FR-R370-10) — every item the player starts is a fresh play for the three per-item latches above. */
+    fun beginItem() { advanceRequestedForItemId = null; endCloseRequestedForItemId = null; prefetchedForItemId = null }
     /** R372 (FR-R372-10) — the end-of-play decision, latched per item (see [EndOfPlayWatch]). */
     val endOfPlay = EndOfPlayWatch()
     // R290 — the start latch, per item (see PlayerStart.kt): the item whose latch has opened; whether
