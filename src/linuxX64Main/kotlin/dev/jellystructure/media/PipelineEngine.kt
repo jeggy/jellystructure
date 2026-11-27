@@ -246,6 +246,8 @@ suspend fun runPipeline(
     // "already running" 409 and the Activity page's worker count froze at 0/N for the rest of the run
     // while later steps were still actually going. This function signals completion itself, once, after
     // every step has truly finished (or on the early "nothing to do" return right below).
+    // DEB-5709 (FR-2) — set by runScan when a full scan could not read Jellyfin: the run ends as failed and Find is not recorded.
+    var scanReadFailed = false
     suspend fun signalPipelineComplete(items: List<MediaItem>) {
         // FR-145-7 — a single-title run signals only its own title (refreshTriggeredTitle below): no
         // whole-library /Library/Refresh, no Finished, no scan_complete, no no-match notification.
@@ -255,7 +257,9 @@ suspend fun runPipeline(
             return
         }
         scanTracker.complete()
-        broadcaster.broadcast(JobEvent.Finished(jobId, items.size, 0, scanTracker.queuedSentences()))
+        broadcaster.broadcast(JobEvent.Finished(jobId, items.size, if (scanReadFailed) 1 else 0, scanTracker.queuedSentences()))
+        // DEB-5709 (FR-2) — a scan that read nothing found nothing: no Find record (its last run keeps its value and a boot catch-up stays due), no library refresh, no scan_complete.
+        if (scanReadFailed) return
         // FR-3.3 — a run of whole-library features alone looked at nothing: no Scan finished, no library refresh (the music steps tell Jellyfin themselves).
         if (!discover) return
         deps.processingRuns?.record(ProcessingFeatures.FIND)
@@ -368,6 +372,7 @@ suspend fun runPipeline(
                     jobId, target.resumeSkipIds, store, scanner, scanTracker, broadcaster,
                     configStore, jellyfinClient, scanDispatcher, target.libraryJellyfinId,
                     freshnessFilter = freshnessFilter, artworkDownloader = null, signalCompletion = false,
+                    onReadFailed = { scanReadFailed = true },
                 )
             }
             sonarrEnrich?.enrichAll()

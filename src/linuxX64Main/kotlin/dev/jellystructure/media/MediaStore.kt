@@ -430,14 +430,16 @@ class MediaStore(
      * Phase 95: non-destructive scan reconciliation. The scanner never deletes — instead, any catalog item
      * whose Jellyfin id is no longer in [presentJellyfinIds] is **flagged** `missingFromSource` (so it
      * surfaces in Triage for the admin to act on); items that re-appear have the flag cleared. Local-only
-     * items (no jellyfinId) are left untouched. Returns the items NEWLY flagged missing (for logging).
+     * items (no jellyfinId) are left untouched. Returns the items NEWLY flagged missing (for logging). [flagNew] false (DEB-5709)
+     * still unflags a title that is listed again but flags none.
      */
-    suspend fun flagMissingFromSource(presentJellyfinIds: Set<String>, nowSec: Long): List<MediaItem> {
+    suspend fun flagMissingFromSource(presentJellyfinIds: Set<String>, nowSec: Long, flagNew: Boolean = true): List<MediaItem> {
         val newlyMissing = mutableListOf<MediaItem>()
         for (item in allItems()) {
             val jf = item.jellyfinId ?: continue
             val missing = jf !in presentJellyfinIds
             if (missing && !item.missingFromSource) {
+                if (!flagNew) continue
                 addOrUpdate(item.copy(missingFromSource = true, missingSince = nowSec))
                 newlyMissing += item
             } else if (!missing && item.missingFromSource) {
@@ -445,6 +447,21 @@ class MediaStore(
             }
         }
         return newlyMissing
+    }
+
+    /**
+     * DEB-5709 (FR-3) — [flagMissingFromSource] for a full scan whose read succeeded, behind the more-than-half floor. Of the **held**
+     * titles (a Jellyfin id, not yet flagged) **gone** are those [presentJellyfinIds] does not list. When `gone > held / 2`, or the read
+     * listed nothing while titles are held, a failed read is the likelier story than a mass removal: nothing is flagged, a title that is
+     * listed again still comes back, and the hold is returned for the caller to say and keep. Otherwise it flags exactly as before.
+     */
+    suspend fun reconcileWithSource(presentJellyfinIds: Set<String>, nowSec: Long): SourceReconcile {
+        val held = allItems().filter { it.jellyfinId != null && !it.missingFromSource }
+        val gone = held.count { it.jellyfinId !in presentJellyfinIds }
+        val implausible = gone > 0 && (presentJellyfinIds.isEmpty() || gone * 2 > held.size)
+        if (!implausible) return SourceReconcile(flagMissingFromSource(presentJellyfinIds, nowSec), null)
+        flagMissingFromSource(presentJellyfinIds, nowSec, flagNew = false)
+        return SourceReconcile(emptyList(), HeldBack(nowSec, gone, held.size))
     }
 
     suspend fun update(rawItems: List<MediaItem>) {

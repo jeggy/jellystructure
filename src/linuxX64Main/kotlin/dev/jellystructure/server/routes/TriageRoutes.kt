@@ -2,6 +2,8 @@ package dev.jellystructure.server.routes
 
 import dev.jellystructure.auth.JellyfinClient
 import dev.jellystructure.config.ConfigStore
+import dev.jellystructure.log.Logger
+import dev.jellystructure.nowEpochSec
 import dev.jellystructure.torrent.SeedingCheckResult
 import dev.jellystructure.torrent.SeedingGuard
 import dev.jellystructure.media.DuplicateEpisodes
@@ -114,7 +116,13 @@ data class TriageTypeCount(
 data class TriageCount(
     val types: List<TriageTypeCount>,
     val total: Int,
+    // DEB-5709 (FR-4) — additive, admin only: a full scan found that Jellyfin stopped listing most of the library and flagged none of it.
+    // Absent while no hold stands; never part of the cached count, which is keyed on the library, not on the scan's last read.
+    val heldBack: dev.jellystructure.media.HeldBack? = null,
 )
+
+@Serializable
+private data class HeldBackFlagged(val flagged: Int)
 
 @Serializable
 private data class AssignLanguageRequest(val language: String)
@@ -127,7 +135,22 @@ private var triageCountCache: Pair<String, TriageCount>? = null
 fun Route.triageRoutes(store: MediaStore, jellyfinClient: JellyfinClient, configStore: ConfigStore, mediaHistory: MediaHistory, seedingGuard: SeedingGuard, segmentStore: MediaSegmentStore, music: dev.jellystructure.media.MusicPipeline? = null) {
     route("/triage") {
         // Phase 285 — the same computation the Dashboard reads (kind-split, cached on the library version).
-        get("/count") { call.respond(triageCountFor(store, configStore, segmentStore, music)) }
+        get("/count") { call.respond(triageCountFor(store, configStore, segmentStore, music).copy(heldBack = dev.jellystructure.media.LibraryHold.current)) }
+
+        // DEB-5709 (FR-4) — the admin's answer to a held-back scan: read Jellyfin again right now and flag what it does not list, with no
+        // floor. A read that fails answers 503 and flags nothing, so the hold stays.
+        post("/held-back/flag") {
+            val cfg = configStore.current.apiKeys
+            val listed = if (cfg.jellyfinUrl.isBlank() || cfg.jellyfinToken.isBlank()) null else jellyfinClient.getItems(cfg.jellyfinUrl, cfg.jellyfinToken)
+            if (listed == null) {
+                Logger.error(dev.jellystructure.media.JELLYFIN_READ_FAILED_SENTENCE, "scan")
+                return@post call.respond(HttpStatusCode.ServiceUnavailable, mapOf("error" to dev.jellystructure.media.JELLYFIN_READ_FAILED_SENTENCE))
+            }
+            val flagged = store.flagMissingFromSource(listed.mapNotNull { it.id }.toSet(), nowEpochSec())
+            dev.jellystructure.media.LibraryHold.set(null)
+            Logger.info("Flagged ${flagged.size} titles missing by hand.", "scan")
+            call.respond(HeldBackFlagged(flagged.size))
+        }
 
         get {
             // Phase 150: same segmentsEnabled gate as /triage/count — kept in lockstep so the dock never

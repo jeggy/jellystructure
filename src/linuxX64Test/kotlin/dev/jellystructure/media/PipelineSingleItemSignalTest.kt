@@ -17,6 +17,7 @@ import io.ktor.server.cio.CIO
 import io.ktor.server.engine.embeddedServer
 import io.ktor.server.request.uri
 import io.ktor.server.response.respondText
+import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import io.ktor.server.routing.routing
 import kotlinx.coroutines.CoroutineScope
@@ -49,6 +50,8 @@ class PipelineSingleItemSignalTest {
 
     private val jellyfin = embeddedServer(CIO, port = 0, host = "127.0.0.1") {
         routing {
+            // DEB-5709 (FR-1, FR-2) — a library run's read must succeed to count as a scan: no route would be a failed read, and a failed read ends with no refresh and no webhook.
+            get("/Items") { call.respondText("""{"Items":[],"TotalRecordCount":0,"StartIndex":0}""", io.ktor.http.ContentType.Application.Json) }
             post("/Library/Refresh") { record("POST ${call.request.uri}"); call.respondText("", status = HttpStatusCode.NoContent) }
             post("/Items/{id}/Refresh") { record("POST ${call.request.uri}"); call.respondText("", status = HttpStatusCode.NoContent) }
             post("/hook") { record("WEBHOOK"); call.respondText("ok") }

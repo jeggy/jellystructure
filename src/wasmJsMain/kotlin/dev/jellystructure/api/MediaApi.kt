@@ -22,6 +22,7 @@ import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
+import io.ktor.http.isSuccess
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -193,7 +194,11 @@ data class TriageTypeCount(val key: String, val label: String, val description: 
     val movies: Int = 0, val series: Int = 0)   // Phase 285 (FR-285-9) — kind-split instances
 
 @Serializable
-data class TriageCount(val types: List<TriageTypeCount> = emptyList(), val total: Int = 0)
+data class TriageCount(val types: List<TriageTypeCount> = emptyList(), val total: Int = 0, val heldBack: HeldBack? = null)
+
+/** DEB-5709 (FR-4) — a full scan found that Jellyfin stopped listing [gone] of [held] titles and flagged none of them; [at] is epoch seconds. */
+@Serializable
+data class HeldBack(val at: Long, val gone: Int, val held: Int)
 
 @Serializable
 data class TriageTrack(val specifier: String, val streamIndex: Int, val kind: String, val codec: String, val title: String? = null)
@@ -822,6 +827,14 @@ object MediaApi {
     suspend fun getTriageCount(): TriageCount? = runCatching {
         httpClient.get("/api/triage/count").body<TriageCount>()
     }.getOrNull()
+
+    /** DEB-5709 (FR-4) — flag the held-back titles by hand. Null when it worked; otherwise the server's sentence for why not. */
+    suspend fun flagHeldBackMissing(): String? = runCatching {
+        val response = httpClient.post("/api/triage/held-back/flag")
+        if (response.status.isSuccess()) null
+        else runCatching { KJson.parseToJsonElement(response.bodyAsText()).jsonObject["error"]?.jsonPrimitive?.content }.getOrNull()
+            ?: "Could not flag them (${response.status.value})."
+    }.getOrElse { "Could not reach the server." }
 
     suspend fun getJobsSummary(): JobsSummary? = runCatching {
         httpClient.get("/api/jobs").body<JobsSummary>()

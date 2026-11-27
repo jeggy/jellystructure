@@ -2558,6 +2558,9 @@ internal suspend fun runScan(
     // the Activity page's worker count freezing at 0/N for the rest of the run. executePipeline signals
     // completion itself once every step has actually finished.
     signalCompletion: Boolean = true,
+    // DEB-5709 (FR-2) — told when a full scan's read of Jellyfin failed, so the pipeline that called this ends the run as failed and does not
+    // record Find. Nothing else about the run changes: the library stays exactly as it was.
+    onReadFailed: (() -> Unit)? = null,
 ): List<MediaItem> {
     val allItems = mutableListOf<MediaItem>()
     val allItemsMutex = Mutex()
@@ -2569,10 +2572,16 @@ internal suspend fun runScan(
 
     val jellyfinItems = if (libraryJellyfinId != null) scanner.fetchItemsForLibrary(libraryJellyfinId) else scanner.fetchItems()
     if (jellyfinItems == null) {
+        // DEB-5709 (FR-2) — a full scan that could not read Jellyfin changes no flag, says so, and is a failed run, not a clean run of zero items.
+        val readFailed = libraryJellyfinId == null
+        if (readFailed) {
+            Logger.error(dev.jellystructure.media.JELLYFIN_READ_FAILED_SENTENCE, "scan")
+            onReadFailed?.invoke()
+        }
         if (signalCompletion) {
             scanTracker.complete()
             broadcaster.broadcast(JobEvent.Started(jobId, 0))
-            broadcaster.broadcast(JobEvent.Finished(jobId, 0, 0))
+            broadcaster.broadcast(JobEvent.Finished(jobId, 0, if (readFailed) 1 else 0))
         }
         return emptyList()
     }
@@ -2718,7 +2727,11 @@ internal suspend fun runScan(
     // can't distinguish a removal from an item that lives in another library).
     if (libraryJellyfinId == null) {
         val presentJfIds = jellyfinItems.mapNotNull { it.id }.toSet()
-        val newlyMissing = store.flagMissingFromSource(presentJfIds, nowEpochSec())
+        // DEB-5709 (FR-3, FR-4) — behind the more-than-half floor; a held-back scan keeps the hold for the Library page to show.
+        val reconciled = store.reconcileWithSource(presentJfIds, nowEpochSec())
+        val newlyMissing = reconciled.newlyMissing
+        dev.jellystructure.media.LibraryHold.set(reconciled.heldBack)
+        reconciled.heldBack?.let { Logger.error(dev.jellystructure.media.heldBackSentence(it.gone, it.held), "scan") }
         for (m in newlyMissing) {
             Logger.warn("Scan: '${m.title}' is no longer in Jellyfin — kept and flagged for triage (the scanner never deletes)", "scan")
         }

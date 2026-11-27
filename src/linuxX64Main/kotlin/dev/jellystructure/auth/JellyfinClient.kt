@@ -616,15 +616,22 @@ class JellyfinClient(
             .bodyOrNull<List<JellyfinLibrary>>("getLibraries").orEmpty()
     }.getOrDefault(emptyList())
 
-    suspend fun getItems(baseUrl: String, token: String): List<JellyfinItem> = runCatching {
+    /**
+     * DEB-5709 (FR-1) — every film, series and music video Jellyfin lists, or `null` when the read failed: a non-2xx answer, a request
+     * that threw (timeout, refused connection, TLS) or a body that does not parse. `null` is a failed read, never "no titles": the scan
+     * flags what Jellyfin no longer lists, and an empty answer from a Jellyfin that was restarting would read as every title gone.
+     * A successful read that lists nothing is still an empty list. Cancellation is rethrown.
+     */
+    suspend fun getItems(baseUrl: String, token: String): List<JellyfinItem>? = runCatching {
         val url = baseUrl.trimEnd('/') +
             "/Items?IncludeItemTypes=Movie,Series,MusicVideo&Recursive=true&Fields=Path,ProviderIds,ProductionYear,LockData,LockedFields,Tags,DateCreated,DateLastSaved,SortName"
         httpGet(url) { jellyfinAuth(token) }
-            .bodyOrNull<JellyfinItemsResponse>("getItems")?.items.orEmpty()
-            .filter { it.type == "Movie" || it.type == "Series" || it.type == "MusicVideo" }
+            .bodyOrNull<JellyfinItemsResponse>("getItems")?.items
+            ?.filter { it.type == "Movie" || it.type == "Series" || it.type == "MusicVideo" }
     }.let { result ->
+        result.exceptionOrNull()?.let { if (it is CancellationException) throw it }
         if (result.isFailure) Logger.warn("Jellyfin getItems failed: ${result.exceptionOrNull()?.message}")
-        result.getOrDefault(emptyList())
+        result.getOrNull()
     }
 
     /**

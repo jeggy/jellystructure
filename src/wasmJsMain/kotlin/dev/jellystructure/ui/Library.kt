@@ -211,6 +211,8 @@ fun renderLibrary(container: Element, scope: CoroutineScope, query: Map<String, 
         </div>
         <p class="page-sub">Everything Jellystructure manages. A red corner means at least one untagged track; an orange one means a mixed-language series. Click any title to open its detail page.</p>
 
+        <div id="lib-held-back"></div>
+
         <div id="scan-banner" style="display:none;margin-bottom:14px"></div>
 
         <div class="row center" style="margin-bottom:6px;gap:8px;flex-wrap:wrap;">
@@ -241,6 +243,7 @@ fun renderLibrary(container: Element, scope: CoroutineScope, query: Map<String, 
     syncFilterUiToState(scope)
     attachLibraryListeners(scope)
     wireLibraryWorkbench(scope)
+    scope.launch { refreshHeldBackNote(scope) }
     // Bug fix: one delegated listener on the grid instead of one addEventListener per card — card
     // count grows with the library (and with how much of it has been scrolled through), so a
     // per-card listener was unbounded growth for no benefit; #poster-grid itself is recreated fresh
@@ -281,6 +284,32 @@ fun renderLibrary(container: Element, scope: CoroutineScope, query: Map<String, 
             loadMore(scope, reset = true)
         }
         initialLoad.done = true
+    }
+}
+
+/**
+ * DEB-5709 (FR-4) — the one line a held-back scan leaves at the top of the Library, whatever the filter: Jellyfin stopped listing most of
+ * the library, so nothing was flagged and viewers still see it. In the Live TV lineup banner's markup, so it needs no CSS of its own.
+ * It shows what `/api/triage/count` says and nothing of its own: the button asks the server, then the page reads the count again.
+ */
+internal fun heldBackNoteHtml(h: dev.jellystructure.api.HeldBack, error: String? = null): String = """
+    <div class="note" id="lib-held-back-note" style="margin-bottom:14px;display:flex;gap:12px;align-items:center;background:var(--warn-soft);border-color:rgba(245,181,66,.4)">
+      <span class="badge warn" style="flex:none">Held back</span>
+      <div class="tiny" style="flex:1;line-height:1.5">Jellyfin stopped listing <b>${h.gone}</b> of <b>${h.held}</b> titles ${dev.jellystructure.formatRelativeAgo(h.at.toString())}. Viewers still see them. If they really were removed, flag them missing.${if (error != null) """<div id="lib-held-back-error" style="margin-top:4px">${error.esc()}</div>""" else ""}</div>
+      <button id="lib-held-back-flag" class="btn sm">Flag them missing</button>
+    </div>
+""".trimIndent()
+
+private suspend fun refreshHeldBackNote(scope: CoroutineScope, error: String? = null) {
+    val held = MediaApi.getTriageCount()?.heldBack
+    val slot = document.getElementById("lib-held-back") as? HTMLElement ?: return
+    slot.innerHTML = if (held == null) "" else heldBackNoteHtml(held, error)
+    (document.getElementById("lib-held-back-flag") as? HTMLButtonElement)?.addEventListener("click") {
+        scope.launch {
+            val failure = MediaApi.flagHeldBackMissing()
+            refreshHeldBackNote(scope, failure)
+            if (failure == null) loadMore(scope, reset = true)
+        }
     }
 }
 
