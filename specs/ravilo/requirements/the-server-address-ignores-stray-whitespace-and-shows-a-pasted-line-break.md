@@ -100,3 +100,11 @@ screen. A design round draws them on phone, TV and desktop before they are built
   and a U+200B in the middle.
 - On a phone: paste an address with a trailing space and connect. Then paste the two-line example and check that the
   warning, the marks and the fix button appear, and that pressing the button lets the viewer connect.
+
+## Amendment 2026-11-27 (DEB-5687/DEB-5850)
+
+"No host-format checking beyond whitespace" gains one exception: after FR-1..FR-3's clean-up, a pasted
+`https://<host>[:port]/join` invite link (with or without a query) gives `https://<host>[:port]`. Only `https`, only
+that path, and a query never supplies a host. Everything else is as above. See FR-4 of
+[`an-invite-link-sets-up-a-new-viewers-app.md`](an-invite-link-sets-up-a-new-viewers-app.md). That spec's setup-screen
+states are drawn in the same design round as FR-4 and FR-5 here.

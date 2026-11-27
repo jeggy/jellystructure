@@ -3,10 +3,10 @@
 > Written 2026-10-02 from an owner request: *"fix all of this, so we only get good and correct suggestions on our
 > dashboard."* Every Jellyfin and host row on the live Dashboard was checked against the server it describes.
 
-## Status
+## Scope
 
-`✓ Built` 2026-10-02, not deployed (see Build notes). Written 2026-10-02 (dev-authored), against `main` `1fe3a178`.
-Number verified free (admin specs top at 296). Not dev-reviewed.
+Written 2026-10-02 (dev-authored), against `main` `1fe3a178`. FR-297-3's trade-off sentence is amended 2026-11-27
+(DEB-5849, at the end).
 
 **Amends** phase 212 FR-212-4 rows (a), (b), (c), (e); phase 242 FR-242-2; phase 244 FR-244-1, FR-244-4 and
 FR-244-8; phase 246 FR-246-1's cost sentence and FR-246-12; phase 285's grouping of advisor rows. Builds on 296
@@ -159,3 +159,10 @@ minutes after that.
 - the pending restart as *Moonbase 2.3.0.0*;
 - chapter, trickplay and leftover-flag rows as information;
 - no internet-providers row and no LUFS row (296).
+
+## Amendment 2026-11-27 (DEB-5687/DEB-5849) — the per-library trickplay row names Ravilo
+
+FR-297-3's "Ravilo never shows previews" is replaced: Ravilo shows them while scrubbing
+([`preview-pictures-while-scrubbing.md`](../ravilo/requirements/preview-pictures-while-scrubbing.md) FR-8), so the
+trade-off of turning a library's extraction off is that Jellyfin's own apps and Ravilo both lose the picture, and Ravilo
+shows the time only. The row stays `info`; its cost and decode sentences are unchanged.

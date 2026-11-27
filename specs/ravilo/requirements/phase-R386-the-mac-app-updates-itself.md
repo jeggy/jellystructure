@@ -536,3 +536,12 @@ without a time when there is no earlier decision.
 
 **This pays off one release after it ships.** An installed Mac keeps the old reading until it has updated to the build
 that carries this.
+
+## Amendment (2026-11-27): Linux About gains a quiet update line (DEB-5687/DEB-5851)
+
+FR-R386-6 and *Out of scope* said Flathub updates the Linux Flatpak, so About there had no update block. R334
+withdrew Flathub, and nothing updates the `.flatpak`. [`an-old-app-quietly-says-an-update-exists.md`](an-old-app-quietly-says-an-update-exists.md)
+FR-7 adds one line to the Linux About, between Version and Server: *Ravilo {version} is available*, a link to the
+releases page, and the nav's existing dot. It is not the Software update block, which stays Mac-only (state 10 on
+Linux is otherwise unchanged). The out-of-scope line *The Linux Flatpak (Flathub updates it)* no longer holds. The
+Android APK side-load gets a notice from the same spec (FR-5, FR-6), not an updater. Nothing on the Mac changes.

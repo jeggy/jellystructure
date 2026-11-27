@@ -830,3 +830,9 @@ replaced by one that never fires, which is what a hidden page has.
 
 **Not proved here, still QA's:** a real hidden tab's timer throttling, acceptance 2 (10 minutes), 6 (the picture on return),
 7 (a muted film), 8 (Safari), 9 (Live TV), 10 (the remote) and 11 on a phone.
+
+## Amendment 2026-11-27 (DEB-5687/DEB-5849) — the web shows a preview picture while the bar is dragged
+
+The non-goal *Thumbnail scrub previews* is withdrawn. Dragging the seek bar on the web shows the TV chrome's preview tile
+when the ticket carries `scrub_previews`, and the time alone when it does not. No hover preview. The rule is
+[`preview-pictures-while-scrubbing.md`](preview-pictures-while-scrubbing.md) FR-4 to FR-6.

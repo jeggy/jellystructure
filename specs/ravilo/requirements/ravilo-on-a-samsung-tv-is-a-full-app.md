@@ -2199,3 +2199,25 @@ FR-48's *Next Episode* countdown no longer always ends in the next episode. On w
 started with no key or phone command, and at least 90 minutes since the last one, the stream pauses and the card asks
 *Are you still watching?* (*Continue watching* / *Back*). Unanswered for 30 minutes, the player leaves as Back does.
 The rule is [`are-you-still-watching.md`](are-you-still-watching.md) FR-1, FR-2, FR-4 and FR-5.
+
+## Amendment 2026-11-27 (DEB-5687/DEB-5849) — a preview picture above the scrub time
+
+The sixth amendment of 2026-11-25 lists trickplay thumbnails under *What is not a gap*. They are now one: when the
+ticket carries `scrub_previews`, an arrow step on the seek bar shows the tile Android TV shows, above `#ov-scrub`, and
+the time chip is unchanged. No sheet is fetched before the first step. The rule is
+[`preview-pictures-while-scrubbing.md`](preview-pictures-while-scrubbing.md) FR-4, FR-5 and FR-7.
+
+## Amendment 2026-11-27 (DEB-5687/DEB-5852) — the shell takes Android TV's sizes, font and focus ring
+
+*Decisions taken here* said the colours, type and ring come from `design/ravilo/Ravilo TV.html` and `ravilo.css`. The
+shell copied those dp numbers as CSS px, so it drew at half Android TV's size. From now on every shell length is Android
+TV's dp at 2 px per dp on the 1920×1080 page, text is set in Sora and Space Grotesk packed in the widget, and the focus
+ring is Android TV's 6 px inside ring with glow, faded by opacity. The rule is
+[`ravilo-on-samsung-looks-like-ravilo-on-android-tv.md`](ravilo-on-samsung-looks-like-ravilo-on-android-tv.md) FR-1 to
+FR-6. What moves here:
+- **DEB-4889's skeleton sizes** (176×265 px blocks, 11 px corners, the 240×26 and 130×18 bars) follow `.home-tile` and
+  the new heading and caption sizes. The one opacity pulse stays.
+- **FR-42's** *about 40 tiles on screen* becomes about 20 at the new size. The 60-image cap is unchanged.
+- **FR-14 and FR-15** gain two packed font files (64 KB at most), outside the 1 MB bundle budget; cold start to Home
+  grows by no more than 100 ms. `config.xml` still gains nothing. FR-13's engine floor and FR-14's *opacity and
+  transform only* hold.

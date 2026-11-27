@@ -9,7 +9,7 @@ Task: DEB-5842
 ## Scope
 
 Touches the backend's viewer search (`tv/BrowseService.search`, `GET /api/tv/search`), the shared `SearchResults` DTO,
-and the Search page in `:ravilo-ui`.
+a new per-user `recent_search` table with its routes, and the Search page in `:ravilo-ui`.
 
 - **In:** Android TV, phone, Ravilo Web, desktop Mac and Linux. They all draw `SearchScreen.kt`.
 - **Out:** Ravilo Samsung (`ravilo-screen`) draws no people row and no recent searches. Its spec lists *people in
@@ -20,9 +20,12 @@ and the Search page in `:ravilo-ui`.
   (FR-RV-PPL1-1/2, `openPersonBrowse` with a `cast_crew` seed), R295's and R361's Back to the opened result, R350's
   D-pad order on Search, R365's *Clear*, and R337's desktop sidebar field. None of their promises change, so no
   amendment is written.
-- Recent searches stay on the device, per profile, like R212's Home snapshot. They are words the viewer typed, not
-  library data, so they do not cut across the constitution's *jellystructure decides* rule. Nothing is sent to the
-  server.
+- Recent searches are kept **on the account**: the backend stores them per Jellyfin user, so every device signed in to
+  that profile shows the same list (owner, 2026-11-27, below). This adds a table, three additive routes under
+  `/api/tv/search/recent` and the gone-user sweep's delete. No existing route or field changes.
+
+> Owner, on DEB-5687's card, 2026-11-27: recent searches are kept **on the account, on every device**, not on the
+> device. This replaces the device-only store the first draft of FR-6 described.
 
 ## Why
 
@@ -39,6 +42,13 @@ What the code does today (checked 2026-11-27 against `921645877`):
   `id` (the TMDB id as a string), `name`, `role` and `image_url` (TMDB w185, `tv/DetailService.kt:407-423`).
 - `SearchScreen.kt` waits 250 ms after a keystroke (`:146-147`), shows *Suggestions* when the field is empty, and has
   no recent searches.
+- The backend already keeps other per-viewer state the same way: one table keyed by the Jellyfin user id
+  (`ravilo_config`, `audiobook_progress`, `audiobook_bookmark`, `suggestion_viewer`), read through the device token's
+  `device.jellyfinUserId` (`AudiobooksTvRoutes.kt`, `RaviloConfigService.kt`), and deleted by the gone-user sweep
+  (`UserRemoval.sq`, `tv/GoneUserRemoval.kt`, DEB-2675). The newest migration at `921645877` is `102.sqm`; DEB-5840's
+  spec claims `103.sqm`.
+- The TV event socket cannot carry a new event safely: an installed app reads any unknown event as a config change
+  (`server/Server.kt:811`).
 - The DEB-5687 audit rates this *Standard* (every large streaming app has it) and S–M in size.
 
 ## Requirements
@@ -100,26 +110,50 @@ What the code does today (checked 2026-11-27 against `921645877`):
 - The row uses `CastCircle`'s draw-phase focus (R89) and adds no animation, no second bring-into-view (R108) and no
   image prewarm (R106).
 
-### FR-6 — Recent searches are kept on the device, per profile
+### FR-6 — Recent searches are kept on the account, per Jellyfin user
 
-- A query is recorded when the viewer opens a result from it (a title, a person, a genre) or presses the keyboard's
-  Search action while it has results. Partial queries the debounce sent are not recorded. Suggestions (the empty
-  field) are never recorded.
-- Up to 8 are kept, newest first, trimmed, and compared without case. Repeating a query moves it to the top.
-- They are stored per profile (the Jellyfin user id) in a new `RecentSearchStore` (`expect` in common, `actual` for
-  Android, desktop and Wasm, as `HomeSnapshotCache` does). They live apart from the session store.
-- Signing a profile out, removing it, or a `sign_in_removed` that ends it (DEB-5781) clears that profile's list. This
-  happens wherever `HomeSnapshotCache.clear(userId)` runs today. Another profile on the same TV never sees the list.
-- Nothing about recent searches goes to the server.
+- **What is recorded.** A query is recorded when the viewer opens a result from it (a title, a person, a genre) or
+  presses the keyboard's Search action while it has results. Partial queries the debounce sent are not recorded. A
+  search that found nothing is not recorded. Suggestions (the empty field) are never recorded. Opening a recent chip
+  (FR-7) records it again, which moves it to the top.
+- **Where.** The backend stores the list in a new table, created in the next free `.sqm` at build time (`104.sqm` if
+  DEB-5840's `103.sqm` has landed) and byte-identically in a new `RecentSearch.sq`:
+  `recent_search(user_id TEXT NOT NULL, query_key TEXT NOT NULL, query TEXT NOT NULL, searched_at INTEGER NOT NULL,
+  PRIMARY KEY (user_id, query_key))`. `user_id` is the Jellyfin user id, `query` is the text as typed after trimming,
+  `query_key` is that text lower-cased (Kotlin `lowercase()`), and `searched_at` is the server clock in ms.
+- **Cap.** At most 10 per user, newest first. A repeated query (the same `query_key`) is one row: its `query` and
+  `searched_at` are replaced, so it moves to the top. The write and the trim to 10 run in one transaction, so the
+  table never holds an 11th row for a user. A query that is empty, or longer than 100 characters after trimming, is
+  not stored.
+- **Whose.** The user is always `device.jellyfinUserId` from the request's device token, never a value in the request.
+  A profile only ever reads, writes or clears its own list. Another profile on the same TV, an admin, and the admin
+  frontend never see it: no admin route, dashboard or export reads the table.
+- **Signing out does not clear it.** The list belongs to the account, so signing a profile out of one device, removing
+  it from a TV's picker, or a `sign_in_removed` (DEB-5781) leaves it in place for the account's other devices. The
+  viewer clears it with *Clear* (FR-7).
+- **A gone user's list goes.** The gone-user sweep (DEB-2675) deletes the user's rows in its transaction:
+  `UserRemoval.sq` gains `recent_search` in `candidateIds` and a `deleteRecentSearchesFor`, and `GoneUserRemoval`
+  calls it beside `deleteBehaviourFor`.
+- The clients keep no copy on disk. A client holds the list it last fetched in memory for the signed-in profile and
+  drops it when the profile changes.
 
 ### FR-7 — The empty field shows recent searches first
 
+- Each time the Search page opens, the client fetches the list (`GET /api/tv/search/recent`, FR-10). The page draws at
+  once without it and adds the group when the answer arrives. The fetch does not delay the field, the keyboard or
+  *Suggestions*.
 - With the field empty and a non-empty list, the page draws **Recent searches** (`search.recent`) above *Suggestions*.
   Each entry is a chip in R325's genre-chip style. Opening one fills the field and searches at once, with no 250 ms wait.
-- A **Clear** button (`search.recent_clear`) at the end of the group empties the list for this profile.
+- A **Clear** button (`search.recent_clear`) at the end of the group calls `DELETE /api/tv/search/recent`. That empties
+  the account's list on the server, so every device of that profile shows none the next time its Search page opens.
+  The group disappears here when the server answers. If the call fails, the group stays and nothing else changes.
+- No socket event announces a change. An installed app reads an unknown event as a config change, so the other devices
+  see a change on their next Search open, not live.
 - On a TV, Down from the field goes to the recent chips, then to the suggestions. On the desktop, the sidebar field
   (R337) drives the same page.
-- With an empty list, the page is what it is today.
+- With an empty list, a failed fetch, or a server that does not have the route, the page is what it is today. An old
+  server answers an absent `/api` route with `200 text/html`, so the client treats any answer that does not decode as
+  an empty list and logs nothing about it. A failed record call is dropped silently.
 
 ### FR-8 — Search does not get slower
 
@@ -146,6 +180,28 @@ New keys in `i18n/en.json`, with Danish and Faroese in `da.json` and `fo.json`. 
 | `search.recent` | `Recent searches` |
 | `search.recent_clear` | `Clear` |
 
+### FR-10 — The recent-searches wire is three new routes
+
+All three sit under `/api/tv`, behind the same device-token check as `GET /api/tv/search`. They are additive. An
+installed app never calls them, and nothing it reads changes.
+
+- `GET /api/tv/search/recent` answers `RecentSearches(items: List<RecentSearch>)`, newest first, at most 10.
+- `POST /api/tv/search/recent` takes `{"query": "…"}` in the body and answers the updated `RecentSearches`. A query FR-6
+  does not store answers the unchanged list with 200, not an error.
+- `DELETE /api/tv/search/recent` deletes every row for the user and answers `RecentSearches(items = [])`. It is
+  idempotent.
+- `RecentSearch` has `query: String` and `@SerialName("searched_at") searchedAt: Long`. Both types live in
+  `shared/…/tv/Models.kt` beside `SearchResults`, with defaults on every field.
+- `TvApiClient` gains `recentSearches()`, `recordRecentSearch(query)` and `clearRecentSearches()`.
+
+### FR-11 — Recent searches stay private
+
+- The query travels in the POST body, never in a URL, so no access log or proxy log holds it.
+- No backend or client log line contains a recent query. Not the routes, not the store, not a failure.
+- Recent searches go nowhere else. Not to Jellyfin, not to the AI re-rank, recommendations, suggestions or behaviour
+  tables, not to QoE or support records.
+- Ravilo Samsung neither reads nor writes the list (Scope).
+
 ## Design
 
 No design round. The people row reuses `CastCircle` and the Genres group's heading. Recent searches reuse
@@ -157,7 +213,8 @@ group, that comes as a round on its own task.
 - Accent-blind matching (a name with an accent typed without it). Kotlin/Native has no normaliser, and `SearchQuery`
   does not fold accents for titles either.
 - Writers, creators and other crew; a biography on the person page; people the library does not hold (TMDB or Seerr).
-- Voice search, the Android TV system search, and recent searches that follow the viewer to another device.
+- Voice search and the Android TV system search.
+- Removing one recent search on its own (only *Clear* all), and a recent-searches change shown live on another device.
 - The People group and recent searches on Ravilo Samsung. That comes as an amendment in its own spec.
 - A failed search that looks like *0 results*, and results blinking while typing (DEB-5687 evidence, polish item 11 and performance item 7). They
   are another piece's.
@@ -170,9 +227,17 @@ group, that comes as a round on its own task.
 3. A viewer with no access to a library never sees a person whose only titles are in it.
 4. An APK built before this change, pointed at the new server, draws Search as before, and a full name brings that
    person's titles into the grid.
-5. Open a title from a search, clear the field: the query is the first chip under *Recent searches*. Switch profile: it
-   is not there. Sign that profile out and back in: the list is empty.
-6. `GET /api/tv/search?q=ab` answers `people: []`.
+5. On a TV, open a title from a search, clear the field: the query is the first chip under *Recent searches*. Open
+   Search on a phone signed in to the same profile: the same chip is first. Switch the TV to another profile: it is not
+   there.
+6. Sign that profile out of the TV and back in: the list is still there. Press *Clear* on the phone: the next Search
+   open on the TV shows no *Recent searches*.
+7. Twelve different recorded searches leave ten, newest first. Recording an old one again moves it to the top and
+   leaves ten.
+8. `GET /api/tv/search?q=ab` answers `people: []`.
+9. A build of this change pointed at a server from before it draws Search with no *Recent searches* group and no error.
+10. After the gone-user sweep removes a Jellyfin user, `recent_search` holds no row for them. No backend log line from
+    a test run contains a recorded query.
 
 ## Build order
 
@@ -191,11 +256,24 @@ group, that comes as a round on its own task.
    people → grid and back; Back leaves in one press), `JAVA_HOME=~/.jdks/jbr-21.0.11 ./gradlew
    :ravilo-ui:testDebugUnitTest --tests '*SearchFocusTest*' --console=plain`. About 80 lines. **Junior-ready**, after
    slice 3.
-5. **Recent searches store** (FR-6). `screens/RecentSearchStore.kt` (`expect`), its Android, desktop and Wasm `actual`s,
-   the record calls in `SearchStore`, and the clear beside each `HomeSnapshotCache.clear(userId)` (`SignedOut.kt`,
-   `SettingsScreen.kt`, `ProfilePickerScreen.kt`). Proof: a `RecentSearchesTest` on the pure list logic (cap, dedupe,
-   order, per profile) and a desktop `actual` round trip, `JAVA_HOME=~/.jdks/jbr-21.0.11 ./gradlew :ravilo-ui:desktopTest
-   --tests '*RecentSearches*' --console=plain`. About 150 lines.
-6. **Recent searches on the empty field** (FR-7). `SearchScreen.kt` and `SearchStore.runNow(query)` with no debounce.
+5. **Recent searches on the server** (FR-6, FR-10, FR-11 for the backend). The next free `.sqm` and `RecentSearch.sq`
+   with the identical `CREATE TABLE`, a `tv/RecentSearchStore.kt` (record with dedupe and trim to 10 in one
+   transaction, list, clear), the three routes in `server/routes/`, `RecentSearches` and `RecentSearch` in
+   `shared/…/tv/Models.kt`, and the gone-user delete in `UserRemoval.sq` and `GoneUserRemoval`. Add
+   `DROP TABLE IF EXISTS recent_search` before the `PRAGMA user_version` line in both migration-replay tests,
+   `music/MusicEditionsStoreTest.kt` and `autofetch/AutofetchStoreTest.kt` (grep `src/linuxX64Test` for
+   `user_version =` for any third), or `ci / unit` fails with `table already exists`. Proof: a new
+   `RecentSearchStoreTest` (cap 10, dedupe without case, newest first, over-long and empty not stored, user A never
+   reads or clears user B, clear is idempotent), a case in `GoneUserRemovalTest`, and the two replay tests:
+   `JAVA_HOME=~/.jdks/jbr-21.0.11 ./gradlew linuxX64Test --tests '*RecentSearchStoreTest*' --tests
+   '*GoneUserRemovalTest*' --tests '*AutofetchStoreTest*' --tests '*MusicEditionsStoreTest*' --console=plain`. About 200
+   lines. **Not junior-ready**: it adds a schema migration.
+6. **Recent searches in the client** (FR-6, FR-10 for the client). `TvApiClient.recentSearches()`,
+   `recordRecentSearch(query)` and `clearRecentSearches()`, the record calls in `SearchStore`, the in-memory list per
+   profile, and an undecodable or failed answer read as an empty list. Proof: a `RecentSearchesClientTest` against a
+   mock engine (decode, `200 text/html` read as empty, failure silent, the list dropped on a profile change),
+   `JAVA_HOME=~/.jdks/jbr-21.0.11 ./gradlew :ravilo-ui:desktopTest --tests '*RecentSearches*' --console=plain`. About
+   120 lines. **Junior-ready**, after slice 5.
+7. **Recent searches on the empty field** (FR-7). `SearchScreen.kt` and `SearchStore.runNow(query)` with no debounce.
    Proof: `SearchFocusTest` cases (chips drawn, OK searches at once, Clear empties, Down order), the slice 4 Gradle line.
-   About 120 lines. **Junior-ready**, after slice 5.
+   About 120 lines. **Junior-ready**, after slice 6.

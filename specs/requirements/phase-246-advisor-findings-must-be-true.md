@@ -4,11 +4,11 @@
 > household server: *"Before I'm going to apply them I would like to be sure that they actually are
 > proper good."* They were not all good. One would have made things worse.
 
-## Status
+## Scope
 
-`Planned` — written 2026-09-19 from a full audit of the advisor's live output against the household
-server (Jellyfin `12.1.0`, backend `v1.27`), not dev-reviewed, not built. Corrects and extends phase
-**212**. Carries the shared `AdvisorFinding` extension that phases **242** and **244** both need, per
+Written 2026-09-19 from a full audit of the advisor's live output against the household server
+(Jellyfin `12.1.0`, backend `v1.27`). Corrects and extends phase **212**. FR-246-12's trade-off
+sentence is amended 2026-11-27 (DEB-5849, at the end). Carries the shared `AdvisorFinding` extension that phases **242** and **244** both need, per
 244's dev review item 3 ("extend `AdvisorFinding` once, for both phases — whichever lands first does
 it").
 
@@ -341,3 +341,11 @@ FR-242-4.
    share a prefix with any managed library?** It suppresses, which is correct, but it means the
    coverage this FR adds is a property of how the paths happen to be laid out. Worth knowing before
    the copy promises anything about unmanaged libraries.
+
+## Amendment 2026-11-27 (DEB-5687/DEB-5849) — Ravilo now uses the preview pictures
+
+FR-246-12's sentence "Ravilo renders no trickplay thumbnail (`trickplayUrl = null`)" stops being true: Ravilo shows the
+media server's preview sheets while scrubbing on Android TV, desktop, web and Samsung
+([`preview-pictures-while-scrubbing.md`](../ravilo/requirements/preview-pictures-while-scrubbing.md) FR-8). The
+trickplay finding's trade-off names Ravilo viewers as a consumer: with extraction off for a library, they see the time
+only while scrubbing its titles. The loudness half of FR-246-12 is unchanged.

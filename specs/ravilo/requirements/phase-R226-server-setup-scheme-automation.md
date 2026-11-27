@@ -7,7 +7,10 @@
 > when no prefix like http:// or https:// is added, then we automatically add https:// infront of it. If
 // the user manually adds http:// when we will use that one instead of https."*
 
-**Status:** ✓ Built — see `STATUS.md`, which is authoritative. (Header as originally written: Planned) — spec only, not yet built.
+## Scope
+
+Touches only how `ServerSetupScreen` derives the URL it hands to `onUrlSaved`, on every Compose client. Follows R225.
+Its probe and placeholder non-goals are amended by DEB-5850 (below).
 
 ## 1. What's there today
 
@@ -76,3 +79,14 @@ Connect path, just without the scheme row above it to route around).
   input).
 - Compiles clean across `:ravilo-ui:compileKotlinWasmJs` and `:ravilo-ui:compileDebugKotlinAndroid` (the two
   targets that actually render this screen — TV, phone, and web all share it via `commonMain`).
+
+## Amendment 2026-11-27 (DEB-5687/DEB-5850)
+
+Two §3 non-goals end on Android TV, phone, macOS and Linux
+([`an-invite-link-sets-up-a-new-viewers-app.md`](an-invite-link-sets-up-a-new-viewers-app.md)):
+
+- **A reachability probe on Connect** (its FR-7): `GET <url>/api/health` before the address is saved; a failure keeps
+  the text and says `receiver.setup_not_found`. Ravilo Web keeps saving at once.
+- **The placeholder** `192.168.1.1:8097` becomes the key `setup.server_example`. The prompt's wording is DEB-5836's.
+
+The scheme inference above is unchanged.
