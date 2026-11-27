@@ -36,7 +36,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.jellystructure.ravilo.ui.focus.dpadFocusable
 import dev.jellystructure.ravilo.ui.seams.RemoteImage
+import dev.jellystructure.ravilo.ui.i18n.LocalLang
 import dev.jellystructure.ravilo.ui.i18n.str
+import dev.jellystructure.ravilo.ui.i18n.t
 import dev.jellystructure.ravilo.ui.theme.RaviloMotion
 import dev.jellystructure.ravilo.ui.downloads.DownloadedMark
 import dev.jellystructure.ravilo.ui.downloads.MarkSize
@@ -144,6 +146,8 @@ fun EpisodeCard(
 
             // Duration badge (top-end)
             if (episode.runtime > 0) {
+                val lang = LocalLang.current
+                val runtimeText = remember(episode.runtime, lang) { t("up.runtime_min", lang, mapOf("n" to episode.runtime.toString())) }
                 Box(
                     modifier = Modifier
                         .align(Alignment.TopEnd)
@@ -152,7 +156,7 @@ fun EpisodeCard(
                         .padding(horizontal = 7.dp, vertical = 3.dp),
                 ) {
                     Text(
-                        text = "${episode.runtime}m",
+                        text = runtimeText,
                         color = Color.White,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.SemiBold,

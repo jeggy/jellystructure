@@ -283,10 +283,11 @@ private fun MovieDetailLoaded(
                             logoModifier = Modifier.height(80.dp).widthIn(max = 360.dp),
                         )
                         // R307 (FR-R307-2) — no genre when R221's genre row below already says it.
-                        val meta = remember(detail.card.year, detail.runtime, detail.card.genre, detail.genres) {
+                        val runtimeText = if (detail.runtime > 0) str("up.runtime_min", mapOf("n" to detail.runtime.toString())) else null
+                        val meta = remember(detail.card.year, runtimeText, detail.card.genre, detail.genres) {
                             listOfNotNull(
                                 detail.card.year?.toString(),
-                                if (detail.runtime > 0) "${detail.runtime} min" else null,
+                                runtimeText,
                                 detail.card.genre.takeIf { detail.genres.isEmpty() },
                             ).joinToString(" · ")
                         }

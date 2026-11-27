@@ -197,6 +197,10 @@
   "fd.subs": "SUBTITLES",
   "fd.nodesc": "No description yet",
   "fd.min_left": "{n} min left",
+  "fd.season_one": "1 Season",
+  "fd.seasons": "{n} Seasons",
+  "fd.episode_one": "1 episode",
+  "fd.episodes": "{n} episodes",
   "slow_lead": {
     "text": "Slow to start on {device}.",
     "note": "R222 (Phase 185) — the \"slow to start\" note. Three rejected candidates recorded in the spec so they aren't re-proposed: \"may not play smoothly\" (predicts a stutter R216/177 already prevent), \"can't handle this file at full quality\" (implies a quality control exists), \"better on the Living room TV\" (household logistics, out of scope)."

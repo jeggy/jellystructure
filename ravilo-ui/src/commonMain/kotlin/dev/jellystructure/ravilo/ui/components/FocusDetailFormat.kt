@@ -1,7 +1,9 @@
 package dev.jellystructure.ravilo.ui.components
 
 import androidx.compose.runtime.Composable
+import dev.jellystructure.ravilo.ui.i18n.LocalLang
 import dev.jellystructure.ravilo.ui.i18n.str
+import dev.jellystructure.ravilo.ui.i18n.t
 import dev.jellystructure.shared.tv.FocusDetailFacts
 import dev.jellystructure.shared.tv.MediaCard
 import kotlin.math.max
@@ -16,17 +18,29 @@ import kotlin.math.round
  * the four strings the spec actually calls out (`fd.audio`/`fd.subs`/`fd.nodesc`/`fd.min_left`) are
  * real i18n keys.
  */
+@Composable
 internal fun focusDetailCountText(facts: FocusDetailFacts): String? {
+    val lang = LocalLang.current
+    return focusDetailCountText(facts) { key, vars -> t(key, lang, vars) }
+}
+
+/** The same line against any translator, so a test can pass a fake (DEB-5836, FR-5). */
+internal fun focusDetailCountText(facts: FocusDetailFacts, tr: (key: String, vars: Map<String, String>) -> String): String? {
     val seasons = facts.seasons
     val episodes = facts.episodes
     return when {
         seasons != null && seasons > 0 -> {
-            val base = if (seasons == 1) "1 Season" else "$seasons Seasons"
-            if (episodes != null && episodes > 0) "$base · $episodes episodes" else base
+            val base = if (seasons == 1) tr("fd.season_one", emptyMap()) else tr("fd.seasons", mapOf("n" to seasons.toString()))
+            if (episodes != null && episodes > 0) {
+                val eps = if (episodes == 1) tr("fd.episode_one", emptyMap()) else tr("fd.episodes", mapOf("n" to episodes.toString()))
+                "$base · $eps"
+            } else {
+                base
+            }
         }
         else -> {
             val runtime = facts.runtimeMinutes
-            if (runtime != null && runtime > 0) "$runtime min" else null
+            if (runtime != null && runtime > 0) tr("up.runtime_min", mapOf("n" to runtime.toString())) else null
         }
     }
 }
