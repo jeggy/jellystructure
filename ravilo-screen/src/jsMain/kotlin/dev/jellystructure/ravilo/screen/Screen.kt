@@ -87,7 +87,7 @@ private const val LONG_AWAY_MS = 5 * 60_000L
 private const val NEXT_UP_SECS = 10
 
 /** DEB-5630 (FR-48) — the card at the credits, by its primary action (Android TV's `CreditsCardMode`). */
-private enum class CreditsMode { STINGER, NEXT, SKIP }
+private enum class CreditsMode { STINGER, NEXT, SKIP, ASK }   // DEB-5843 (FR-5) — ASK: Are you still watching?
 /** DEB-5396 (FR-36) — with no trusted credits marker the next episode's encode starts this long before the end (R381's own lead). */
 private const val NEXT_WARM_LEAD_MS = 60_000L
 /** DEB-5652 (FR-54) — one rail card and its gap (400 px + 32 px). */
@@ -189,6 +189,11 @@ private class Screen(private val serverUrl: String) {
     private var skipIntroDone = false
     /** DEB-5630 (FR-48) — the card at the credits (it is [nextUpShown]'s card): which primary action it offers, and whether Watch credits has the focus. */
     private var creditsMode = CreditsMode.NEXT
+    // DEB-5843 (FR-1, FR-5) — "Are you still watching?": the shared rule on this TV-class player's clock. A start that is not
+    // the countdown's own advance is a hand-start (the TV's Play, a rail pick, a phone's push or hand-over) and so is input.
+    private val stillWatching = dev.jellystructure.shared.tv.StillWatching(tvClass = true)
+    private var countdownAdvanceTo: String? = null
+    private var askedAt = 0L
     private var cardOnStay = false
     /** Skip to scene was taken: the scene's card does not rise again for this item. */
     private var stingerSkipped = false
@@ -512,6 +517,8 @@ private class Screen(private val serverUrl: String) {
     private suspend fun beginPlay(env: PlayItemEnvelope, fromTv: Boolean, startOver: Boolean = false, series: String? = null) {
         // FR-36 — the warmed next episode starting is the adoption the warm was for; a start of anything else drops it.
         if (nextWarm.item == env.jellyfinId) nextWarm.release() else nextWarm.cancel()
+        // DEB-5843 (FR-1) — a start the countdown did not make is a hand-start: Play, a rail pick, a push or a hand-over.
+        if (countdownAdvanceTo == env.jellyfinId) countdownAdvanceTo = null else stillWatching.onInput(nowMs())
         // FR-10 — a phone's push takes over whatever page the viewer is on (the shell keeps it mounted underneath).
         profileUi.hide()
         startedFromTv = fromTv
@@ -800,6 +807,7 @@ private class Screen(private val serverUrl: String) {
     }
 
     private fun onPlaystateCommand(env: PlaystateCommandEnvelope) {
+        stillWatching.onInput(nowMs())   // DEB-5843 (FR-2) — a person sent it
         if (!loaded) return
         // Bug fix — RemoteRoutes.kt sends this quartet capitalized ("Stop"/"Pause"/"Unpause", Phase 111's
         // original wire shape); every other consumer normalizes it (PlayerScreen.kt's identical `when`
@@ -809,7 +817,7 @@ private class Screen(private val serverUrl: String) {
         when (env.command.lowercase()) {
             "stop" -> { stopAndIdle(); return }
             "pause" -> backend.pause()
-            "unpause" -> backend.play()
+            "unpause" -> if (nextUpShown && creditsMode == CreditsMode.ASK) { playNext(); return } else backend.play()   // DEB-5843 (FR-5) — play is Continue watching
             "seek" -> env.seekPositionMs?.let { seekTo(it); showChrome() }
         }
         sendStatus()
@@ -818,6 +826,7 @@ private class Screen(private val serverUrl: String) {
     /** Phase 236 (FR-236-3) — everything past stop/pause/unpause/home. Commands this build doesn't
      *  recognise are ignored, per FR-236-11 — the caller sees the truth on this device's next status. */
     private fun onPlayerCommand(env: PlayerCommandEnvelope) {
+        stillWatching.onInput(nowMs())   // DEB-5843 (FR-2)
         if (!loaded) return
         val args = env.args
         when (env.command) {
@@ -948,9 +957,32 @@ private class Screen(private val serverUrl: String) {
             if (nextUpShown && creditsMode == CreditsMode.NEXT) {
                 val left = ((nextUpDeadline - nowMs()) / 1000).toInt().coerceAtLeast(0)
                 if (autoplay()) el("nu-c").textContent = ScreenLanguage.t("receiver.starts_in", left)
-                if (autoplay() && nowMs() >= nextUpDeadline) playNext()
+                if (autoplay() && nowMs() >= nextUpDeadline) advanceOrAsk()
             }
+            // DEB-5843 (FR-4) — an ask nobody answered for 30 minutes goes where Back goes.
+            if (nextUpShown && creditsMode == CreditsMode.ASK &&
+                dev.jellystructure.shared.tv.STILL_WATCHING_CLOSE_MS <= nowMs() - askedAt) leaveFromAsk()
         }
+    }
+
+    /** DEB-5843 (FR-1, FR-5) — the countdown ran out: the next episode starts by itself, or the shared rule says ask first. */
+    private fun advanceOrAsk() {
+        if (stillWatching.decide(nowMs())) askStillWatching() else { countdownAdvanceTo = nextId; playNext() }
+    }
+
+    /** FR-5 — pause the stream (an item that already ended under the countdown has nothing to pause), keep the card, say the ask. */
+    private fun askStillWatching() {
+        if (!finishedUnderNextUp) backend.pause()
+        askedAt = nowMs()
+        showNextUp(CreditsMode.ASK)
+    }
+
+    /** FR-5 / FR-4 — Back, *Back*, the phone's cancel, or 30 minutes unanswered: what Back does on this card, which is to leave. */
+    private fun leaveFromAsk() {
+        stillWatching.onInput(nowMs())
+        nextUpCancelled = true
+        // R384 — an item that ended under the countdown reads 0 from the player: it is stopped at its length.
+        if (finishedUnderNextUp) { finishedUnderNextUp = false; hideNextUp(); endHere() } else skipCredits()
     }
 
     private fun skipIntroMode(): SkipMode = config?.skipIntro ?: SkipMode.PROMPT
@@ -1053,6 +1085,12 @@ private class Screen(private val serverUrl: String) {
                 el("nu-c").textContent = ""
                 el("nu-p").textContent = ScreenLanguage.t("player.skip_to_scene")
             }
+            CreditsMode.ASK -> {
+                el("nu-k").textContent = ScreenLanguage.t("player.still_watching")
+                el("nu-t").textContent = listOfNotNull(nextKicker, nextTitle).joinToString(" · ")
+                el("nu-c").textContent = ""
+                el("nu-p").textContent = ScreenLanguage.t("player.continue_watching")
+            }
             CreditsMode.SKIP -> {
                 el("nu-k").textContent = ScreenLanguage.t("player.credits_kicker")
                 el("nu-t").textContent = ScreenLanguage.t(if (episode) "player.end_of_episode" else "player.end_of_movie")
@@ -1060,7 +1098,7 @@ private class Screen(private val serverUrl: String) {
                 el("nu-p").textContent = ScreenLanguage.t("player.skip_credits")
             }
         }
-        el("nu-w").textContent = ScreenLanguage.t("player.watch_credits")
+        el("nu-w").textContent = ScreenLanguage.t(if (mode == CreditsMode.ASK) "player.back" else "player.watch_credits")
         renderCardFocus()
         el("nextup").classList.add("on")
         sendStatus()
@@ -1072,6 +1110,7 @@ private class Screen(private val serverUrl: String) {
 
     /** FR-48 — the card's keys: Left/Right between the two, OK acts, Back is *Watch credits*. False for a key the card does not use. */
     private fun onCardKey(e: KeyboardEvent): Boolean = when {
+        creditsMode == CreditsMode.ASK && (isKey(e, "MediaPlayPause", "XF86PlayBack", 10252) || isKey(e, "MediaPlay", "XF86AudioPlay", 415)) -> { playNext(); true }   // DEB-5843 (FR-5) — the play key continues
         e.key == "Enter" -> { if (cardOnStay) cancelNextUp() else creditsPrimary(); true }
         isBack(e) -> { cancelNextUp(); true }
         e.key == "ArrowLeft" || e.key == "ArrowRight" -> { cardOnStay = e.key == "ArrowRight"; renderCardFocus(); true }
@@ -1082,6 +1121,7 @@ private class Screen(private val serverUrl: String) {
         CreditsMode.NEXT -> playNext()
         CreditsMode.STINGER -> skipToScene()
         CreditsMode.SKIP -> skipCredits()
+        CreditsMode.ASK -> playNext()   // DEB-5843 (FR-5) — Continue watching
     }
 
     /** FR-48 — to the scene (R182: its marker, else 2 s before the end of the file, past the long credits roll); the card does not rise again. */
@@ -1105,6 +1145,7 @@ private class Screen(private val serverUrl: String) {
     /** Back on the card, or the phone's *cancel*: this title plays to its end and the set goes idle. R384 — after the
      *  end (the countdown ran on over the last frame) that is now. */
     private fun cancelNextUp() {
+        if (nextUpShown && creditsMode == CreditsMode.ASK) { leaveFromAsk(); return }   // DEB-5843 (FR-5)
         nextUpCancelled = true; hideNextUp()
         nextWarm.cancel()   // FR-36 — the card's cancel: this title plays to its end and nothing follows it
         if (finishedUnderNextUp) { finishedUnderNextUp = false; endHere() }
@@ -1443,6 +1484,7 @@ private class Screen(private val serverUrl: String) {
         // the end used to play the next episode at once, cutting a countdown that started 1 s before it to one tick.
         if (nextId != null && !nextUpCancelled && autoplay()) {
             finishedUnderNextUp = true
+            if (nextUpShown && creditsMode == CreditsMode.ASK) return   // DEB-5843 (FR-5) — the ask waits; the end does not restart the countdown
             if (!nextUpShown || creditsMode != CreditsMode.NEXT) showNextUp(CreditsMode.NEXT)   // a stinger's or a film's card has nothing left to offer: the real end is R230's countdown
             return
         }
@@ -1488,6 +1530,7 @@ private class Screen(private val serverUrl: String) {
     // ── remote control: Tizen's registered keys arrive as ordinary keydown events (same names as
     // TizenKeys.REQUIRED) alongside a normal D-pad's KeyboardEvent.key vocabulary. ──
     private fun onKey(e: KeyboardEvent) {
+        stillWatching.onInput(nowMs())   // DEB-5843 (FR-2) — one write; the key is not consumed
         // DEB-4661 (FR-9) — Back on a start that has not begun: loading, busy, or refused.
         if (!loaded && shell.isPlayer() && isBack(e)) { cancelStart(); return }
         if (!loaded && signIn.handleKey(e)) return

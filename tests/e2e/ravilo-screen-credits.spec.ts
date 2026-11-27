@@ -25,7 +25,7 @@ const episode = (segments: object, next = true) => ({
 });
 
 /** The shell is booted with a signed-in viewer and a fake events socket the test pushes the phone's play into. */
-async function boot(page: Page, config: Config): Promise<Seen> {
+async function boot(page: Page, config: Config, opts: { chain?: (id: string) => object; fakeClock?: boolean } = {}): Promise<Seen> {
   const seen: Seen = { stops: [], remotePlays: [], push: (frame) => page.evaluate((f) => (window as any).__pushEvent(f), frame) };
   await page.addInitScript(fakeAvPlayInitScript);
   await page.addInitScript(() => {
@@ -62,12 +62,13 @@ async function boot(page: Page, config: Config): Promise<Seen> {
     if (path === "/api/remote/play") {
       seen.remotePlays.push(body);
       await route.fulfill({ status: 202 });
-      await seen.push({ type: "play_item", jellyfin_id: body.jellyfin_item_id, kind: "episode", title: "Second Reel" });
+      await seen.push(opts.chain ? opts.chain(body.jellyfin_item_id) : { type: "play_item", jellyfin_id: body.jellyfin_item_id, kind: "episode", title: "Second Reel" });
       return;
     }
     if (path.startsWith("/api/tv/")) return route.fulfill({ status: 204 });
     return route.fulfill({ status: 404, contentType: "application/json", body: "{}" });
   });
+  if (opts.fakeClock) await page.clock.install();   // DEB-5843 — time still flows; fastForward jumps it
   await page.goto(SCREEN_URL);
   await expect(page.locator("#shell-body .home-feed")).toBeVisible();
   await expect.poll(() => page.evaluate(() => (window as any).__socketCount())).toBeGreaterThan(0);
@@ -281,5 +282,95 @@ test.describe("DEB-5630 FR-48 — the card at the credits", () => {
     await expect(page.locator("#shell")).toHaveClass(/\bon\b/);
     await expect(card(page)).not.toHaveClass(/\bon\b/);
     expect(seen.remotePlays).toEqual([]);
+  });
+});
+
+// DEB-5843 (FR-1, FR-4, FR-5) — "Are you still watching?" on a Samsung. A TV needs three unattended auto-advances AND 90 minutes since the
+// last input; the clock is Playwright's, so the 90 and the 30 minutes are jumped, not waited for.
+test.describe("DEB-5843 FR-5 — Are you still watching?", () => {
+  const MIN = 60_000;
+  // A series of episodes, each pointing at the next: the mock's /api/remote/play pushes whatever the chain says.
+  const chainEp = (id: string) => {
+    const n = Number(id.replace("ep-", ""));
+    return {
+      type: "play_item", jellyfin_id: id, kind: "episode", title: `Reel ${n}`, kicker: `S1 · E${n}`, series_name: "Paper Series",
+      segments: { credits_start_ms: 80_000 }, next_id: `ep-${n + 1}`, next_title: `Reel ${n + 1}`, next_kicker: `S1 · E${n + 1}`,
+    };
+  };
+  const ep1 = chainEp("ep-1");
+
+  /** Start ep-1, let the card's countdown start episodes 2 and 3 by themselves, and stand at the card of episode 3. */
+  async function toThirdCard(page: Page, minutesBeforeLast: number) {
+    const seen = await boot(page, { autoplay_next: true }, { chain: chainEp, fakeClock: true });
+    await play(page, seen, ep1);
+    for (const n of [2, 3]) {
+      await jump(page, 81_000);
+      await expect(card(page)).toHaveClass(/\bon\b/);
+      await page.clock.runFor(11_000);   // NEXT_UP_SECS = 10, then the 250 ms tick
+      await expect.poll(() => seen.remotePlays.length).toBe(n - 1);
+      await waitForAvplayCall(page, "play");
+    }
+    await jump(page, 81_000);
+    await expect(card(page)).toHaveClass(/\bon\b/);
+    await page.clock.fastForward(minutesBeforeLast * MIN);
+    return seen;
+  }
+
+  test("episodes 2 and 3 start by themselves and, 90 minutes on, the 4th asks: paused, nothing advances", async ({ page }) => {
+    test.setTimeout(90_000);
+    const seen = await toThirdCard(page, 91);
+    await page.clock.runFor(11_000);
+    await expect(page.locator("#nu-k")).toHaveText("Are you still watching?");
+    await expect(page.locator("#nu-p")).toHaveText("Continue watching");
+    await expect(page.locator("#nu-w")).toHaveText("Back");
+    await expect(page.locator("#nu-c")).toHaveText("");
+    await expect(page.locator("#nu-p")).toHaveClass(/\bfoc\b/);
+    await expect(card(page)).toHaveClass(/\bon\b/);
+    expect((await avplayCalls(page)).some((c) => c[0] === "pause"), "the stream is paused").toBe(true);
+    expect(seen.remotePlays.length, "the 4th episode did not start").toBe(2);
+    await page.clock.runFor(60_000);
+    expect(seen.remotePlays.length, "and it waits").toBe(2);
+  });
+
+  test("three short episodes do not ask on a TV: the 4th starts by itself", async ({ page }) => {
+    test.setTimeout(90_000);
+    const seen = await toThirdCard(page, 0);
+    await page.clock.runFor(11_000);
+    await expect.poll(() => seen.remotePlays.length).toBe(3);
+    await expect(page.locator("#nu-k")).not.toHaveText("Are you still watching?");
+  });
+
+  test("Continue watching starts the next episode at once", async ({ page }) => {
+    test.setTimeout(90_000);
+    const seen = await toThirdCard(page, 91);
+    await page.clock.runFor(11_000);
+    await expect(page.locator("#nu-k")).toHaveText("Are you still watching?");
+    await page.keyboard.press("Enter");
+    await expect.poll(() => seen.remotePlays.length).toBe(3);
+    expect(seen.remotePlays[2]).toMatchObject({ jellyfin_item_id: "ep-4" });
+  });
+
+  test("Back leaves: the item is stopped and the set returns to the shell", async ({ page }) => {
+    test.setTimeout(90_000);
+    const seen = await toThirdCard(page, 91);
+    await page.clock.runFor(11_000);
+    await expect(page.locator("#nu-k")).toHaveText("Are you still watching?");
+    await page.keyboard.press("Escape");
+    await expect.poll(() => seen.stops.length).toBeGreaterThan(0);
+    await expect(page.locator("#shell")).toHaveClass(/\bon\b/);
+    await expect(card(page)).not.toHaveClass(/\bon\b/);
+    expect(seen.remotePlays.length, "Back did not advance").toBe(2);
+  });
+
+  test("an ask left alone for 30 minutes closes the player", async ({ page }) => {
+    test.setTimeout(90_000);
+    const seen = await toThirdCard(page, 91);
+    await page.clock.runFor(11_000);
+    await expect(page.locator("#nu-k")).toHaveText("Are you still watching?");
+    await page.clock.fastForward(31 * MIN);
+    await page.clock.runFor(1_000);
+    await expect.poll(() => seen.stops.length).toBeGreaterThan(0);
+    await expect(page.locator("#shell")).toHaveClass(/\bon\b/);
+    expect(seen.remotePlays.length).toBe(2);
   });
 });
