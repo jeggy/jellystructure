@@ -37,11 +37,23 @@ object TimelineHolesAdvice {
     /** *S01: 5 episodes, 2 to 9 minutes missing each* — one season's line, from its files' missing times. */
     fun seasonLine(label: String, missingMs: List<Long>): String {
         val n = missingMs.size
-        val lo = minutes(missingMs.min(), up = false)
-        val hi = minutes(missingMs.max(), up = true)
-        val span = if (lo == hi) "about $lo minute${if (lo == 1L) "" else "s"}" else "$lo to $hi minutes"
+        val loMs = missingMs.min()
+        val hiMs = missingMs.max()
+        val loSec = loMs < 60_000
+        val hiSec = hiMs < 60_000
+        val lo = if (loSec) wholeSeconds(loMs) else minutes(loMs, up = false)
+        val hi = if (hiSec) wholeSeconds(hiMs) else minutes(hiMs, up = true)
+        val span = when {
+            loSec && hiSec -> if (lo == hi) "$lo s" else "$lo to $hi s"
+            loSec -> "$lo s to $hi minutes"
+            lo == hi -> "about $lo minute${if (lo == 1L) "" else "s"}"
+            else -> "$lo to $hi minutes"
+        }
         return "$label: $n ${if (n == 1) "episode" else "episodes"}, $span missing${if (n == 1) "" else " each"}"
     }
+
+    /** Whole seconds of a file missing under a minute: rounded, at least 1, never 60. */
+    private fun wholeSeconds(ms: Long): Long = ((ms + 500) / 1000).coerceIn(1L, 59L)
 
     private fun minutes(ms: Long, up: Boolean): Long {
         val m = if (up) (ms + 59_999) / 60_000 else ms / 60_000

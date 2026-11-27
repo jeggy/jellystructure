@@ -292,7 +292,12 @@ class TimelineHolesTest {
     @Test
     fun `a season reads as the spec's line`() {
         assertEquals("S01: 5 episodes, 2 to 9 minutes missing each", TimelineHolesAdvice.seasonLine("S01", listOf(120_000, 300_000, 400_000, 500_000, 513_000)))
-        assertEquals("S02: 1 episode, about 1 minute missing", TimelineHolesAdvice.seasonLine("S02", listOf(58_000)))
+        assertEquals("S02: 1 episode, 58 s missing", TimelineHolesAdvice.seasonLine("S02", listOf(58_000)))
+        assertEquals("S01: 1 episode, 2 s missing", TimelineHolesAdvice.seasonLine("S01", listOf(1_669)))
+        assertEquals("S01: 1 episode, 1 s missing", TimelineHolesAdvice.seasonLine("S01", listOf(400)))
+        assertEquals("S01: 3 episodes, 2 to 40 s missing each", TimelineHolesAdvice.seasonLine("S01", listOf(2_000, 40_000, 12_000)))
+        assertEquals("S01: 2 episodes, 2 s to 4 minutes missing each", TimelineHolesAdvice.seasonLine("S01", listOf(2_000, 230_000)))
+        assertEquals("S01: 1 episode, 1 to 2 minutes missing", TimelineHolesAdvice.seasonLine("S01", listOf(90_000)))
     }
 
     // FR-1 against the real ffmpeg: one read yields the hole, and a whole file of the same make reads whole.
