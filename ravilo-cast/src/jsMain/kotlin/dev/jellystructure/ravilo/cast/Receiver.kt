@@ -12,6 +12,9 @@ import dev.jellystructure.shared.tv.CastChannelMusic
 import dev.jellystructure.shared.tv.CastChannelStep
 import dev.jellystructure.shared.tv.castChannelStep
 import dev.jellystructure.shared.tv.CastDecodeProbe
+import dev.jellystructure.shared.tv.CastHeldKind
+import dev.jellystructure.shared.tv.CastHeldPosts
+import dev.jellystructure.shared.tv.CastHeldStep
 import dev.jellystructure.shared.tv.CastRecovery
 import dev.jellystructure.shared.tv.CastRecoveryStep
 import dev.jellystructure.shared.tv.CastQoeCounters
@@ -177,6 +180,8 @@ private class Receiver {
     private var qoeFirstFrameMs: Long? = null
     private var qoeSegments = 0                       // 309 (FR-309-13) — segment fetches since the load
     private var qoeStartFailureStatus: Int? = null
+    /** DEB-5929 (FR-6) — failed starts whose report or stop is still being sent again. */
+    private val heldStarts = mutableSetOf<CastHeldPosts>()
     private var qoeStalledBps: Long? = null
     private var ladderAskedFor: String? = null
     private var qoeRebufferPosition = 0L
@@ -735,7 +740,7 @@ private class Receiver {
         // own MEDIA_FINISHED for it arrives after `current` is the new item. The receiver's own loads (next song,
         // next episode, a restream) carry no code and have dealt with the item before themselves.
         note("load ${data.itemId} own=${data.code.isEmpty()} tracks=${data.tracks.size} state=${playerManager.getPlayerState()} before=${current?.itemId} open=$sessionOpen")
-        if (data.code.isNotEmpty()) { recoverJob?.cancel(); recoveredTicket = null; recoveryFrom = -1L; replaced(data.itemId) }
+        if (data.code.isNotEmpty()) { recoverJob?.cancel(); recoveredTicket = null; recoveryFrom = -1L; heldStarts.forEach { it.dropStop() }; replaced(data.itemId) }
         // R384 (FR-R384-3) — a countdown belongs to the item it was for: a new load (a sender's, the next episode, a
         // restream) ends it, so one that runs on past a film's end cannot load "the next episode" over what came after.
         endNextUp()
@@ -1697,6 +1702,7 @@ private class Receiver {
             finishFrozen(now)
             if (action == CastFrozenAction.RECOVER_STUCK) qoeRebufferFrom = -1L
             if (!recover(if (action == CastFrozenAction.RECOVER_FROZEN) "frozen" else "encoder_stuck")) {
+                if (!qoeEverPlayed && qoeStartFailureStatus == null) qoeStartFailureStatus = castStartFailureStatus(false, null)
                 stopSession(); failed()
             }
         }
@@ -1782,7 +1788,7 @@ private class Receiver {
                 }
                 misses++
                 val wait = castRecoveryRetryMs(misses)
-                if (wait == null) { draw.cancel(); recoveryFrom = -1L; stopSession(); failed(); return@launch }
+                if (wait == null) { draw.cancel(); recoveryFrom = -1L; if (!qoeEverPlayed && qoeStartFailureStatus == null) qoeStartFailureStatus = castStartFailureStatus(false, null); stopSession(); failed(); return@launch }
                 delay(wait)
             }
         }
@@ -1890,8 +1896,13 @@ private class Receiver {
 
     /** 308 (FR-308-5) — the receiver reports like every other player: at a switch and when its stream ends. */
     private fun postQoe(): Job? {
-        val item = qoeItem ?: return null
         val a = api ?: return null
+        val report = buildQoeReport() ?: return null
+        return GlobalScope.launch { runCatching { a.postPlaybackQoe(report) } }
+    }
+
+    private fun buildQoeReport(): PlaybackQoeReport? {
+        val item = qoeItem ?: return null
         val stats: dynamic = runCatching { playerManager.getStats() }.getOrNull()
         fun num(v: dynamic): Double? = (v as? Number)?.toDouble()?.takeIf { !it.isNaN() && it > 0 }
         val report = PlaybackQoeReport(
@@ -1915,7 +1926,7 @@ private class Receiver {
             startFailureStatus = qoeStartFailureStatus,
             stalledBps = qoeStalledBps,
         )
-        return GlobalScope.launch { runCatching { a.postPlaybackQoe(report) } }
+        return report
     }
 
     private fun nextEpisode(): CastEpisode? {
@@ -2068,8 +2079,34 @@ private class Receiver {
         val pos = positionMs
         sessionOpen = false
         finishFrozen(nowMs())
+        // DEB-5929 (FR-6) — an item that never reached a first frame holds its report and stop until the backend answers.
+        if (qoeStartFailureStatus != null) {
+            val report = buildQoeReport()
+            qoeItem = null
+            if (report != null) { holdFailedStart(a, report, d.itemId, pos); return }
+        }
         postQoe(); qoeItem = null
         GlobalScope.launch { runCatching { a.stopPlayback(d.itemId, pos) } }
+    }
+
+    /** DEB-5929 (FR-6) — the failed start's final report, then its stop, each sent again until answered ([CastHeldPosts]). */
+    private fun holdFailedStart(a: TvApiClient, report: PlaybackQoeReport, itemId: String, pos: Long) {
+        val held = CastHeldPosts(nowMs())
+        heldStarts += held
+        GlobalScope.launch {
+            try {
+                while (true) {
+                    when (val step = held.step(nowMs())) {
+                        CastHeldStep.Done -> break
+                        is CastHeldStep.Wait -> delay(step.ms)
+                        is CastHeldStep.Send -> {
+                            val status = if (step.kind == CastHeldKind.REPORT) a.postPlaybackQoeStatus(report) else a.stopPlaybackStatus(itemId, pos)
+                            held.sent(step.kind, status, nowMs())
+                        }
+                    }
+                }
+            } finally { heldStarts -= held }
+        }
     }
 
     /**

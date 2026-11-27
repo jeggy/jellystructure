@@ -438,6 +438,22 @@ class TvApiClient(
         }
     }
 
+    /** DEB-5929 (FR-6) — [postPlaybackQoe] that says whether anything answered: the HTTP status, or null for no answer. Never throws. */
+    suspend fun postPlaybackQoeStatus(report: PlaybackQoeReport): Int? = runCatching {
+        client.post("$baseUrl/api/tv/playback/qoe") {
+            auth()
+            jsonBody(json.encodeToString(report))
+        }.status.value
+    }.getOrNull()
+
+    /** DEB-5929 (FR-6) — the same stop as [stopPlayback], reporting the HTTP status or null for no answer. Never throws. */
+    suspend fun stopPlaybackStatus(itemId: String, positionMs: Long, startupMs: Long? = null): Int? = runCatching {
+        client.post("$baseUrl/api/tv/playback/stop") {
+            auth()
+            jsonBody(json.encodeToString(PlaybackStopRequest(itemId, positionMs, startupMs)))
+        }.status.value
+    }.getOrNull()
+
     /**
      * 309 (FR-309-3) — the speed test: `GET /api/tv/probe` (4 MB over the segments' own route), timed here, the result
      * posted back. Returns the measured bits/s, or null when the server says this device was measured within 24 h

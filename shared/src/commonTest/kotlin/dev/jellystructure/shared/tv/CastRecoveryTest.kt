@@ -156,4 +156,52 @@ class CastRecoveryTest {
     }
 
     private object Math { fun pow2(n: Int, base: Double): Double { var r = 1.0; repeat(n) { r *= base }; return r } }
+
+    // DEB-5929 (FR-6) — a failed start's report and stop, held until the backend answers.
+    private fun sendAt(h: CastHeldPosts, now: Long, kind: CastHeldKind, status: Int?) {
+        assertEquals(CastHeldStep.Send(kind), h.step(now))
+        h.sent(kind, status, now)
+    }
+
+    @Test fun `a held post is sent again after no answer or a 5xx and ends on a 2xx or a 4xx`() {
+        val h = CastHeldPosts(0)
+        sendAt(h, 0, CastHeldKind.REPORT, null)
+        assertEquals(CastHeldStep.Wait(5_000), h.step(0))
+        sendAt(h, 5_000, CastHeldKind.REPORT, 503)
+        sendAt(h, 15_000, CastHeldKind.REPORT, 204)
+        sendAt(h, 15_000, CastHeldKind.STOP, 404)
+        assertEquals(CastHeldStep.Done, h.step(15_000))
+    }
+
+    @Test fun `the gaps run 5 10 20 30 30 s`() {
+        assertEquals(listOf(5_000L, 10_000L, 20_000L, 30_000L, 30_000L), (1..5).map { castHeldGapMs(it) })
+        val h = CastHeldPosts(0)
+        var now = 0L
+        val sentAt = mutableListOf<Long>()
+        repeat(6) { sendAt(h, now, CastHeldKind.REPORT, null); sentAt += now; now += castHeldGapMs(sentAt.size) }
+        assertEquals(listOf(0L, 5_000L, 15_000L, 35_000L, 65_000L, 95_000L), sentAt)
+    }
+
+    @Test fun `nothing is sent after 10 min`() {
+        val h = CastHeldPosts(0)
+        sendAt(h, 0, CastHeldKind.REPORT, null)
+        assertEquals(CastHeldStep.Done, h.step(600_000))
+        assertEquals(CastHeldStep.Done, h.step(1_000_000))
+    }
+
+    @Test fun `the stop waits for the report to be answered`() {
+        val h = CastHeldPosts(0)
+        sendAt(h, 0, CastHeldKind.REPORT, 500)
+        assertEquals(CastHeldStep.Send(CastHeldKind.REPORT), h.step(5_000))   // never the stop meanwhile
+        sendAt(h, 5_000, CastHeldKind.REPORT, 200)
+        assertEquals(CastHeldStep.Send(CastHeldKind.STOP), h.step(5_000))
+    }
+
+    @Test fun `a new LOAD drops the stop and keeps the report`() {
+        val h = CastHeldPosts(0)
+        sendAt(h, 0, CastHeldKind.REPORT, null)
+        h.dropStop()
+        sendAt(h, 5_000, CastHeldKind.REPORT, 200)
+        assertEquals(CastHeldStep.Done, h.step(5_000))
+    }
 }

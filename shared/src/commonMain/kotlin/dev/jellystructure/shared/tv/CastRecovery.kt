@@ -140,3 +140,63 @@ fun castShouldAskForLadder(masterRungsBps: List<Long>, playingBps: Long?, stalls
 /** DEB-4543 FR-6 — a failed load names its HTTP status when Shaka has one, otherwise -1. */
 fun castStartFailureStatus(firstFrameSeen: Boolean, httpStatus: Int?): Int? =
     if (firstFrameSeen) null else (httpStatus?.takeIf { it in 100..599 } ?: -1)
+
+/** DEB-5929 (FR-6) — which of a failed start's two posts a [CastHeldPosts] step is about. */
+enum class CastHeldKind { REPORT, STOP }
+
+/** What the receiver does next for a failed start's held posts: send one now, look again in [Wait.ms], or nothing more. */
+sealed interface CastHeldStep {
+    data class Send(val kind: CastHeldKind) : CastHeldStep
+    data class Wait(val ms: Long) : CastHeldStep
+    data object Done : CastHeldStep
+}
+
+/**
+ * DEB-5929 (FR-6) — the final QoE report and the stop of an item that never reached a first frame, held until the backend answers.
+ * No answer or a 5xx is asked again after 5 s, then at doubling gaps up to 30 s; a 2xx or a 4xx ends that post. The report goes
+ * first and the stop only once the report has been answered. The hold ends [HOLD_MS] after [failedAtMs]. A new LOAD drops the stop
+ * ([dropStop], FR-289-2's hazard) and leaves the report on its schedule. Nothing is persisted; the clock is the caller's.
+ */
+class CastHeldPosts(private val failedAtMs: Long) {
+    private var reportDone = false
+    private var stopDone = false
+    private var failures = 0
+    private var dueAtMs = failedAtMs
+
+    /** What to do at [nowMs]. After a [CastHeldStep.Send] the caller reports its outcome with [sent] before asking again. */
+    fun step(nowMs: Long): CastHeldStep {
+        if (nowMs - failedAtMs >= HOLD_MS) return CastHeldStep.Done
+        val kind = when {
+            !reportDone -> CastHeldKind.REPORT
+            !stopDone -> CastHeldKind.STOP
+            else -> return CastHeldStep.Done
+        }
+        return if (nowMs >= dueAtMs) CastHeldStep.Send(kind) else CastHeldStep.Wait(dueAtMs - nowMs)
+    }
+
+    /** The outcome of the post [step] asked for: [status] is the HTTP status, null when nothing answered. */
+    fun sent(kind: CastHeldKind, status: Int?, nowMs: Long) {
+        if (castHeldAnswered(status)) {
+            if (kind == CastHeldKind.REPORT) reportDone = true else stopDone = true
+            failures = 0
+            dueAtMs = nowMs
+        } else {
+            failures++
+            dueAtMs = nowMs + castHeldGapMs(failures)
+        }
+    }
+
+    /** A new LOAD: the stop would end the new session, so it is never sent; the report is unaffected. */
+    fun dropStop() { stopDone = true }
+
+    companion object {
+        /** The hold ends this long after the failure. */
+        const val HOLD_MS = 600_000L
+    }
+}
+
+/** DEB-5929 (FR-6) — a 2xx or a 4xx is an answer and ends that post's retries; no answer or a 5xx does not. */
+fun castHeldAnswered(status: Int?): Boolean = status != null && status < 500
+
+/** DEB-5929 (FR-6) — the wait after the [failures]th failed send (1 for the first): 5, 10, 20, then 30 s. */
+fun castHeldGapMs(failures: Int): Long = (5_000L shl (failures - 1).coerceIn(0, 3)).coerceAtMost(30_000L)

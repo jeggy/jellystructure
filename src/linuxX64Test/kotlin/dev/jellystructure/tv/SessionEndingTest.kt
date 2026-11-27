@@ -197,4 +197,27 @@ class SessionEndingTest {
         now += SESSION_PLAYING_SILENT_MS; s.tick()
         assertEquals("idle", s.get(id)!!.endReason)
     }
+
+    /**
+     * DEB-5929 (FR-6) — the receiver of a failed start sends its stop when the backend answers again, which can be after
+     * the watchdog has reaped the row to *paused · offline*. That stop still ends it: `stopped`, once the stop hold runs out.
+     */
+    @Test fun `a stop for a row the watchdog already reaped to offline ends it stopped after the hold`() = runBlocking {
+        val s = service()
+        val cast = device("stue-cast", kind = "cast")
+        val id = s.onStart(cast, "film-1", 0)
+        s.onProgress(cast, "film-1", 0, paused = true)
+        now += 90_000
+        s.onStop(cast, "film-1", 0)
+        s.onReaped(cast, "film-1")
+        assertTrue(s.get(id)!!.offline)
+        assertTrue(s.get(id)!!.live)
+        // The receiver's held stop arrives.
+        s.onStop(cast, "film-1", 0)
+        now += SESSION_STOP_HOLD_MS - 1_000; s.tick()
+        assertTrue(s.get(id)!!.live, "inside the stop hold the row is still there")
+        now += 2_000; s.tick()
+        assertFalse(s.get(id)!!.live)
+        assertEquals("stopped", s.get(id)!!.endReason)
+    }
 }
