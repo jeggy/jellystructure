@@ -624,7 +624,7 @@ internal class RefusedSources(private val ttlMs: Long = 6 * 3_600_000L) {
         while (true) {
             val cur = refused.value
             val why = if (exitCode == EncoderJobs.NO_FIRST_SEGMENT) "ffmpeg wrote no first segment in time for this file ($codec) — Jellyfin serves it (313)"
-                else "ffmpeg refused this file ($codec, exit $exitCode) — Jellyfin serves it (313)"
+                else "ffmpeg refused this file ($codec, ${ffmpegExit(exitCode)}) — Jellyfin serves it (313)"
             if (refused.compareAndSet(cur, cur + (path to (nowMs to why)))) return
         }
     }

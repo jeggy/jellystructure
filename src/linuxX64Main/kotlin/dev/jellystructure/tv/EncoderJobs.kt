@@ -415,13 +415,17 @@ class EncoderJobs(
                 job.exited = true
                 refresh(job)
                 if (rc != 0 && !job.stopped) {
-                    Logger.warn("encoder $streamId: ffmpeg exit $rc (see $dir/ffmpeg.log)", "tv")
+                    Logger.warn("encoder $streamId: ffmpeg ${ffmpegExit(rc)} (see $dir/ffmpeg.log)", "tv")
                     // 313 (2026-10-09) — refused before its first segment: never restarted with the same command; the
                     // source goes to Jellyfin from the next play on (the player's own retry asks for a new ticket).
                     // DEB-3100 (FR-2) — only a stream's first start can be a refusal; a later job that dies early is a 503, started again.
                     if (canRefuse && refusedBeforeFirstSegment(rc, job.highest, job.startSegment)) {
                         mutex.withLock { streams[streamId]?.refused = true }
                         Logger.warn("encoder $streamId: ffmpeg refused this plan — no restart; the file goes to Jellyfin (313)", "tv")
+                        // DEB-3093 (FR-8) — the reason sits in ffmpeg's own log, which goes with the folder: server log only.
+                        runCatching { ffmpegLogTail(FileIo.readText(Path("$dir/ffmpeg.log"))) }.getOrNull()?.forEach {
+                            Logger.warn("encoder $streamId: ffmpeg.log: $it", "tv")
+                        }
                         runCatching { onRefused(plan, rc) }
                     }
                 }
@@ -569,6 +573,16 @@ class EncoderJobs(
         const val KEEP_BEHIND_TIGHT = 5
     }
 }
+
+/** DEB-3093 (FR-8) — `pclose`'s wait status as text: `exit n` for an exit, `signal n` for a process a signal ended. */
+internal fun ffmpegExit(status: Int): String =
+    if (status and 0x7f == 0) "exit ${(status shr 8) and 0xff}" else "signal ${status and 0x7f}"
+
+/** DEB-3093 (FR-8) — the last [lines] non-empty lines of an ffmpeg log, progress lines (`frame=`, `size=`) dropped. */
+internal fun ffmpegLogTail(text: String, lines: Int = 20): List<String> =
+    text.split('\n', '\r').map { it.trim() }
+        .filter { it.isNotEmpty() && !it.startsWith("frame=") && !it.startsWith("size=") }
+        .takeLast(lines)
 
 private fun nowMs(): Long = Clock.System.now().toEpochMilliseconds()
 
