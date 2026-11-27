@@ -261,7 +261,7 @@ internal const val NEXT_PREFETCH_BEFORE_END_MS = 60_000L
 // R182 (FR-RV-SKIP1-2) — the credits card's ONE primary action, chosen by priority: a stinger (from
 // Phase 150 §C) always wins (never auto-skip past it); else a real next episode; else a plain
 // skip-credits/exit. "Watch credits" (NuFocus.STAY) is offered in every mode alongside this one action.
-internal enum class CreditsCardMode { STINGER, NEXT_EPISODE, SKIP_CREDITS }
+internal enum class CreditsCardMode { STINGER, NEXT_EPISODE, SKIP_CREDITS, STILL_WATCHING }   // DEB-5843 (FR-3)
 
 // R363 (FR-R363-1) — SKIP_INTRO is never in the order: Left from −10 s used to pass through the seek bar (which
 // consumes Left as a scrub), so the pill was in the order but unreachable. It is reached by Up from the controls
@@ -571,6 +571,7 @@ private fun PlayerScreenEffects(s: PlayerScreenState) {
     DisposableEffect(Unit) { onDispose { setPointerCursorHidden(false) } }
 
     LaunchedEffect(s.nextUpVisible) { s.nextUpCountdown() }
+    LaunchedEffect(s.stillWatchingAsk) { s.stillWatchingAskClose() }   // DEB-5843 (FR-4)
     LaunchedEffect(s.bk.advanceRequestedForItemId) { s.advanceTimeout() }
     LaunchedEffect(s.bk.skipIntroCountingDown) { s.skipIntroCountdown() }
     LaunchedEffect(s.bk.pauseFlash) { s.pauseFlashDismiss() }
@@ -1021,7 +1022,7 @@ private fun BoxScope.PlayerCardLayer(s: PlayerScreenState) = with(s) {
             nuFocus        = nuFocus,
             handsetFull    = handset && portrait,
             onPrimaryTap   = if (handset) ({ creditsPrimary() }) else null,
-            onStayTap      = if (handset) ({ stayThrough() }) else null,
+            onStayTap      = if (handset) ({ creditsSecondary() }) else null,
         )
     }
 
@@ -2319,10 +2320,16 @@ private fun NextUpCard(
     // R182 (FR-RV-SKIP1-2) — everything below the thumbnail/ring differs by mode; the NEXT_EPISODE case
     // is exactly the pre-R182 card, unchanged. Never more than two buttons in any mode.
     // R343 (FR-R343-5) — in a shuffle the next entry is not the next in order, and the card says so.
-    val kickerText = if (mode == CreditsCardMode.NEXT_EPISODE) str(if (LocalShuffledNextUp.current) "player.up_next_shuffled" else "player.up_next") else str("player.credits_kicker")
-    val subLabel = if (mode == CreditsCardMode.NEXT_EPISODE) nextEpLabel else itemKicker
+    // DEB-5843 (FR-3) — STILL_WATCHING is the same card with a third text: the next episode's line under "Are you still
+    // watching?", no ring, and Continue watching / Back where the others carry their two actions.
+    val kickerText = when (mode) {
+        CreditsCardMode.NEXT_EPISODE -> str(if (LocalShuffledNextUp.current) "player.up_next_shuffled" else "player.up_next")
+        CreditsCardMode.STILL_WATCHING -> str("player.still_watching")
+        else -> str("player.credits_kicker")
+    }
+    val subLabel = if (mode == CreditsCardMode.NEXT_EPISODE || mode == CreditsCardMode.STILL_WATCHING) nextEpLabel else itemKicker
     val titleText = when (mode) {
-        CreditsCardMode.NEXT_EPISODE -> nextEpTitle ?: str("detail.episode")
+        CreditsCardMode.NEXT_EPISODE, CreditsCardMode.STILL_WATCHING -> nextEpTitle ?: str("detail.episode")
         CreditsCardMode.STINGER -> str("player.stinger_title")
         CreditsCardMode.SKIP_CREDITS -> if (isSeries) str("player.end_of_episode") else str("player.end_of_movie")
     }
@@ -2330,7 +2337,9 @@ private fun NextUpCard(
         CreditsCardMode.NEXT_EPISODE -> "> ${str("player.play_in", mapOf("secs" to countdown.toString()))}"
         CreditsCardMode.STINGER -> str("player.skip_to_scene")
         CreditsCardMode.SKIP_CREDITS -> str("player.skip_credits")
+        CreditsCardMode.STILL_WATCHING -> str("player.continue_watching")
     }
+    val secondaryLabel = if (mode == CreditsCardMode.STILL_WATCHING) str("player.back") else str("player.watch_credits")
     // R111: compact card tucked into the bottom-right corner (was a 560dp full-width banner).
     Box(
         modifier = (if (handsetFull) Modifier.padding(horizontal = 16.dp, vertical = 12.dp).fillMaxWidth()
@@ -2398,7 +2407,7 @@ private fun NextUpCard(
                         onTap = onPrimaryTap,
                     )
                     NuButton(
-                        label = str("player.watch_credits"),
+                        label = secondaryLabel,
                         focused = nuFocus == NuFocus.STAY,
                         isPrimary = false,
                         colors = colors,

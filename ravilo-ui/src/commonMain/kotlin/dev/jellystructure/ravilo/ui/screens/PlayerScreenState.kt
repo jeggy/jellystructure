@@ -216,6 +216,8 @@ internal class PlayerScreenState(initial: PlayerScreenInputs) {
 
     // Next-up card
     var nextUpVisible by mutableStateOf(false)
+    /** DEB-5843 (FR-3) — the countdown ran out and FR-1 said ask: the card reads *Are you still watching?* and nothing advances. */
+    var stillWatchingAsk by mutableStateOf(false)
     // R111: once the viewer picks "Watch credits" we latch it dismissed so the near-end poll doesn't re-show the card on
     // the very next tick. Reset per-episode in the item effect.
     var nextUpDismissed by mutableStateOf(false)
@@ -330,6 +332,7 @@ internal class PlayerScreenState(initial: PlayerScreenInputs) {
     // Skip-Credits exit are both meaningless once already at the real end of the file.
     val creditsCardMode: CreditsCardMode
         get() = when {
+            stillWatchingAsk -> CreditsCardMode.STILL_WATCHING
             bk.skipCreditsMode == dev.jellystructure.shared.tv.SkipMode.OFF -> CreditsCardMode.NEXT_EPISODE
             segments.stinger != null -> CreditsCardMode.STINGER
             resolvedNextEpisodeId != null -> CreditsCardMode.NEXT_EPISODE
@@ -401,6 +404,8 @@ internal class PlayerScreenState(initial: PlayerScreenInputs) {
     fun beginScrubAt(ms: Long) { wake(); focus = PlFocus.SEEK_BAR; scrubbing = true; scrubPos = ms }
 
     fun togglePlay() {
+        // DEB-5843 (FR-3) — the play key, a phone remote's play: with the ask up, play is *Continue watching*.
+        if (stillWatchingAsk && !isPlaying) { advanceNext(); return }
         if (isPlaying) {
             player.pause(); isPlaying = false
             bk.pauseFlashIsPlay = false
@@ -418,6 +423,7 @@ internal class PlayerScreenState(initial: PlayerScreenInputs) {
 
     fun advanceNext() {
         nextUpVisible = false
+        stillWatchingAsk = false
         val nextId = resolvedNextEpisodeId
         val navigate = inputs.onNavigateToEpisode
         if (nextId == null || navigate == null) {
@@ -434,6 +440,7 @@ internal class PlayerScreenState(initial: PlayerScreenInputs) {
         // Latched BEFORE the call: see advanceRequestedForItemId — exactly one advance attempt per episode, never a
         // retry loop.
         bk.advanceRequestedForItemId = itemId
+        stillWatching.willAdvanceTo(nextId)   // DEB-5843 (FR-1) — the app's own start, not a hand-start
         navigate.invoke(nextId)
     }
 
@@ -468,7 +475,28 @@ internal class PlayerScreenState(initial: PlayerScreenInputs) {
             CreditsCardMode.STINGER -> skipToScene()
             CreditsCardMode.NEXT_EPISODE -> advanceNext()
             CreditsCardMode.SKIP_CREDITS -> skipCredits()
+            CreditsCardMode.STILL_WATCHING -> advanceNext()   // Continue watching: the viewer answered, which is input (FR-2)
         }
+    }
+
+    /** The credits card's second button, by mode: *Watch credits*, or in the ask *Back* (DEB-5843, FR-3). */
+    fun creditsSecondary() {
+        if (stillWatchingAsk) leaveFromAsk() else stayThrough()
+    }
+
+    /** DEB-5843 (FR-3, FR-4) — Back out of the ask (its button, the Back key, or 30 minutes unanswered): the player closes
+     *  as Back would, the item is marked watched if R347 calls it finished, and the count is 0 after it. */
+    fun leaveFromAsk() {
+        stillWatchingAsk = false
+        stillWatching.onInput()
+        skipCredits()
+    }
+
+    /** FR-4 — nobody answered the ask: the screen hold goes with the player. Cancelled with the effect when it is answered. */
+    suspend fun stillWatchingAskClose() {
+        if (!stillWatchingAsk) return
+        delay(dev.jellystructure.shared.tv.STILL_WATCHING_CLOSE_MS)
+        if (stillWatchingAsk) leaveFromAsk()
     }
 
     // R182 (FR-RV-SKIP1-1) — fires on an explicit OK press on the pill AND from the countdown-elapsed auto-trigger in
@@ -731,6 +759,7 @@ internal class PlayerScreenState(initial: PlayerScreenInputs) {
         // DEB-4767 (FR-R370-10) — a replayed item's end must not meet the latches its earlier play left behind.
         bk.beginItem()
         nextUpDismissed = false  // R111: each episode starts fresh
+        stillWatchingAsk = false
         nextUpVisible = false
         countdown = bk.skipSecs
         scrubbing = false
@@ -1163,7 +1192,21 @@ internal class PlayerScreenState(initial: PlayerScreenInputs) {
         // R182 (dev-review addendum §2) — autoplayNext gates only the countdown's OWN auto-invocation; a manual pick (Select
         // on the PLAY button, the transport's Next Episode control, or MediaKey.NEXT) still calls advanceNext() directly
         // through their own existing call sites. With autoplayNext off the card simply sits at 0 waiting for one of those.
-        if (nextUpVisible && bk.autoplayNextEnabled) advanceNext()
+        // decide() counts an advance, so it runs only when the countdown really would advance.
+        if (countdownEnd(nextUpVisible, bk.autoplayNextEnabled, askDue = false) == CountdownEnd.NOTHING) return
+        when (countdownEnd(true, true, askDue = stillWatching.decide())) {
+            CountdownEnd.ADVANCE -> advanceNext()
+            CountdownEnd.ASK -> askStillWatching()
+            CountdownEnd.NOTHING -> {}
+        }
+    }
+
+    /** DEB-5843 (FR-3) — the countdown ran out and the viewer has not touched anything for three episodes: pause where it
+     *  is, keep the card, change its words, put focus on *Continue watching*. The next episode waits for the answer. */
+    private fun askStillWatching() {
+        if (askPausesPlayer(isPlaying, player.isEnded)) { player.pause(); isPlaying = false }
+        stillWatchingAsk = true
+        nuFocus = NuFocus.PLAY
     }
 
     // Bug fix (auto-advance retry loop): an advance we requested but that never took effect used to be invisible — the
@@ -1264,6 +1307,8 @@ internal class PlayerScreenState(initial: PlayerScreenInputs) {
             // DEB-3950 (R182 amendment FR-3) — after the end one Back leaves, whatever is up (a card, the controls, a running
             // countdown). It leaves; it never advances.
             backLeavesAtEnd(player.isEnded) -> onBack()
+            // DEB-5843 (FR-3) — Back from the ask leaves the player; it neither advances nor just hides the card.
+            stillWatchingAsk -> leaveFromAsk()
             // R295 (FR-R295-2) — a phone's sheet sits over the chrome it was opened from; Back out of it goes back to the
             // picture, not to the chrome (which cost a fourth Back to leave from the versions list). The TV keeps its focus on
             // Audio & Subs, as before.
@@ -1401,7 +1446,7 @@ internal class PlayerScreenState(initial: PlayerScreenInputs) {
             togglePlay()
         } else when {
             nextUpVisible -> {
-                if (nuFocus == NuFocus.STAY) stayThrough() else creditsPrimary()
+                if (nuFocus == NuFocus.STAY) creditsSecondary() else creditsPrimary()
             }
             epRailOpen -> chooseEpisode()
             pickerOpen -> pickerSelect()
