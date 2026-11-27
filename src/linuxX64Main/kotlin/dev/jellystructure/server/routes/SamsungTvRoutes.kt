@@ -57,9 +57,10 @@ internal fun Route.samsungTvRoutes(requests: SamsungTvRequests, release: Samsung
     }
     get("/samsung-tv/requests") {
         val names = devices.allDevices().associate { it.jellyfinUserId.lowercase().replace("-", "") to it.jellyfinUsername }
+        val rows = requests.all()
         call.respond(SamsungTvAdminList(
-            requests.all().map { it.admin(names[it.accountId] ?: it.accountId) },
-            release.status(), samsungCertificateStatus(),
+            rows.map { it.admin(names[it.accountId] ?: it.accountId) },
+            release.status(), samsungCertificateStatus(), rows.count { it.state == "REQUESTED" },
         ))
     }
     post("/samsung-tv/requests/{id}/decision") {

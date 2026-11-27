@@ -6,6 +6,8 @@ import dev.jellystructure.auth.installAuthPlugin
 import dev.jellystructure.db.createDatabase
 import dev.jellystructure.db.closeLastDatabaseForTests
 import dev.jellystructure.io.FileIo
+import dev.jellystructure.jobs.JobEvent
+import dev.jellystructure.shared.tv.SamsungTvAdminList
 import dev.jellystructure.server.routes.samsungTvRoutes
 import dev.jellystructure.shared.tv.SamsungTvRequest
 import dev.jellystructure.shared.tv.SamsungTvRequestList
@@ -31,6 +33,7 @@ import kotlinx.serialization.json.Json
 import platform.posix.getpid
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
 /** DEB-4842 (FR-2/3/4) — real auth fence, routes, guarded persistence and public WGT proof. */
@@ -102,6 +105,83 @@ class SamsungTvRoutesTest {
             closeLastDatabaseForTests()
             for (suffix in listOf("", "-wal", "-shm")) runCatching { platform.posix.remove("$path$suffix") }
         }
+    }
+
+    /** DEB-5909 (DEB-5905, FR-9, FR-10) — each of the four writes publishes one event with the REQUESTED count; a refused or unchanged write none. */
+    @Test fun everyWriteThatChangesARowPublishesTheRequestedCountOnceAndNothingElse() = testApplication {
+        val path = "/tmp/jellystructure-test-samsung-push-${getpid()}.db"
+        val db = createDatabase(path)
+        val requests = SamsungTvRequests(db) { 1_800_000_000L }
+        val pushed = mutableListOf<JobEvent>()
+        requests.pushAdmin = { pushed += it }
+        val release = SamsungTvRelease(requests, { 1_800_000_000L })
+        val sessions = SessionService(db)
+        val adminToken = sessions.create("root", "Root", "test")
+        application {
+            install(ContentNegotiation) { json(json) }
+            installAuthPlugin(sessions, validateDeviceToken = { token, _, _ ->
+                val user = when (token) { "anna" -> "anna"; "bo" -> "bo"; else -> null }
+                user?.let { DeviceData(token, token, it, token, "jf", false) }
+            })
+            routing { route("/api") { samsungTvRoutes(requests, release, RaviloDeviceService(db)) } }
+        }
+        fun counts() = pushed.map { assertIs<JobEvent.SamsungTvRequestsChanged>(it).requested }
+        fun body(duid: String) = """{"duid":"$duid","model":"UE55AB1234","tizen_version":"6.0","name":"Living room"}"""
+        suspend fun create(token: String, duid: String) = client.post("/api/tv/samsung-requests") { header(HttpHeaders.Authorization, "Bearer $token"); contentType(ContentType.Application.Json); setBody(body(duid)) }
+        suspend fun withdraw(token: String, id: Long) = client.delete("/api/tv/samsung-requests/$id") { header(HttpHeaders.Authorization, "Bearer $token") }
+        suspend fun decide(id: Long, text: String) = client.post("/api/samsung-tv/requests/$id/decision") { header(HttpHeaders.Cookie, "js_session=$adminToken"); contentType(ContentType.Application.Json); setBody(text) }
+        try {
+            // a create saves a row
+            val a = json.decodeFromString(SamsungTvRequest.serializer(), create("anna", "AAAAAAAA1111").also { assertEquals(HttpStatusCode.Created, it.status) }.bodyAsText())
+            assertEquals(listOf(1), counts())
+            // an unchanged repeat create, and a refused one, publish nothing
+            assertEquals(HttpStatusCode.OK, create("anna", "AAAAAAAA1111").status)
+            assertEquals(HttpStatusCode.BadRequest, client.post("/api/tv/samsung-requests") { header(HttpHeaders.Authorization, "Bearer anna"); contentType(ContentType.Application.Json); setBody(body("BAD!")) }.status)
+            assertEquals(listOf(1), counts())
+            val b = json.decodeFromString(SamsungTvRequest.serializer(), create("bo", "BBBBBBBB2222").bodyAsText())
+            assertEquals(listOf(1, 2), counts())
+            // the list carries the same count
+            val list = json.decodeFromString(SamsungTvAdminList.serializer(), client.get("/api/samsung-tv/requests") { header(HttpHeaders.Cookie, "js_session=$adminToken") }.bodyAsText())
+            assertEquals(2, list.requested)
+            // a withdrawal that changes a row; a repeat, a stranger's and an unknown id publish nothing
+            assertEquals(HttpStatusCode.OK, withdraw("bo", b.id).status)
+            assertEquals(listOf(1, 2, 1), counts())
+            assertEquals(HttpStatusCode.OK, withdraw("bo", b.id).status)
+            assertEquals(HttpStatusCode.NotFound, withdraw("anna", b.id).status)
+            assertEquals(HttpStatusCode.NotFound, withdraw("anna", 9_999).status)
+            assertEquals(listOf(1, 2, 1), counts())
+            // a reopen is a create that saved a row
+            assertEquals(HttpStatusCode.Created, create("bo", "BBBBBBBB2222").status)
+            assertEquals(listOf(1, 2, 1, 2), counts())
+            // a decision; a refused one (400, 404, 409) publishes nothing
+            assertEquals(HttpStatusCode.BadRequest, decide(a.id, """{"decision":"MAYBE"}""").status)
+            assertEquals(HttpStatusCode.NotFound, decide(9_999, """{"decision":"APPROVE"}""").status)
+            assertEquals(listOf(1, 2, 1, 2), counts())
+            assertEquals(HttpStatusCode.OK, decide(a.id, """{"decision":"APPROVE"}""").status)
+            assertEquals(listOf(1, 2, 1, 2, 1), counts())
+            assertEquals(HttpStatusCode.Conflict, decide(a.id, """{"decision":"REJECT"}""").status)
+            assertEquals(HttpStatusCode.Conflict, withdraw("anna", a.id).status)
+            assertEquals(listOf(1, 2, 1, 2, 1), counts())
+            // a reconcile that moves a row publishes once; the same one again moves none
+            val url = "https://github.com/jeggy/jellystructure/releases/download/v1.70/ravilo-tizen-1.70.wgt"
+            requests.reconcile("v1.70", url, setOf("AAAAAAAA1111"))
+            assertEquals("READY", requests.get(a.id)?.state)
+            assertEquals(listOf(1, 2, 1, 2, 1, 1), counts())
+            requests.reconcile("v1.70", url, setOf("AAAAAAAA1111"))
+            requests.reconcile("v1.70", url, setOf("NOT-A-ROW-OF-OURS"))   // moves a READY row back to APPROVED: a change
+            assertEquals(listOf(1, 2, 1, 2, 1, 1, 1), counts())
+            requests.reconcile("v1.71", url, emptySet())                   // nothing READY, nothing APPROVED-and-covered: no change
+            assertEquals(listOf(1, 2, 1, 2, 1, 1, 1), counts())
+        } finally {
+            closeLastDatabaseForTests()
+            for (suffix in listOf("", "-wal", "-shm")) runCatching { platform.posix.remove("$path$suffix") }
+        }
+    }
+
+    @Test fun theRequestsChangedEventRoundTripsOnTheAdminSocketWithOnlyACount() {
+        val text = Json { classDiscriminator = "type" }.encodeToString(JobEvent.serializer(), JobEvent.SamsungTvRequestsChanged(3))
+        assertEquals("""{"type":"samsung_tv_requests","requested":3}""", text)
+        assertEquals(3, assertIs<JobEvent.SamsungTvRequestsChanged>(Json { classDiscriminator = "type" }.decodeFromString(JobEvent.serializer(), text)).requested)
     }
 
     @Test fun invalidAndWithdrawnRequestsFollowTheRouteContract() = testApplication {

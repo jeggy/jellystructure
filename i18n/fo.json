@@ -1480,5 +1480,12 @@
   "samsung_requests.state_rejected": "Havna",
   "samsung_requests.state_withdrawn": "Tikið aftur",
   "samsung_requests.copied": "Avritað til klippiborðið.",
-  "samsung_requests.copy_failed": "Bar ikki til at avrita. Vel og avrita DUID í staðin."
+  "samsung_requests.copy_failed": "Bar ikki til at avrita. Vel og avrita DUID í staðin.",
+  "samsung_requests.count_requested": "{n} umbiðið",
+  "samsung_requests.count_approved": "{n} góðkent",
+  "samsung_requests.count_ready": "{n} klárt",
+  "samsung_requests.count_rejected": "{n} havna",
+  "samsung_requests.count_withdrawn": "{n} tikið aftur",
+  "samsung_requests.count_other": "{n} {state}",
+  "samsung_requests.withdrawn_group": "Tikið aftur ({n})"
 }

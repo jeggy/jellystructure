@@ -833,6 +833,8 @@ fun main() = runBlocking {
     dev.jellystructure.tv.LiveViewing.anyActive = { liveTvService.anyLiveActive() }
     dev.jellystructure.tv.LiveViewing.names = { liveTvService.liveDeviceNames() }
     val samsungRequests = dev.jellystructure.samsung.SamsungTvRequests(db)
+    // DEB-5909 (DEB-5905, FR-9) — a request saved, withdrawn, decided or moved by a release check reaches an open admin page and the menu count.
+    samsungRequests.pushAdmin = { event -> rootScope.launch { broadcaster.broadcast(event) } }
     val samsungRelease = dev.jellystructure.samsung.SamsungTvRelease(samsungRequests)
     rootScope.launch {
         while (true) {

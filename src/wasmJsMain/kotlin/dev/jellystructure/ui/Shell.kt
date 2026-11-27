@@ -166,6 +166,7 @@ fun renderShell(user: UserProfile) {
         // DEB-2499 (FR-285-20) — it reads the held overview beside the other requests, not before them; a server that has not built yet
         // (FR-285-17) leaves the sidebar as it is, since "nothing to fix" would be a claim nobody computed. The push fills it in.
         launch { refreshDashboardFromServer() }
+        launch { refreshSamsungNav() }
         // Connection status — retry up to 3 times (5 s apart) to survive a brief cold-start delay
         launch {
             val delayMs = 5_000L
@@ -470,6 +471,8 @@ private fun connectDockSocket() {
                 is JobEvent.MediaJobUpdate -> ContainerConversionUi.onJob(event.job)
                 // DEB-2498 (FR-285-18) — a Dashboard build landed: the sidebar count, and the list if the Dashboard is open, follow the push.
                 is JobEvent.DashboardUpdated -> MainScope().launch { refreshDashboardFromServer() }
+                // DEB-5909 (DEB-5905, FR-9, FR-10) — the menu count is the event's, and an open Samsung TV requests page reads the list again.
+                is JobEvent.SamsungTvRequestsChanged -> SamsungLive.event(event)
                 else -> {}
             }
         }
@@ -489,6 +492,8 @@ private fun connectDockSocket() {
                     refreshAiNav()
                     // DEB-2499 (FR-285-18) — a build that landed while the socket was down was pushed to nobody.
                     MainScope().launch { refreshDashboardFromServer() }
+                    // DEB-5909 (FR-10) — and a request that came in while it was down.
+                    MainScope().launch { refreshSamsungNav() }
                 }
                 null
             }, 5_000)
@@ -595,6 +600,8 @@ private fun navLinkHtml(entry: NavLink): String {
         entry.href == "/triage" -> """<span class="count" id="triage-count-badge"></span>"""
         // DEB-1500 (FR-2) — the open tickets, from the support summary; hidden at 0 and while the lane is closed.
         entry.href == "/ai" -> """<span class="count" id="ai-count-badge" style="display:none"></span>"""
+        // DEB-5909 (FR-10) — the Requested Samsung TV rows, read when the shell mounts and set by every `samsung_tv_requests` event; hidden at 0.
+        entry.href == "/samsung-tv-requests" -> """<span class="count" id="samsung-count-badge" style="display:none"></span>"""
         entry.count != null -> """<span class="count">${entry.count}</span>"""
         else -> ""
     }

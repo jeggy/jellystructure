@@ -3,6 +3,7 @@
 package dev.jellystructure.ui
 
 import dev.jellystructure.api.httpClient
+import dev.jellystructure.jobs.JobEvent
 import dev.jellystructure.ravilo.i18n.t
 import dev.jellystructure.shared.tv.SamsungTvAdminList
 import dev.jellystructure.shared.tv.SamsungTvDecision
@@ -43,7 +44,43 @@ private fun samsungDate(epoch: Long?): String {
     return samsungDateJs(epochMs)
 }
 
-/** DEB-4842 (FR-5) — all rows and transitions render from GET/POST responses. */
+/**
+ * DEB-5909 (DEB-5905, FR-9, FR-10) — the menu count and the open page follow `samsung_tv_requests` on `/ws`. The count is what the server
+ * last said (the list read when the shell mounts, or an event's `requested`); the admin never adds or subtracts on its own.
+ */
+object SamsungLive {
+    private var requested = 0
+    private var openPage: (() -> Unit)? = null
+
+    fun seed(count: Int) { requested = count; paintCount() }
+
+    fun event(e: JobEvent.SamsungTvRequestsChanged) {
+        seed(e.requested)
+        openPage?.invoke()
+    }
+
+    /** The open page registers how to re-read itself; a page that has left the DOM drops itself on the next event. */
+    fun follow(container: Element, reload: () -> Unit) {
+        openPage = { if (document.body?.contains(container) == true) reload() else openPage = null }
+    }
+
+    /** FR-10 — hidden at 0. */
+    fun paintCount() {
+        val el = document.getElementById("samsung-count-badge") as? HTMLElement ?: return
+        el.textContent = if (requested > 0) requested.toString() else ""
+        el.style.display = if (requested > 0) "" else "none"
+    }
+}
+
+/** Reads the list for the menu count (the shell mounts and reconnects with this; the page has its own read). */
+suspend fun refreshSamsungNav() {
+    try {
+        val response = httpClient.get("/api/samsung-tv/requests")
+        if (response.status == HttpStatusCode.OK) SamsungLive.seed(response.body<SamsungTvAdminList>().requested)
+    } catch (e: CancellationException) { throw e } catch (_: Throwable) {}
+}
+
+/** DEB-4842 (FR-5) — all rows and transitions render from GET/POST responses. DEB-5909 (FR-9, FR-11) — it re-reads on the push and groups by viewer. */
 fun renderSamsungTvRequests(container: Element, scope: CoroutineScope) {
     var server: SamsungTvAdminList? = null
     lateinit var load: suspend () -> Unit
@@ -56,6 +93,9 @@ fun renderSamsungTvRequests(container: Element, scope: CoroutineScope) {
             if (cert.authorDaysLeft <= 60) add(samsungText("cert_warning", mapOf("kind" to samsungText("author"), "date" to cert.authorExpiresOn)))
             if (cert.distributorDaysLeft <= 60) add(samsungText("cert_warning", mapOf("kind" to samsungText("distributor"), "date" to cert.distributorExpiresOn)))
         } }.orEmpty()
+        // A push redraws the page: keep what the admin is in the middle of (a typed note, an opened Withdrawn list).
+        val notes = rows.mapNotNull { r -> (document.getElementById("samsung-note-${r.id}") as? HTMLInputElement)?.value?.takeIf { it.isNotEmpty() }?.let { r.id to it } }
+        val openGroups = rows.map { it.accountId }.distinct().filter { (document.getElementById("samsung-withdrawn-$it") as? HTMLElement)?.hasAttribute("open") == true }
         container.innerHTML = """
             <div class="pagebar"><h1>${samsungText("title").esc()}</h1><span class="spacer"></span><button class="btn sm ghost" id="samsung-refresh">${samsungText("refresh").esc()}</button></div>
             <p class="page-sub">${samsungText("intro").esc()}</p>
@@ -66,8 +106,10 @@ fun renderSamsungTvRequests(container: Element, scope: CoroutineScope) {
               <div class="tiny muted">${samsungText("release").esc()}: ${result?.release?.tag?.esc() ?: "—"} · ${samsungText("checked").esc()}: ${samsungDate(result?.release?.checkedAt).esc()}</div>
               ${if (approved.isNotEmpty()) """<button class="btn sm" data-samsung-copy="${approved.joinToString("\n").esc()}" aria-label="${samsungText("copy_all").esc()}">${samsungText("copy_all").esc()}</button>""" else ""}
             </div>
-            <div class="samsung-rows">${if (rows.isEmpty()) """<div class="card" style="padding:20px">${samsungText("empty").esc()}</div>""" else rows.joinToString("") { samsungRow(it) }}</div>
+            <div class="samsung-rows">${if (rows.isEmpty()) """<div class="card" style="padding:20px">${samsungText("empty").esc()}</div>""" else samsungGroups(rows)}</div>
         """.trimIndent()
+        for ((id, text) in notes) (document.getElementById("samsung-note-$id") as? HTMLInputElement)?.value = text
+        for (account in openGroups) document.getElementById("samsung-withdrawn-$account")?.setAttribute("open", "")
         document.getElementById("samsung-refresh")?.addEventListener("click") { scope.launch { load() } }
         container.querySelectorAll("[data-samsung-decision]").let { buttons ->
             for (i in 0 until buttons.length) {
@@ -105,7 +147,36 @@ fun renderSamsungTvRequests(container: Element, scope: CoroutineScope) {
             draw()
         } catch (e: CancellationException) { throw e } catch (_: Throwable) { announce(samsungText("load_failed")) }
     }
+    SamsungLive.follow(container) { scope.launch { load() } }
     scope.launch { load() }
+}
+
+private val SAMSUNG_STATE_ORDER = listOf("REQUESTED", "APPROVED", "READY", "REJECTED", "WITHDRAWN")
+
+private fun samsungCount(state: String, n: Int): String =
+    if (state in SAMSUNG_STATE_ORDER) samsungText("count_${state.lowercase()}", mapOf("n" to n.toString()))
+    else samsungText("count_other", mapOf("n" to n.toString(), "state" to state.lowercase()))
+
+/** DEB-5909 (FR-11) — one block per viewer (`account_id`), blocks by their newest row, rows newest first, Withdrawn closed in its block. */
+private fun samsungGroups(rows: List<SamsungTvAdminRequest>): String {
+    val newestFirst = compareByDescending<SamsungTvAdminRequest> { it.createdAt }.thenByDescending { it.id }
+    return rows.groupBy { it.accountId }.values
+        .map { group -> group.sortedWith(newestFirst) }
+        .sortedWith(compareByDescending<List<SamsungTvAdminRequest>> { it.first().createdAt }.thenByDescending { it.first().id })
+        .joinToString("") { group ->
+            val head = group.first()
+            val byState = group.groupingBy { it.state }.eachCount()
+            val counts = (SAMSUNG_STATE_ORDER + (byState.keys - SAMSUNG_STATE_ORDER.toSet())).filter { it in byState }
+                .joinToString("") { st -> """<span class="badge">${samsungCount(st, byState.getValue(st)).esc()}</span>""" }
+            val (withdrawn, live) = group.partition { it.state == "WITHDRAWN" }
+            """
+            <section class="samsung-viewer" data-samsung-viewer="${head.accountId.esc()}" style="margin-bottom:24px">
+              <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px"><h2 style="margin:0">${head.requesterName.esc()}</h2>$counts</div>
+              ${live.joinToString("") { samsungRow(it) }}
+              ${if (withdrawn.isEmpty()) "" else """<details id="samsung-withdrawn-${head.accountId.esc()}"><summary class="tiny muted" style="cursor:pointer;margin-bottom:8px">${samsungText("withdrawn_group", mapOf("n" to withdrawn.size.toString())).esc()}</summary>${withdrawn.joinToString("") { samsungRow(it) }}</details>"""}
+            </section>
+            """.trimIndent()
+        }
 }
 
 private fun samsungRow(row: SamsungTvAdminRequest): String = """

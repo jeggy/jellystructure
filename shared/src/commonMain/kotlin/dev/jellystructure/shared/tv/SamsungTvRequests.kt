@@ -71,4 +71,6 @@ data class SamsungTvAdminList(
     val requests: List<SamsungTvAdminRequest>,
     val release: SamsungTvReleaseStatus,
     val certificates: SamsungTvCertificateStatus,
+    /** DEB-5909 (FR-10) — rows in `REQUESTED`, the menu badge. Additive. */
+    val requested: Int = 0,
 )

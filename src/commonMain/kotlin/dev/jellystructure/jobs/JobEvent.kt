@@ -76,6 +76,11 @@ sealed class JobEvent {
         @kotlinx.serialization.EncodeDefault val deleted: Boolean = false,
     ) : JobEvent()
 
+    /** DEB-5909 (DEB-5905, FR-9, FR-10) — a Samsung TV request was saved, withdrawn or decided, or a release reconcile moved a row. Carries only
+     *  the count of rows in `REQUESTED` (the menu badge); an open requests page asks `GET /api/samsung-tv/requests` again. No DUID, name or account. */
+    @Serializable @SerialName("samsung_tv_requests")
+    data class SamsungTvRequestsChanged(val requested: Int) : JobEvent()
+
     /** DEB-2498 (FR-285-18) — a Dashboard overview build landed; an open Dashboard asks `GET /api/dashboard` again. Carries no data. */
     @Serializable @SerialName("dashboard_updated")
     data class DashboardUpdated(val computedAt: Long = 0) : JobEvent()

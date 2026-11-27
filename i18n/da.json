@@ -1480,5 +1480,12 @@
   "samsung_requests.state_rejected": "Afvist",
   "samsung_requests.state_withdrawn": "Trukket tilbage",
   "samsung_requests.copied": "Kopieret til udklipsholderen.",
-  "samsung_requests.copy_failed": "Kunne ikke kopiere. Markér og kopiér DUID i stedet."
+  "samsung_requests.copy_failed": "Kunne ikke kopiere. Markér og kopiér DUID i stedet.",
+  "samsung_requests.count_requested": "{n} anmodet",
+  "samsung_requests.count_approved": "{n} godkendt",
+  "samsung_requests.count_ready": "{n} klar",
+  "samsung_requests.count_rejected": "{n} afvist",
+  "samsung_requests.count_withdrawn": "{n} trukket tilbage",
+  "samsung_requests.count_other": "{n} {state}",
+  "samsung_requests.withdrawn_group": "Trukket tilbage ({n})"
 }
