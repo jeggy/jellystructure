@@ -713,7 +713,7 @@ test.describe("DEB-5652 — the Samsung player's episode rail (FR-54)", () => {
     await expect(focusedCard(page).locator(".rl-t")).toContainText("Opening Reel");
     await expect(focusedCard(page)).toHaveClass(/\bcur\b/);
     await expect(focusedCard(page).locator(".rl-now")).toHaveText("NOW PLAYING");
-    await expect(focusedCard(page).locator(".rl-d")).toHaveText("40m");
+    await expect(focusedCard(page).locator(".rl-d")).toHaveText("40 min");
     await expect(page.locator("#overlay"), "the controls stay up while the rail is open").toHaveClass(/\bon\b/);
     await expect(chip, "the chip gives way to the rail").toBeHidden();
     // The rail is not a seek, and nothing plays while it opens.

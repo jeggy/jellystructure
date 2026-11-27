@@ -1191,7 +1191,7 @@ test.describe("DEB-5699 FR-56 — a title's header carries Android TV's facts, a
     await boot(page, { series: seriesDetail({ next_airing: { season: 2, episode: 4, title: "Fourth Reel", air_date: "2026-12-01" } }) });
     await openPage(page);
     await expect(page.locator(".detail-meta + .detail-next")).toHaveCount(1);
-    await expect(page.locator(".detail-next-text")).toHaveText("Next episode · S02E04 “Fourth Reel” · airs 2026-12-01");
+    await expect(page.locator(".detail-next-text")).toHaveText(/^Next episode · S02E04 “Fourth Reel” · airs (Tue 1 Dec|Dec 1, 2026)$/);   // DEB-5836 (FR-4) — a date, not the ISO string; the year form once the clock leaves 2026
   });
 
   test("a series with no next_airing has no line", async ({ page }) => {
