@@ -55,6 +55,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -467,6 +468,15 @@ private fun GuideTimeRuler(
     }
 }
 
+/** DEB-2628 FR-7: a radio name stays on one line and ends in an ellipsis; the glyph line sits under it. */
+@Composable
+internal fun GuideChannelName(name: String, isRadio: Boolean, onTextLayout: (TextLayoutResult) -> Unit = {}) {
+    Text(
+        name, color = RaviloTheme.colors.text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold,
+        maxLines = if (isRadio) 1 else 2, softWrap = !isRadio, overflow = TextOverflow.Ellipsis, onTextLayout = onTextLayout,
+    )
+}
+
 @Composable
 private fun GuideChannelRow(
     channel: LiveTvChannel,
@@ -514,7 +524,7 @@ private fun GuideChannelRow(
             }
             Column(verticalArrangement = Arrangement.Center) {
                 Text("${channel.number}", color = colors.textSecondary, fontSize = 11.sp)
-                Text(channel.name, color = colors.text, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = if (channel.isRadio) 1 else 2)
+                GuideChannelName(channel.name, channel.isRadio)
                 // DEB-2658 (DEB-2628 FR-7) — a station carries the radio mark on the category line UNDER the name, never after it: the
                 // column has about 128 px for a name, and a glyph beside it would cost the name its last letters.
                 if (channel.isRadio) {
