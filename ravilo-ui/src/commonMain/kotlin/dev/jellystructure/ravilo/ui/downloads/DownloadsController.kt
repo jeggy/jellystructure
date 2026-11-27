@@ -27,6 +27,8 @@ data class DownloadTarget(
     val season: Int? = null,
     val episode: Int? = null,
     val runtimeMinutes: Int = 0,
+    /** DEB-5321 (FR-8) — the season's `custom_name` when the episode was queued; captured once, never refreshed. */
+    val seasonCustomName: String? = null,
 )
 
 /** DEB-4072 — what the app must do after [DownloadsController.onReachable]. */
@@ -184,7 +186,7 @@ class DownloadsController(
                 u,
                 DownloadRecord(
                     itemId = t.itemId, kind = t.kind, title = t.title, seriesId = t.seriesId, seriesTitle = t.seriesTitle,
-                    season = t.season, episode = t.episode, mediaSourceId = t.mediaSourceId, quality = option.quality,
+                    season = t.season, seasonCustomName = t.seasonCustomName, episode = t.episode, mediaSourceId = t.mediaSourceId, quality = option.quality,
                     height = option.height, bytes = option.bytes, runtimeMinutes = t.runtimeMinutes,
                     queuedAt = now() * 1000 + (tick++ % 1000), state = RecordState.QUEUED,
                 ),

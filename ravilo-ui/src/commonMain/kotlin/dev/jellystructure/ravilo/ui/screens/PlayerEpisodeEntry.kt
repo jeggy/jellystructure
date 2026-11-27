@@ -27,6 +27,8 @@ data class PlayerEpisodeEntry(
      *  header. Null on an entry built without them (the header then reads the number from [kicker]). */
     val seasonNumber: Int? = null,
     val seasonName: String? = null,
+    /** DEB-5321 (FR-7) — the season's admin-given `custom_name`; when not blank it heads the rail instead of the number. */
+    val seasonCustomName: String? = null,
 )
 
 /**
@@ -38,6 +40,7 @@ data class PlayerEpisodeEntry(
 internal fun playerRailSeasonLabel(episodes: List<PlayerEpisodeEntry>?, seasonWord: String): String {
     val first = episodes?.firstOrNull() ?: return ""
     val n = first.seasonNumber ?: Regex("""S(\d+)E\d+""").find(first.kicker)?.groupValues?.get(1)?.toIntOrNull()
+    first.seasonCustomName?.takeIf { it.isNotBlank() }?.let { return it }
     return when {
         n == null -> first.seasonName.orEmpty()
         n == 0 -> first.seasonName ?: "$seasonWord 0"

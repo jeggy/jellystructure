@@ -566,7 +566,7 @@ private fun SeriesCard(group: SeriesGroup, state: DownloadsPageState, onPlay: (D
     val ids = group.episodes.map { it.itemId }
     val allPicked = state.selecting && state.selected.containsAll(ids)
     val deleteSeriesLabel = "${str("download.delete")} ${group.title}"
-    val seasonLine = (if (group.seasons.size == 1 && group.seasons.first().season != null) "${str("detail.season")} ${group.seasons.first().season}" else "${group.seasons.size} ${str("detail.season").lowercase()}") +
+    val seasonLine = (if (group.seasons.size == 1 && group.seasons.first().season != null) group.seasons.first().label(str("detail.season")) else "${group.seasons.size} ${str("detail.season").lowercase()}") +
         " · ${group.episodeCount} ${str(if (group.episodeCount == 1) "detail.episode" else "detail.episodes").lowercase()}"
     val open = state.isOpen(group.seriesId)
     Column(cardModifier(allPicked).padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -598,7 +598,7 @@ private fun SeriesCard(group: SeriesGroup, state: DownloadsPageState, onPlay: (D
         }
         if (open) group.seasons.forEach { season ->
             if (group.seasons.size > 1 || season.season != null) Text(
-                (if (season.season != null) "${str("detail.season")} ${season.season}" else str("detail.episodes")).uppercase(),
+                (if (season.season != null) season.label(str("detail.season")).orEmpty() else str("detail.episodes")).uppercase(),
                 color = colors.textDim, fontSize = 11.sp, fontWeight = FontWeight.Bold, fontFamily = Sora, letterSpacing = 1.2.sp, modifier = Modifier.padding(start = 2.dp, top = 2.dp),
             )
             season.episodes.forEach { row ->

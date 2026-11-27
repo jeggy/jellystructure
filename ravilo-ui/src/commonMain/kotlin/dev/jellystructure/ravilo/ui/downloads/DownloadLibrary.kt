@@ -33,6 +33,8 @@ data class DownloadRecord(
     val gone: Boolean = false,
     /** DEB-4072 (FR-15) — the resume position the server last reported for this title; with [watched] it is the base the outbox's conflict rule compares to. */
     val serverResumeMs: Long = 0L,
+    /** DEB-5321 (FR-8) — the season's `custom_name` as captured when queued; a record written before it reads null. */
+    val seasonCustomName: String? = null,
 )
 
 enum class RecordState {

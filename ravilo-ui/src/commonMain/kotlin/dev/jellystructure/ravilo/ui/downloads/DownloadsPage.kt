@@ -14,6 +14,11 @@ data class DownloadRow(val record: DownloadRecord, val phase: DownloadPhase) {
 
 /** One season of a series on this phone: its episodes in episode order. [season] is null for an episode the server gave no season. */
 data class SeasonGroup(val season: Int?, val episodes: List<DownloadRow>) {
+    /** DEB-5321 (FR-8) — the season's custom name, when any of its records carries a non-blank one. */
+    val customName: String? get() = episodes.firstNotNullOfOrNull { it.record.seasonCustomName?.takeIf { n -> n.isNotBlank() } }
+    /** The header text: the custom name, else [seasonWord] + the number. */
+    fun label(seasonWord: String): String? = customName ?: season?.let { "$seasonWord $it" }
+
     val bytes: Long get() = episodes.sumOf { it.heldBytes }
 }
 

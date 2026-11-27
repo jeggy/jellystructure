@@ -288,7 +288,7 @@ private fun playerEntriesForSeason(
             stillUrls = g.take(3).map { it.stillUrl },
             segments = g.last().segments,
             seasonPosterUrl = season.posterUrl,
-            seasonNumber = sNum, seasonName = season.name,
+            seasonNumber = sNum, seasonName = season.name, seasonCustomName = season.customName,
         )
     }
 }
@@ -435,7 +435,7 @@ internal fun SeriesDetailLoaded(
         episodes.sortedBy { it.episodeNumber }.map { e ->
             dev.jellystructure.ravilo.ui.downloads.DownloadTarget(
                 itemId = e.id, kind = "episode", title = e.title, seriesId = detail.card.id, seriesTitle = detail.card.title,
-                season = currentSeason?.index, episode = e.episodeNumber, runtimeMinutes = e.runtime,
+                season = currentSeason?.index, seasonCustomName = currentSeason?.customName, episode = e.episodeNumber, runtimeMinutes = e.runtime,
             )
         },
     ) else null
