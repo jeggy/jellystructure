@@ -663,6 +663,13 @@
     "note": "R237 (FR-R237-2) — a start that failed for a reason we know, said in words the viewer can act on. Per the constitution's copy rule (and R234's rejected \"Your Jellyfin password\"), these name what the viewer must do, never the component that failed: no product name, no protocol, no status code."
   },
   "error.play.reauth.body": "Sign in again on this TV to keep watching.",
+  "error.play.reauth.title_phone": "This phone needs to be signed in again",
+  "error.play.reauth.body_phone": "Sign in again on this phone to keep watching.",
+  "error.play.reauth.title_mac": "This Mac needs to be signed in again",
+  "error.play.reauth.body_mac": "Sign in again on this Mac to keep watching.",
+  "error.play.reauth.title_desk": "This computer needs to be signed in again",
+  "error.play.reauth.body_desk": "Sign in again on this computer to keep watching.",
+  "error.play.reauth.title_web": "Sign in again to keep watching",
   "error.play.forbidden.title": "Not available on this profile",
   "error.play.forbidden.body": "This title isn't part of what this profile can watch.",
   "error.play.gone.title": "This title isn't available any more",

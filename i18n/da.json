@@ -612,6 +612,13 @@
     "note": "R237 (FR-R237-2)"
   },
   "error.play.reauth.body": "Log ind igen på dette TV for at se videre.",
+  "error.play.reauth.title_phone": {"text": "Denne telefon skal logge ind igen", "note": "DEB-5836 FR-2 — draft Danish, review before release."},
+  "error.play.reauth.body_phone": {"text": "Log ind igen på denne telefon for at se videre.", "note": "DEB-5836 FR-2 — draft Danish, review before release."},
+  "error.play.reauth.title_mac": {"text": "Denne Mac skal logge ind igen", "note": "DEB-5836 FR-2 — draft Danish, review before release."},
+  "error.play.reauth.body_mac": {"text": "Log ind igen på denne Mac for at se videre.", "note": "DEB-5836 FR-2 — draft Danish, review before release."},
+  "error.play.reauth.title_desk": {"text": "Denne computer skal logge ind igen", "note": "DEB-5836 FR-2 — draft Danish, review before release."},
+  "error.play.reauth.body_desk": {"text": "Log ind igen på denne computer for at se videre.", "note": "DEB-5836 FR-2 — draft Danish, review before release."},
+  "error.play.reauth.title_web": {"text": "Log ind igen for at se videre", "note": "DEB-5836 FR-2 — draft Danish, review before release."},
   "error.play.forbidden.title": "Ikke tilgængelig på denne profil",
   "error.play.forbidden.body": "Denne titel er ikke en del af, hvad denne profil kan se.",
   "error.play.gone.title": "Denne titel findes ikke længere",

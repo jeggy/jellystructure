@@ -336,7 +336,7 @@ internal fun RemoteStateLines(remote: OneRemote, desktop: Boolean, busyElapsed: 
     Column(Modifier.fillMaxWidth(), horizontalAlignment = if (start) Alignment.Start else Alignment.CenterHorizontally) {
                 val state = remoteState(s, unreachable)
                 val stateLine = m.line ?: lineOverride.takeIf { state == RemoteState.PLAYING || state == RemoteState.PAUSED } ?: when (state) {
-                    RemoteState.FAILED -> str("cast.failed", mapOf("device" to name))
+                    RemoteState.FAILED -> if (m.here && m.musicShape) str("music.fail_t") else str("cast.failed", mapOf("device" to name))
                     RemoteState.UNREACHABLE -> str("cast.lost", mapOf("device" to name))
                     RemoteState.NO_SERVER -> str("cast.no_server")
                     RemoteState.BUSY -> str("srv.busy")
@@ -357,7 +357,7 @@ internal fun RemoteStateLines(remote: OneRemote, desktop: Boolean, busyElapsed: 
                 m.subLine?.let { Text(it, color = colors.textDim, fontSize = 13.sp, fontFamily = Sora, textAlign = ta, modifier = Modifier.padding(top = 4.dp)) }
                 // second line for the two "cannot" states + the busy wait
                 if (m.line == null) when (state) {
-                    RemoteState.FAILED -> Text(str(if (desktop) "cast.failed_sub_desk" else "cast.failed_sub"), color = colors.textDim, fontSize = 13.sp, fontFamily = Sora, textAlign = ta, modifier = Modifier.padding(top = 4.dp))
+                    RemoteState.FAILED -> Text(str(if (m.here && m.musicShape) "music.fail_p" else if (desktop) "cast.failed_sub_desk" else "cast.failed_sub"), color = colors.textDim, fontSize = 13.sp, fontFamily = Sora, textAlign = ta, modifier = Modifier.padding(top = 4.dp))
                     RemoteState.UNREACHABLE -> Text(str("cast.lost_sub"), color = colors.textDim, fontSize = 13.sp, fontFamily = Sora, textAlign = ta, modifier = Modifier.padding(top = 4.dp))
                     RemoteState.NO_SERVER -> Text(str("cast.no_server_sub"), color = colors.textDim, fontSize = 13.sp, fontFamily = Sora, textAlign = ta, modifier = Modifier.padding(top = 4.dp))
                     RemoteState.BUSY -> Text("${str("srv.busy_sub")} · ${str("cast.waiting", mapOf("n" to busyElapsed.toString()))}", color = colors.textDim, fontSize = 13.sp, fontFamily = Sora, textAlign = ta, modifier = Modifier.padding(top = 4.dp))

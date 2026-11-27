@@ -612,6 +612,13 @@
     "note": "R237 (FR-R237-2)"
   },
   "error.play.reauth.body": "Rita inn av nýggjum á hesum sjónvarpinum fyri at hyggja víðari.",
+  "error.play.reauth.title_phone": {"text": "Hendan telefonin má rita inn av nýggjum", "note": "DEB-5836 FR-2 — draft Faroese, review before release."},
+  "error.play.reauth.body_phone": {"text": "Rita inn av nýggjum á hesi telefonini fyri at hyggja víðari.", "note": "DEB-5836 FR-2 — draft Faroese, review before release."},
+  "error.play.reauth.title_mac": {"text": "Henda Mac má rita inn av nýggjum", "note": "DEB-5836 FR-2 — draft Faroese, review before release."},
+  "error.play.reauth.body_mac": {"text": "Rita inn av nýggjum á hesi Mac fyri at hyggja víðari.", "note": "DEB-5836 FR-2 — draft Faroese, review before release."},
+  "error.play.reauth.title_desk": {"text": "Hendan teldan má rita inn av nýggjum", "note": "DEB-5836 FR-2 — draft Faroese, review before release."},
+  "error.play.reauth.body_desk": {"text": "Rita inn av nýggjum á hesi teldu fyri at hyggja víðari.", "note": "DEB-5836 FR-2 — draft Faroese, review before release."},
+  "error.play.reauth.title_web": {"text": "Rita inn av nýggjum fyri at hyggja víðari", "note": "DEB-5836 FR-2 — draft Faroese, review before release."},
   "error.play.forbidden.title": "Ikki tøkt á hesum vanganum",
   "error.play.forbidden.body": "Hetta heitið er ikki partur av tí, sum hesin vangin kann hyggja at.",
   "error.play.gone.title": "Hetta heitið er ikki tøkt longur",

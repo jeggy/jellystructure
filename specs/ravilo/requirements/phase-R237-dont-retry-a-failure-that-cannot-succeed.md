@@ -310,3 +310,11 @@ correlating three log lines by hand.
    redundant there.
 5. FR-R237-6 adds a field to the QoE payload, which is a shared model — confirm whether it needs a
    Phase 194-side migration or rides the existing nullable-field tolerance.
+
+## Amendment 2026-11-27 (DEB-5836, FR-2)
+
+The re-auth heading and body no longer say *this TV* on every client. `PlayerSessionErrorOverlay` picks its keys by
+client: Android TV and Samsung keep `error.play.reauth.title` / `.body`; phone, Mac, Linux and Ravilo Web take
+`_phone`, `_mac`, `_desk` and `_web` (the web body reuses `error.load.reauth.body`, so it names no device). The
+actions of FR-R237-3 are unchanged: REAUTH still offers Sign in, never Retry. Spec:
+`the-words-on-screen-are-right.md`.

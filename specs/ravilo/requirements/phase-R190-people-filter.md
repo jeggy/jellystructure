@@ -209,3 +209,9 @@ Both endpoints exist and work exactly as FR-RV-PPL1-4 assumed. §C is unblocked.
 backend-service-side) cross-reference against `mediaStore.allItems()` keyed by `tmdbId` — the same
 `libByTmdb` pattern `SeerrDiscoverService.toDiscoverEntry`/`acquisitionFor` already uses for the regular
 Discover tab. No new unknowns; proceeding with full implementation of §A–§D now.
+
+## Amendment 2026-11-27 (DEB-5836, FR-3)
+
+The overflow row's heading `browse.seerr_more` reads *More with {name} you can request*, not "… · request on Seerr".
+Copy says what the viewer can do, not which service answers. Key and behaviour unchanged. Spec:
+`the-words-on-screen-are-right.md`.

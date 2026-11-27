@@ -238,3 +238,9 @@ draft mapping assumed, and a couple of design decisions were made explicitly rat
    `jellyfinId ?: id`, the same id a `MediaCard` carries for that item — wherever it is set
    (`SeerrDiscoverService.acquisitionFor`, `AcquisitionService.request` and its poll reconcile). No client
    change; installed apps get the right id from the next fetch.
+
+## Amendment 2026-11-27 (DEB-5836, FR-3)
+
+The viewer-facing text no longer names Seerr: `search_seerr` reads *Search to request* and `request.empty` reads
+*Nothing suggested yet. Search for a title to request it.* (no mention of the Ravilo config editor, which a viewer cannot
+open). Keys, call sites and behaviour are unchanged. Spec: `the-words-on-screen-are-right.md`.

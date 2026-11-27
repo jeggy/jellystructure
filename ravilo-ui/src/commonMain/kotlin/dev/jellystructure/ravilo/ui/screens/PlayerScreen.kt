@@ -8,7 +8,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import dev.jellystructure.ravilo.ui.LocalReauthRequired
 import dev.jellystructure.ravilo.ui.LocalServerBaseUrl
+import dev.jellystructure.ravilo.ui.isDesktopPlatform
+import dev.jellystructure.ravilo.ui.isMacPlatform
 import dev.jellystructure.ravilo.ui.isTvPlatform
+import dev.jellystructure.ravilo.ui.isWebPlatform
 import dev.jellystructure.ravilo.ui.components.LoadErrorKind
 import dev.jellystructure.ravilo.ui.components.loadErrorBodyKey
 import dev.jellystructure.ravilo.ui.components.loadErrorOffersRetry
@@ -3148,8 +3151,9 @@ private fun PlayerSessionErrorOverlay(
     onRetry: () -> Unit,
     onBack: () -> Unit,
 ) {
+    val reauth = reauthKeys(isTvPlatform, isMacPlatform, isDesktopPlatform, isWebPlatform)
     val errTitle = when (error.kind) {
-        LoadErrorKind.REAUTH -> "error.play.reauth.title"
+        LoadErrorKind.REAUTH -> reauth.first
         LoadErrorKind.FORBIDDEN -> "error.play.forbidden.title"
         LoadErrorKind.GONE -> "error.play.gone.title"
         LoadErrorKind.UNREACHABLE -> "error.play.unreachable.title"
@@ -3161,7 +3165,7 @@ private fun PlayerSessionErrorOverlay(
         LoadErrorKind.MAC_INSTALL_PLACE, LoadErrorKind.MAC_LOCAL_NETWORK -> loadErrorTitleKey(error.kind)
     }
     val errBody = when (error.kind) {
-        LoadErrorKind.REAUTH -> "error.play.reauth.body"
+        LoadErrorKind.REAUTH -> reauth.second
         LoadErrorKind.FORBIDDEN -> "error.play.forbidden.body"
         LoadErrorKind.UNREACHABLE -> "error.play.unreachable.body"
         LoadErrorKind.MAC_INSTALL_PLACE, LoadErrorKind.MAC_LOCAL_NETWORK -> loadErrorBodyKey(error.kind)
