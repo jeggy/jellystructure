@@ -6,6 +6,7 @@ import dev.jellystructure.jobs.JobEvent
 import kotlinx.browser.document
 import kotlinx.browser.window
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import org.w3c.dom.Element
@@ -78,29 +79,34 @@ fun renderDashboard(container: Element, scope: CoroutineScope) {
 
     // DEB-2544 — a *Continue scan* pressed in the Scan cancelled toast resumes the run behind this page; follow it like any run started from here.
     ScanToasts.onResumed = { if (dashScanSocket == null && document.getElementById("dash-scan-banner") != null) onDashScanStarted(scope) }
-    scope.launch {
-        loadDashboardStats()
-        loadOverview(scope)
-        val status = MediaApi.scanStatus()
-        when (status?.status) {
-            "RUNNING" -> {
-                setDashScanRunning(status.processedCount)
-                // Bug fix (2026-09-05) — see renderDashDeferredBanner's doc: a page load after a run
-                // already deferred must show the paused-for-TV banner immediately (overwriting the
-                // generic one setDashScanRunning just wrote), not wait for a live JobEvent.Deferred that
-                // already fired before this page connected.
-                if (status.deferred) renderDashDeferredBanner(scope, status.deferredDevices, status.jobId ?: "")
-                connectDashScanSocket(scope, baseCount = status.processedCount)
-            }
-            "CANCELLED" -> setDashScanCancelled(status.processedCount, status.canResume, status.resumeReason, scope)
-            else -> setDashScanIdle()
+    // DEB-2499 (FR-285-20) — the page's requests run side by side: the stats, the overview and the scan status each paint from their
+    // own answer, so the scan banner does not wait behind the overview and the overview does not wait behind anything.
+    scope.launch { loadDashboardStats() }
+    scope.launch { loadOverview(scope) }
+    scope.launch { loadDashScanStatus(scope) }
+}
+
+/** The scan banner, the Scan button and the *next run* badge, from `GET /api/scan/status` alone. */
+private suspend fun loadDashScanStatus(scope: CoroutineScope) {
+    val status = MediaApi.scanStatus()
+    when (status?.status) {
+        "RUNNING" -> {
+            setDashScanRunning(status.processedCount)
+            // Bug fix (2026-09-05) — see renderDashDeferredBanner's doc: a page load after a run
+            // already deferred must show the paused-for-TV banner immediately (overwriting the
+            // generic one setDashScanRunning just wrote), not wait for a live JobEvent.Deferred that
+            // already fired before this page connected.
+            if (status.deferred) renderDashDeferredBanner(scope, status.deferredDevices, status.jobId ?: "")
+            connectDashScanSocket(scope, baseCount = status.processedCount)
         }
-        // 93e: surface the next scheduled automation run.
-        document.getElementById("dash-next-run")?.let { el ->
-            val next = status?.nextScheduledRun
-            if (next != null) el.textContent = "next run · ${dev.jellystructure.formatStoredTs(next.toString())}"
-            else (el as? HTMLElement)?.style?.display = "none"
-        }
+        "CANCELLED" -> setDashScanCancelled(status.processedCount, status.canResume, status.resumeReason, scope)
+        else -> setDashScanIdle()
+    }
+    // 93e: surface the next scheduled automation run.
+    document.getElementById("dash-next-run")?.let { el ->
+        val next = status?.nextScheduledRun
+        if (next != null) el.textContent = "next run · ${dev.jellystructure.formatStoredTs(next.toString())}"
+        else (el as? HTMLElement)?.style?.display = "none"
     }
 }
 /**
@@ -135,13 +141,16 @@ private suspend fun loadAudiobooksTile() {
     cell.onclick = { App.navigate("/library?kind=audiobooks") }
 }
 
-private suspend fun loadDashboardStats() {
-    loadMusicTile()
-    loadAudiobooksTile()
-    val stats = MediaApi.stats() ?: return
-    (document.getElementById("stat-movies") as? HTMLElement)?.textContent = stats.movies.toString()
-    (document.getElementById("stat-tv") as? HTMLElement)?.textContent = stats.tvEpisodes.toString()
-    (document.getElementById("stat-nfo") as? HTMLElement)?.textContent = "${stats.nfoCoverage}%"
+private suspend fun loadDashboardStats() = coroutineScope {
+    // DEB-2499 (FR-285-20) — the two tiles and the counts are three requests; none waits for another.
+    launch { loadMusicTile() }
+    launch { loadAudiobooksTile() }
+    launch {
+        val stats = MediaApi.stats() ?: return@launch
+        (document.getElementById("stat-movies") as? HTMLElement)?.textContent = stats.movies.toString()
+        (document.getElementById("stat-tv") as? HTMLElement)?.textContent = stats.tvEpisodes.toString()
+        (document.getElementById("stat-nfo") as? HTMLElement)?.textContent = "${stats.nfoCoverage}%"
+    }
     // Phase 117: "Items needing attention" now reads the same triage total the breakdown below sums —
     // it used to be store.totalIssueCount() (an untagged-only SQL sum), a different, smaller number.
 }
@@ -377,7 +386,8 @@ private suspend fun loadOverview(scope: CoroutineScope) {
         return
     }
     renderOverview(scope)
-    dev.jellystructure.api.DashboardApi.seen()
+    // DEB-2499 (FR-285-20) — marking the visit is nobody's prerequisite: the list is already on screen, and nothing waits for the POST.
+    scope.launch { dev.jellystructure.api.DashboardApi.seen() }
 }
 
 /** DEB-2498 (FR-285-18) — a build landed on the server and the Shell fetched it: show it if the Dashboard is open. Does not mark the visit — that is the admin leaving, not the server building. */

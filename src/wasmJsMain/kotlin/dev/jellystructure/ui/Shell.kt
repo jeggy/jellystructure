@@ -163,7 +163,9 @@ fun renderShell(user: UserProfile) {
 
     MainScope().launch {
         // Phase 285 (FR-285-6) — the sidebar count is the Dashboard's row count, the same number its tile shows.
-        updateSidebarStatus(dev.jellystructure.api.DashboardApi.get()?.headline?.rows ?: 0)
+        // DEB-2499 (FR-285-20) — it reads the held overview beside the other requests, not before them; a server that has not built yet
+        // (FR-285-17) leaves the sidebar as it is, since "nothing to fix" would be a claim nobody computed. The push fills it in.
+        launch { refreshDashboardFromServer() }
         // Connection status — retry up to 3 times (5 s apart) to survive a brief cold-start delay
         launch {
             val delayMs = 5_000L
@@ -467,10 +469,7 @@ private fun connectDockSocket() {
                 // DEB-2051 (FR-9) — a conversion job's progress is the push Activity ▸ Jobs uses; the media page asks the server again.
                 is JobEvent.MediaJobUpdate -> ContainerConversionUi.onJob(event.job)
                 // DEB-2498 (FR-285-18) — a Dashboard build landed: the sidebar count, and the list if the Dashboard is open, follow the push.
-                is JobEvent.DashboardUpdated -> MainScope().launch {
-                    val d = dev.jellystructure.api.DashboardApi.get()
-                    if (d != null && d.built) { updateSidebarStatus(d.headline.rows); dashboardPushed(d, this) }
-                }
+                is JobEvent.DashboardUpdated -> MainScope().launch { refreshDashboardFromServer() }
                 else -> {}
             }
         }
@@ -488,6 +487,8 @@ private fun connectDockSocket() {
                 if (dockSocket == null && document.getElementById("ambient-dock") != null) {
                     connectDockSocket()
                     refreshAiNav()
+                    // DEB-2499 (FR-285-18) — a build that landed while the socket was down was pushed to nobody.
+                    MainScope().launch { refreshDashboardFromServer() }
                 }
                 null
             }, 5_000)
@@ -532,6 +533,14 @@ private fun updateDockCount() {
         if (dockTotal > 0) "$dockScanned/$dockTotal" else "$dockScanned"
     (document.getElementById("dock-chip-scanned") as? HTMLElement)?.innerHTML =
         """<span class="dot ok"></span> $dockScanned"""
+}
+
+/** Reads the held overview once; the sidebar count and, if the Dashboard is open, its list take that one answer. */
+private suspend fun refreshDashboardFromServer() {
+    val d = dev.jellystructure.api.DashboardApi.get() ?: return
+    if (!d.built) return
+    updateSidebarStatus(d.headline.rows)
+    dashboardPushed(d, MainScope())
 }
 
 private fun updateSidebarStatus(triageCount: Int) {
