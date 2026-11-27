@@ -167,3 +167,69 @@ The owner, on DEB-5905: *"I tried add an additional Samsung TV to my jeggy user,
 - **QA**, on the row filed from DEB-5905, against the build before this one: on the Pixel 7, with one Ready request and a second Tizen emulator not set up, run the shipped guide to add the second TV and record every screen and the server's rows. Then repeat it on this build.
 
 **No wire change.** The phone reads FR-2's viewer list, which already returns every row.
+
+## Amendment — 2026-11-27 (DEB-5905): the owner picked *A — Stack* for the overview
+
+Rannvá drew FR-10 three ways on DEB-5413 (`d942109d5`, with the report in `a90ce6e5d`, in `design/incoming/2026-11-23-samsung-tv-overview/`). The owner picked **A — Stack** on card `ec836ae3` (DEB-5905, 2026-11-27). This amendment writes A into FR-10 and FR-14. Where it differs from either as written, it wins. The reference pictures are that round's `png/samsung-tv-overview-a-*.png`. Its `stv-data.js` holds the strings, and `samsung-tv-overview.css` (the `.stv-*` rules outside the B and C sections) holds the measurements.
+
+**FR-10a · The page.** It is a list page, not one of the guide's centred one-action pages:
+- **Head.** A 44 dp back target, then the title *Your Samsung TVs* left-aligned on the 18 dp gutter (Space Grotesk 700).
+- **List.** Cards in one column with a 12 dp gap, then the footer (FR-10 item 4): *n TVs found on this Wi‑Fi* (12.5 sp) and *Search again*, which never wraps.
+- **No large illustration.** The shipped `Art.TV` drawing is not on this screen.
+- **No glyph tile.** The round's 34 dp glyph-tile option (`a-x4-glyph`) is not built. The owner picked A without it. He can ask for it at the screenshot gate.
+
+**FR-10b · The cards.**
+- **Surface.** Every card is `card` at radius 14 with a 1 dp hairline (`line`). On the light theme the card is otherwise 2 % from the page.
+- **Big card.** Each Approved or Ready TV gets a big card: radius 18, 15/16 dp padding, the name at 18.5 sp. It holds the two labelled version lines (below) and its one action (FR-10 item 3). **Two or more approved TVs each get their own big card and their own button.**
+- **Small cards.** Every other card is small, and its only action is a quiet link on the text column's left edge.
+- **Name row.** The name (17 sp, 600) sits over the model code (JetBrains Mono), and the badge sits at the row's end. The name column keeps at least 130 sp. When the badge doesn't fit beside it, the badge drops to its own line. The badge never wraps inside itself.
+- **Version lines.** They sit under a hairline: *On the TV* and *Latest*, label on the left and value on the right (13.5 sp labels, JetBrains Mono 600 values). A value that is a word is set in Sora:
+  - **Not installed** (`ov.not_installed`) when FR-11 reads a 404;
+  - **—** when the version is not known.
+
+  Both give *Install on TV*.
+- **Not yet in a release.** An Approved card that no release covers yet shows *Comes with the next Ravilo release* as a sentence that wraps, in place of the *Latest* row.
+- **Up to date.** A green check and *Up to date* stand where the button would be, with *Reinstall* as a quiet link at the row's end.
+- **Buttons.** The primary button is the shipped `GuideButton` (54 dp, radius 27, the accent gradient), 14 dp under the version lines.
+
+**FR-10c · Card order.** The found TVs come first: Approved/Ready, then Waiting for approval, then Not approved, then Not set up. The requests the scan didn't find come after them, as FR-10 item 4 describes, in the same badge order.
+
+**FR-10d · The server's cards come first, while the scan runs.** This replaces FR-10 item 1's *until the scan ends*. The request rows are already read when the screen opens (FR-14). So every request's card is drawn at once, under the scan line (*Looking for TVs on this Wi‑Fi…*, with a turning arc). A big card shows a 54 × 11 dp placeholder bar where *On the TV* will be. One 72 dp placeholder card stands for whatever else the scan finds. When the scan ends, the found TVs take their cards and order (FR-10c), and a request that wasn't found takes *Not found on this Wi‑Fi* (study `a-x1-serverfirst`).
+
+**FR-10e · No Wi‑Fi.**
+- The page shows FR-2's sentence in a notice: 14 sp, `fg` at 6 %, radius 14.
+- The cards come from the server rows. They show neither *Not found on this Wi‑Fi* nor a version, because no scan ran.
+- The footer is the shipped *Try again*, not *Search again*.
+
+**FR-10f · The badges.** The badges use the geometry of the shipped *Experimental* badge: 10 sp Sora 700, uppercase, .8 sp tracking, radius 6, 6/2 dp padding.
+- *Approved* is green on its own 16 % tint.
+- *Waiting for approval* is `textSecondary` on `fg` at 10 %.
+- *Not approved* is red on its own tint.
+- *Not set up* is `textDim`, with no fill and a 1 dp inset line.
+
+`RaviloColors` gains two tokens, `good` and `bad`, with defaults for the dark skins: `good` `#2dd49a`, `bad` `#f2797f`. Daylight overrides them with `#0f7a52` (tint 14 %) and `#b3242c`. The shipped `#2dd49a` reaches only about 1.9 : 1 on Daylight. Midnight, Noir and Graphite take the defaults. Each skin's value is checked on the screenshot gate.
+
+**FR-10g · FR-14's own cards, from A's parts.** The round's all-badges study (`a-x3-allbadges`) draws them:
+- A **Requested** card is small: *Waiting for approval* and the shipped `samsungtv.waiting.withdraw` as its quiet link.
+- A **Rejected** card is small: *Not approved*, then the owner's note, if any, in 13.5 sp `textSecondary` (`.stv-note`), then *Ask again* as its quiet link.
+- **FR-15's *Request sent*** is a notice above the list, the same shape as FR-10e's, with the shipped `samsungtv.waiting.title`. It stays until the guide is closed.
+
+No new design round is needed for these. The screenshot gate (FR-12) covers them.
+
+**FR-10h · Copy.** New keys under `samsungtv.ov.*` and `samsungtv.badge.*` in `en`, `da` and `fo`. Their texts are the round's `stv-data.js` drafts:
+- `ov.title`, `ov.searching`, `ov.on_tv`, `ov.latest`, `ov.unknown`, `ov.not_installed`, `ov.next_release`, `ov.up_to_date`, `ov.reinstall`, `ov.update_to` (`{v}`), `ov.not_found`, `ov.set_up`, `ov.found_one`, `ov.found_n` (`{n}`), `ov.found_none`, `ov.search_again`;
+- `badge.approved`, `badge.waiting`, `badge.rejected`, `badge.notsetup`.
+
+The rules for the strings:
+- **Not added:** direction C's `head.*` and `ov.others`.
+- **Wi‑Fi:** in every string, its hyphen is U+2011 (non-breaking), so *Wi‑Fi* never breaks at 200 %.
+- **Kept and reused:** `samsungtv.ready.cta`, `samsungtv.rejected.again`, `samsungtv.retry`, `samsungtv.waiting.title` and `samsungtv.waiting.withdraw`.
+- **Retired in the same build:** `samsungtv.ready.title`, `samsungtv.ready.body` and `samsungtv.waiting.approved_body`. Nothing renders them once `open()` lands on the overview (FR-14). They are compiled in by `generateRaviloStrings`, so no installed client reads them from the server.
+
+**Verification.** FR-12's and FR-14's tests stand. `GuideScreenshotsTest` draws FR-12's five states and FR-14's three in A's shape, plus these, light and dark:
+- the server-first state while scanning;
+- *Not installed*;
+- two approved TVs;
+- the `fo` overview at the 200 % font setting, with a badge dropped to its own line.
+
+The owner signs those screenshots off on DEB-5905 before the build merges to `main` (FR-9's gate). **No wire change.**
