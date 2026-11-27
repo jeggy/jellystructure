@@ -430,6 +430,25 @@ class GuideTest {
         assertEquals(Target.STEP2, assertIs<GuideScreen.Problem>(g.screen.value).back)
     }
 
+    // DEB-5905 (FR-15) — the shipped detour: one Ready row, two sets on the Wi-Fi, a scan that finds only the first. `find(forInstall = true)`
+    // went straight to the install and ended on *Ravilo is on your TV* with no request made. On the overview that branch must not exist.
+    @Test fun aScanThatFindsOnlyTheReadyTvNeverEndsOnASuccessScreenWithoutARequest() = runTest {
+        val phone = Phone()
+        val (g, ov) = opened(phone, row("READY", duid, wgt).copy(readyFromRelease = "v1.71"))
+        // Nothing says *Request sent*, and nothing was installed by opening the guide.
+        assertFalse(ov.sent); assertEquals(0, phone.downloads); assertEquals(0, phone.fake.connections)
+        // Every button acts on a card that holds a request: the only TV found is the Ready one.
+        val cards = ov.cards.filter { it.action == CardAction.INSTALL || it.action == CardAction.UPDATE || it.action == CardAction.UP_TO_DATE }
+        assertEquals(1, ov.cards.size); assertTrue(cards.all { it.request != null && it.tv != null })
+        // A TV with no card of its own has no way to install: a card without a request does nothing.
+        g.install(TvCard(ov.cards[0].tv, null)); advanceUntilIdle()
+        assertEquals(ov, g.screen.value); assertEquals(0, phone.fake.connections)
+        // Searching again is the same list, never a send.
+        g.refresh(); advanceUntilIdle()
+        val again = assertIs<GuideScreen.Overview>(g.screen.value)
+        assertFalse(again.sent); assertEquals(0, phone.downloads)
+    }
+
     @Test fun aSilentTvFromACardGoesBackToTheOverviewNotToTheListOfEveryTv() = runTest {
         val phone = Phone(); val (g, ov) = opened(phone, row("READY", duid, wgt))
         phone.tv = null
