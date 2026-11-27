@@ -1,0 +1,263 @@
+/* continue-remove-placement.css — the round's own rules, on top of the shipped stylesheets.
+
+   Round slug `continue-remove-placement`, 2026-11-27. The question: where does one more action
+   ("Remove from Continue Watching" / "Show in Continue Watching") go in the title page's action
+   row, on Android TV, the phone, and desktop/Ravilo Web.
+
+   WHAT IS LOADED BEFORE THIS FILE, per ?set (see frames.html):
+     set=tv            design/ravilo/ravilo.css
+     set=phone         design/ravilo/mobile/ravilo-phone.css
+                       design/incoming/2026-11-09-phone-downloads/phone-downloads.css
+     set=desk          design/ravilo/desktop-directions.css
+                       design/ravilo/desktop/ravilo-desktop.css
+     set=study         design/ravilo/ravilo.css
+   Exactly one surface's stylesheet is in a document, so the shipped files' bare selectors
+   (.btn, .hero, .detail) cannot collide across surfaces. The round's own rules are all
+   `crp-`-prefixed, and this file redefines no shipped token and no shipped component.
+
+   The phone frames LINK the adopted phone-downloads round rather than redraw its row. The owner
+   amended that spec's FR-8 to "beside Play" (card `7c8bec51`), which made the shipped phone row
+   Play · Download · My List with My List reduced to a 44 dp icon. Reusing `.pd-dbtns.a`,
+   `.pd-btn.play`, `.pd-dl` and `.pd-mylist-ico` means the row in these pictures is that row byte
+   for byte, and the two rounds' PNGs are diffable.
+
+   NOTHING here is production CSS. design/ravilo/ is reference only — no Gradle task consumes it —
+   so every hex, px, weight, radius and easing is written out for the Compose port rather than
+   left to the implementer.
+
+   NO NEW COMPONENT, COLOUR, ICON OR ANIMATION, as the brief and spec FR-6 require. Every control
+   this round draws is an existing ghost button: `.btn.ghost` on TV, the adopted round's ghost
+   geometry on the phone, `.bt` on desktop. The only genuinely new shape is option B's full-width
+   ghost, and that is the adopted round's own `.pd-dlfull` box with the progress fill taken out.
+
+   CANVAS RULES HELD (PROCESS.md): dark ink on the light-gray backdrop for every word printed on
+   the canvas itself; no content-visibility, no backdrop-filter, no large blur, no infinite
+   animation. The shipped `.dback` and `.hbadge` in ravilo-phone.css ARE backdrop-filter; the
+   adopted round replaced them with a flat `.pd-back2`, which is what these frames use, so no
+   blur reaches the renderer. `.btn` and `.bt` carry shipped transitions; nothing animates on its
+   own and no frame depends on a transition having run.
+*/
+
+/* ---- the three faces, from the repo's own woff2. The render has no network, so these blocks
+   make the picture identical with or without one. No file is copied: the url points at the
+   repo's own copies. ravilo.css's Google Fonts @import is answered from the same directory by
+   scripts/render-design.sh (DEB-2922). ---------------------------------------------------- */
+@font-face { font-family: 'Space Grotesk'; font-style: normal; font-weight: 100 900; font-display: block;
+  src: url('../../app/fonts/space-grotesk.woff2') format('woff2'); }
+@font-face { font-family: 'Sora'; font-style: normal; font-weight: 100 900; font-display: block;
+  src: url('../../app/fonts/sora.woff2') format('woff2'); }
+@font-face { font-family: 'JetBrains Mono'; font-style: normal; font-weight: 100 900; font-display: block;
+  src: url('../../app/fonts/jetbrains-mono.woff2') format('woff2'); }
+
+/* =================================================================================================
+   CANVAS. ravilo.css and ravilo-phone.css both take over html/body (fixed #viewport, #fit,
+   overflow:hidden) because each is a full application's stylesheet. The canvas has to win those
+   back or the renderer sees one clipped screen instead of a page of frames.
+   ================================================================================================= */
+html, body { height: auto !important; overflow: visible !important; background: #e9eaef !important;
+  margin: 0; padding: 0; }
+#viewport, #fit { position: static !important; inset: auto !important; overflow: visible !important; }
+
+.crp-sheetwrap { padding: 30px 30px 44px; }
+.crp-sheetwrap * { box-sizing: border-box; }
+.crp-strip { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 44px 30px; }
+
+/* A holder gives a frame its box and its caption. The caption is canvas text, so it is dark ink
+   on the light backdrop and never a light gray. */
+.crp-hold { position: relative; flex: none; }
+.crp-hold > .crp-cap { display: block; margin: 0 0 9px; color: #262a35;
+  font-family: 'JetBrains Mono', monospace; font-size: 11.5px; font-weight: 700;
+  letter-spacing: .05em; text-transform: uppercase; line-height: 1.5; }
+.crp-hold > .crp-cap i { color: #12141b; font-style: normal; }
+.crp-hold > .crp-cap em { color: #7a2030; font-style: normal; }   /* a failure, named on the canvas */
+
+/* `crp-frame` is the renderer's handle and carries no style of its own, so --all '.crp-frame'
+   never mistakes a nested box for a frame in its own right. */
+
+/* =================================================================================================
+   TV — a stand-in for #stage. ravilo.css's #stage is position:fixed and transform-scaled to the
+   viewport, which a page of frames cannot use; this box repeats its declarations without the
+   positioning, so every child below it is the shipped component at the shipped size.
+   1920x1080, drawn at 1920 and measured at 1920 (SKILL-house).
+   ================================================================================================= */
+.crp-tv { width: 1920px; height: 1080px; position: relative; overflow: hidden;
+  background: var(--bg); color: var(--ink); display: flex; flex-direction: column;
+  font-family: 'Sora', sans-serif; }
+.crp-tv * { box-sizing: border-box; }
+/* The detail page scrolls; a 1080-tall frame is its top. The hero is the shipped 620 px and the
+   section beneath it is clipped exactly where a viewer's screen clips it. */
+.crp-tv .crp-tvscroll { flex: 1; min-height: 0; overflow: hidden; }
+
+/* The hero backdrop. The shipped .hero-bg takes an <img>; the corpus has no artwork for an
+   invented title, so a deterministic two-stop gradient from RAVILO.grad() stands in — the same
+   function every other Ravilo mockup uses for a title with no picture. */
+.crp-tv .crp-art { position: absolute; inset: 0; background-size: cover; background-position: center; }
+
+/* =================================================================================================
+   PHONE — the adopted round's own 412x915 box is `.pd-ph`, which this round reuses. Nothing is
+   added here but option B's control, option C's overflow, and the 4-up row option A asks for.
+   ================================================================================================= */
+
+/* ---- OPTION A on the phone: a fourth item in a row that already has three. The row keeps the
+   adopted geometry (Play flexible, Download a fixed pill, My List 44 dp icon) and the new action
+   is appended as a fourth flexible button. Nothing is widened to make it fit: the point of the
+   frame is what happens at 372 px, and `min-width: 0` lets the browser do to the labels exactly
+   what Compose would. ------------------------------------------------------------------------ */
+.pd-dbtns.a.crp-four .pd-btn.play { flex: 1 1 auto; min-width: 0; }
+/* Play's label clips rather than spilling past the pill — see crp-kit.js. The rule is on every
+   option's row, not only option A's, so the three phone options are drawn under identical
+   conditions and the difference between their pictures is the design and nothing else. */
+.pd-dbtns.a .pd-btn.play .crp-plbl { min-width: 0; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; }
+.pd-dbtns.a.crp-four .crp-cw { flex: 1 1 auto; min-width: 0; height: 44px; padding: 0 12px;
+  border-radius: 12px; display: inline-flex; align-items: center; justify-content: center;
+  gap: 7px; font: 600 15px 'Sora', sans-serif; border: 1px solid var(--line-2);
+  background: rgba(var(--fg), .07); color: var(--ink); overflow: hidden;
+  white-space: nowrap; text-overflow: ellipsis; }
+/* The label inside is what truncates, so the frame shows a clipped WORD rather than a clipped
+   box — which is what a reviewer has to see to judge option A at all. */
+.pd-dbtns.a.crp-four .crp-cw > span { min-width: 0; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; }
+
+/* ---- OPTION B on the phone: the adopted round's own full-width ghost, with the progress fill
+   taken out. Same 46 px height, same radius 12, same 12 px above the row it follows, same
+   border and background tokens. `isolation: isolate` is kept from that round deliberately: it is
+   load-bearing there (PROCESS.md's round-11 trap, found twice) and a control that may later grow
+   a positioned child should not have to rediscover it. ------------------------------------- */
+.crp-cwfull { isolation: isolate; position: relative; display: flex; align-items: center;
+  justify-content: center; gap: 8px; width: 100%; height: 46px; margin-top: 12px;
+  border-radius: 12px; overflow: hidden; border: 1px solid var(--line-2);
+  background: rgba(var(--fg), .07); color: var(--ink);
+  font: 600 15px 'Sora', sans-serif; cursor: pointer; }
+/* The restore state is the same control with the same words' worth of weight — no new colour.
+   It is told apart by its LABEL, never by its fill: SKILL-house, "never express state by accent
+   colour alone", and the owner's shown-and-disabled rule that round 9 broke. */
+.crp-cwfull .crp-lbl { position: relative; z-index: 2; display: inline-flex; align-items: center;
+  gap: 8px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ---- OPTION C on the phone: a 44 dp overflow in the row's last slot, and the sheet it opens.
+   The sheet is the shipped phone sheet shape (`.pd-sheet` in the adopted round is the quality
+   sheet; this is the same box with rows that are actions rather than choices) — which is the
+   cost the report names, because the detail page has no sheet today. -------------------------- */
+.pd-dbtns.a .crp-of { flex: none; width: 44px; height: 44px; border-radius: 12px;
+  background: rgba(var(--fg), .13); color: var(--ink); display: flex; align-items: center;
+  justify-content: center; border: 0; font-size: 21px; line-height: 1; letter-spacing: .08em;
+  font-family: 'Sora', sans-serif; cursor: pointer; }
+.crp-scrim { position: absolute; inset: 0; z-index: 70; background: rgba(6, 8, 14, .62); }
+.crp-sheet { position: absolute; left: 0; right: 0; bottom: 0; z-index: 72;
+  background: var(--card); border-radius: 20px 20px 0 0; border-top: 1px solid var(--line-2);
+  padding: 8px 0 22px; }
+.crp-sheet .crp-grab { width: 42px; height: 4px; border-radius: 2px; margin: 0 auto 12px;
+  background: rgba(var(--fg), .22); }
+.crp-sheet .crp-sh { padding: 0 20px 10px; font-family: 'Space Grotesk', sans-serif;
+  font-size: 15px; font-weight: 600; color: var(--ink); }
+.crp-sheet .crp-srow { display: flex; align-items: center; gap: 12px; min-height: 52px;
+  padding: 0 20px; font-size: 15px; font-weight: 600; color: var(--ink); }
+.crp-sheet .crp-srow .crp-sico { flex: none; width: 22px; text-align: center; font-size: 17px;
+  color: var(--ink-soft); }
+
+/* =================================================================================================
+   DESKTOP / RAVILO WEB — the shipped window at 1440 wide. SIZES.large in
+   design/ravilo/desktop/ravilo-desktop.js is 1280x800 and its tier is ">= 1200", so 1440 is the
+   same tier and `.hero .hb { max-width: 480px }` is unchanged by the extra 160 px. That cap is
+   the whole constraint on this surface and the reason option A does not survive here either.
+   ================================================================================================= */
+.crp-desk { position: relative; }
+.crp-desk .win { width: 1440px; height: 900px; }
+/* The round draws the detail page, so the frame carries .dx-fd — that is what gives the hero its
+   shipped 420 px on this page rather than the home hero's 380. */
+
+/* OPTION A on desktop. The first render let this row WRAP, and the result was a picture almost
+   indistinguishable from option B's — which would have put two options in front of the owner
+   that look the same and are not. It does not wrap now: `ravilo-ui`'s detail page is a Compose
+   Row, a Row does not wrap, and the last control ellipsizes instead. That is both the honest
+   prediction and the picture that actually tells the two options apart. */
+.crp-desk .btns.crp-arow { flex-wrap: nowrap; min-width: 0; }
+.crp-desk .btns.crp-arow .bt { min-width: 0; }
+.crp-desk .btns.crp-arow .bt:last-child { flex: 0 1 auto; overflow: hidden; }
+.crp-desk .btns.crp-arow .bt .crp-dlbl { min-width: 0; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; }
+/* Play and My List keep their words: the owner's own rule on the phone row was "Play must not
+   move", and a drawing that lets the primary shrink first would be testing a design nobody
+   proposed. The control that arrives last is the control that gives way. */
+.crp-desk .btns.crp-arow .bt.pri, .crp-desk .btns.crp-arow .bt:nth-child(2) { flex: none; }
+
+/* OPTION B on desktop: the same full-width ghost idea at desktop scale, inside `.hb`, so it is
+   480 px wide and the Faroese label is whole. Height, radius and type match the shipped `.bt`
+   it sits under rather than the phone's 46 px. */
+.crp-desk .crp-cwdesk { display: flex; align-items: center; justify-content: center; gap: 8px;
+  width: 100%; height: 38px; margin-top: 10px; border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, .22); background: rgba(255, 255, 255, .12);
+  color: #fff; font: 600 13.5px 'Sora', sans-serif; cursor: pointer; white-space: nowrap; }
+/* `.hero .hb` re-declares --ink/--chip to white because it sits on artwork, in the light theme
+   too (`.lt .hero .hb`). The control above therefore takes literal white rather than var(--ink):
+   a token read here would be the page's ink, not the hero's. */
+
+/* OPTION C on desktop: a `⋯` as the row's last `.bt`, square. */
+.crp-desk .bt.crp-ofd { width: 38px; padding: 0; justify-content: center; font-size: 19px;
+  letter-spacing: .08em; line-height: 1; }
+/* The menu it opens. Anchored to `.hb` — whose last child IS the action row — so it opens from
+   the control rather than from a hand-typed offset: `right: 0` lines its right edge up with the
+   ⋯ that opened it, and `bottom: 100%` opens it upward so the row, the ⋯ and the title all stay
+   visible. The first render used a fixed left/bottom pair and landed the menu across the title
+   and half the synopsis, which is PROCESS.md's round-8 defect and would have shown option C at
+   its worst for no reason. Anchoring also means the light theme needs no second set of numbers:
+   `.lt .hero` moves and resizes the hero, and the menu follows it.
+
+   A desktop menu is not a phone sheet and neither is a TV panel, which is the honest cost of
+   option C: it is three designs wearing one name. */
+/* The menu declares its own colours instead of reading the tokens, because it sits INSIDE `.hb`
+   and `.hero .hb` re-declares `--ink` to white for text on artwork. Read from there, the menu
+   came out as white words on a pale panel in the Daylight theme — invisible, and found only by
+   looking at the light-theme picture. This file already carried that warning for `.crp-cwdesk`
+   and the menu walked into it anyway; the hexes are the house card-and-ink pairs, written out. */
+.crp-desk .crp-menu { position: absolute; right: 0; bottom: 100%; margin-bottom: 10px;
+  z-index: 40; min-width: 300px; padding: 6px;
+  border-radius: 12px; background: #1b2031; border: 1px solid rgba(255, 255, 255, .16);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, .55); }
+.crp-desk .crp-menu .crp-mrow { display: flex; align-items: center; gap: 10px; height: 36px;
+  padding: 0 10px; border-radius: 8px; font: 600 13.5px 'Sora', sans-serif; color: #f3f4fb;
+  white-space: nowrap; }
+.crp-desk .crp-menu .crp-mrow.on { background: rgba(255, 255, 255, .08); }
+/* Daylight: a real light panel, not the dark one tinted. */
+.crp-desk .lt .crp-menu { background: #ffffff; border-color: rgba(16, 18, 30, .14);
+  box-shadow: 0 24px 60px rgba(16, 18, 30, .22); }
+.crp-desk .lt .crp-menu .crp-mrow { color: #15171f; }
+.crp-desk .lt .crp-menu .crp-mrow.on { background: rgba(16, 18, 30, .07); }
+
+/* =================================================================================================
+   THE MEASUREMENT STUDY. PROCESS.md's round-11 lesson is that a defect can be invisible at 1x,
+   and this round's whole question is "does the label fit" — so the measurement is drawn, at 3x,
+   in dark ink on the canvas, with the box it has to fit inside drawn around it. A width quoted in
+   REPORT.md can then be checked against a picture instead of trusted.
+   ================================================================================================= */
+.crp-study { width: 1240px; color: #12141b; font-family: 'Sora', sans-serif; }
+.crp-study h3 { font-family: 'Space Grotesk', sans-serif; font-size: 19px; font-weight: 700;
+  color: #12141b; margin: 0 0 4px; }
+.crp-study p { font-size: 13px; line-height: 1.55; color: #262a35; margin: 0 0 18px; max-width: 900px; }
+.crp-study .crp-srowm { margin: 0 0 20px; }
+.crp-study .crp-skey { font-family: 'JetBrains Mono', monospace; font-size: 11px; font-weight: 700;
+  letter-spacing: .04em; text-transform: uppercase; color: #262a35; margin-bottom: 5px; }
+.crp-study .crp-skey b { color: #12141b; }
+.crp-study .crp-skey u { color: #7a2030; text-decoration: none; }
+/* The box is the limit from crp-data.js GEO, scaled by the same factor as the label, so the
+   picture is an honest comparison and not two different scales side by side. */
+/* The box is the row's real width, scaled; the fill is the row's controls, each drawn at its own
+   measured width and scaled by the same factor. `overflow: visible` on the fill is deliberate —
+   when a row does not fit, the segment that runs PAST the dashed edge is the whole finding, and
+   clipping it would hide exactly what the study exists to show. */
+.crp-study .crp-box { position: relative; height: 34px; border: 1px dashed #9aa0b4;
+  border-radius: 4px; background: #f6f6f9; display: flex; align-items: center; }
+.crp-study .crp-box.over { border-color: #7a2030; }
+.crp-study .crp-fill { height: 100%; display: flex; align-items: stretch; overflow: visible;
+  white-space: nowrap; }
+.crp-study .crp-seg { display: flex; align-items: center; justify-content: center;
+  padding: 0 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: 11.5px; font-weight: 600; color: #12141b;
+  background: rgba(123, 110, 240, .20); border: 1px solid rgba(91, 78, 224, .55);
+  border-radius: 3px; }
+.crp-study .crp-seg.alt { background: rgba(123, 110, 240, .10); }
+.crp-study .crp-fill.over .crp-seg:last-child { background: rgba(190, 40, 60, .22);
+  border-color: #7a2030; color: #4a0d18; }
+.crp-study .crp-gap { flex: none; }
+.crp-study h3 u, .crp-study p u { text-decoration: none; border-bottom: 2px solid #5b4ee0; }

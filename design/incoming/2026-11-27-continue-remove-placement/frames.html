@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Where &ldquo;Remove from Continue Watching&rdquo; sits on the title page &mdash; frames</title>
+<!--
+  frames.html — every frame this round renders, built from crp-data.js through crp-kit.js.
+
+  One document, parameterised, rather than one document per picture:
+      ?set=tv | phone | desk | study
+      &lang=en|da|fo
+      &skin=aurora|midnight|noir|graphite|daylight
+
+  EXACTLY ONE SURFACE'S STYLESHEET IS IN A DOCUMENT. ravilo.css, ravilo-phone.css and
+  desktop-directions.css are each a whole application's stylesheet with bare selectors — .btn,
+  .hero, .detail, .meta — so loading two of them together is a class collision, which is the cost
+  round 9 paid for linking production CSS instead of copying it. Selecting by ?set keeps the trade
+  (every token, radius, weight and font in these pictures is the production one) without the cost.
+
+  The phone set also links the ADOPTED phone-downloads round. The owner amended that spec's FR-8
+  to "beside Play" on card 7c8bec51, which made the shipped phone action row
+  Play · Download · My List with My List reduced to a 44 dp icon — that is the row this round has
+  to fit one more action into, so it is linked rather than redrawn, and the two rounds' PNGs are
+  diffable.
+
+  ravilo-data.js is loaded for three functions only: RAVILO.grad(), RAVILO.initials() and
+  RAVILO.castFor(). Every backdrop colour, every set of initials and every cast name in these
+  pictures therefore comes from the corpus the TV and phone mockups already draw. The two TITLES
+  are the brief's own stand-ins (Saltwind, Harbourlight) and nothing else is invented.
+
+  The round's own stylesheet always comes last, so it extends the shipped system and never
+  precedes it. No network reference of any kind: the three faces resolve to design/app/fonts/,
+  and ravilo.css's Google Fonts @import is answered from the same directory by
+  scripts/render-design.sh (DEB-2922).
+
+  Opened by hand in a browser this page works exactly as the renderer sees it.
+-->
+<script>
+  (function () {
+    var q = new URLSearchParams(location.search);
+    var set = q.get('set') || 'tv';
+    var lang = q.get('lang') || 'en';
+    var skin = q.get('skin') || 'aurora';
+    document.documentElement.lang = lang;
+    document.documentElement.dataset.skin = skin;
+    if (set === 'phone') {
+      document.write('<link rel="stylesheet" href="../../ravilo/mobile/ravilo-phone.css">');
+      document.write('<link rel="stylesheet" href="../2026-11-09-phone-downloads/phone-downloads.css">');
+    } else if (set === 'desk') {
+      document.write('<link rel="stylesheet" href="../../ravilo/desktop-directions.css">');
+      document.write('<link rel="stylesheet" href="../../ravilo/desktop/ravilo-desktop.css">');
+    } else {
+      /* tv and study */
+      document.write('<link rel="stylesheet" href="../../ravilo/ravilo.css">');
+    }
+    document.write('<link rel="stylesheet" href="continue-remove-placement.css">');
+    window.CRPOPT = { set: set, lang: lang, skin: skin };
+  })();
+</script>
+</head>
+<body>
+<div class="crp-sheetwrap"><div class="crp-strip" id="frames"></div></div>
+
+<script src="../../ravilo/ravilo-data.js"></script>
+<script src="crp-data.js"></script>
+<script src="crp-kit.js"></script>
+<script>
+(function () {
+  'use strict';
+  var o = window.CRPOPT, K = window.CRPKit;
+  K.setLang(o.lang);
+  var root = document.getElementById('frames');
+
+  /* An id gains its language and its skin as a suffix, so one render per combination writes PNGs
+     that cannot collide. English + aurora takes no suffix, which keeps the common case readable. */
+  var sfx = (o.lang === 'en' ? '' : '-' + o.lang)
+          + (o.skin === 'aurora' ? '' : '-' + o.skin);
+
+  function add(el, cap) {
+    var d = document.createElement('div');
+    d.className = 'crp-hold';
+    d.innerHTML = '<span class="crp-cap">' + cap + '</span>';
+    d.appendChild(el);
+    root.appendChild(d);
+  }
+
+  /* -------------------------------------------------------------------------------------------
+     TV — 1920x1080. Option A and option B draw the SAME TV row: the brief's lean (last, after
+     My List) is the only position that keeps spec FR-6's three promises at once — never the
+     first focus target, Play stays first, nothing before it moves — and there is 1792 px of row
+     to put it in. So these frames serve both options and the captions say so.
+     ------------------------------------------------------------------------------------------- */
+  if (o.set === 'tv') {
+    var tv = [
+      /* the two focus states the brief asks for, at the longest language */
+      ['ab-tv-film-remove-playfocus', { state: 'remove', focus: 'play', opt: 'b' },
+        'A+B · TV film · <i>remove</i> · PLAY focused'],
+      ['ab-tv-film-remove-actionfocus', { state: 'remove', focus: 'action', opt: 'b' },
+        'A+B · TV film · <i>remove</i> · ACTION focused'],
+      ['ab-tv-film-restore-actionfocus', { state: 'restore', focus: 'action', opt: 'b' },
+        'A+B · TV film · <i>restore — the undo</i> · ACTION focused'],
+      /* the control: `neither`, no action. This is what proves the row has not moved. */
+      ['ab-tv-film-none', { state: 'none', focus: 'play', opt: 'b' },
+        'A+B · TV film · <i>neither — no action</i> · CONTROL'],
+      ['ab-tv-series-remove-actionfocus', { state: 'remove', focus: 'action', opt: 'b', series: 1 },
+        'A+B · TV series · <i>remove</i> · ACTION focused'],
+      ['ab-tv-series-restore-playfocus', { state: 'restore', focus: 'play', opt: 'b', series: 1 },
+        'A+B · TV series · <i>restore</i> · PLAY focused'],
+      ['ab-tv-series-none', { state: 'none', focus: 'play', opt: 'b', series: 1 },
+        'A+B · TV series · <i>neither</i> · CONTROL'],
+      /* option C on the TV: an overflow in the row, and the panel it opens */
+      ['c-tv-film-overflow', { state: 'remove', focus: 'action', opt: 'c' },
+        'C · TV film · <i>⋯ in the row</i> · OVERFLOW focused'],
+      ['c-tv-film-panel', { state: 'remove', focus: null, opt: 'c', panel: 1 },
+        'C · TV film · <i>the panel it opens</i>']
+    ];
+    tv.forEach(function (f) {
+      f[1].id = f[0] + sfx;
+      add(K.tv(f[1]), f[2]);
+    });
+  }
+
+  /* -------------------------------------------------------------------------------------------
+     PHONE — 412x915. The row is the adopted Play · Download · My List.
+     ------------------------------------------------------------------------------------------- */
+  if (o.set === 'phone') {
+    var ph = [
+      /* option A first, because whether it fits is the brief's own question */
+      ['a-phone-film-remove', { opt: 'a', state: 'remove' },
+        'A · phone film · <i>remove, 4th in the row</i>'],
+      ['a-phone-film-restore', { opt: 'a', state: 'restore' },
+        'A · phone film · <i>restore, 4th in the row</i>'],
+      ['b-phone-film-remove', { opt: 'b', state: 'remove' },
+        'B · phone film · <i>remove, a line of its own</i>'],
+      ['b-phone-film-restore', { opt: 'b', state: 'restore' },
+        'B · phone film · <i>restore — the undo</i>'],
+      ['b-phone-film-none', { opt: 'b', state: 'none' },
+        'B · phone film · <i>neither — no action</i> · CONTROL'],
+      ['b-phone-series-remove', { opt: 'b', state: 'remove', series: 1 },
+        'B · phone series · <i>remove</i>'],
+      ['b-phone-series-none', { opt: 'b', state: 'none', series: 1 },
+        'B · phone series · <i>neither</i> · CONTROL'],
+      ['c-phone-film-row', { opt: 'c', state: 'remove' },
+        'C · phone film · <i>⋯ in the row</i>'],
+      ['c-phone-film-sheet', { opt: 'c', state: 'remove', sheet: 1 },
+        'C · phone film · <i>the sheet it opens</i>'],
+      ['c-phone-film-none', { opt: 'c', state: 'none' },
+        'C · phone film · <i>neither — the ⋯ stays</i> · CONTROL']
+    ];
+    ph.forEach(function (f) {
+      f[1].id = f[0] + sfx;
+      add(K.phone(f[1]), f[2]);
+    });
+  }
+
+  /* -------------------------------------------------------------------------------------------
+     DESKTOP / RAVILO WEB — the shipped window at 1440 wide. Both clients share ravilo-ui's detail
+     page (spec FR-6 lists "Ravilo Web (both layouts), desktop Mac and Linux" together), so one
+     set of frames answers for both and the report says so.
+     ------------------------------------------------------------------------------------------- */
+  if (o.set === 'desk') {
+    var dk = [
+      ['a-desk-film-remove', { opt: 'a', state: 'remove' },
+        'A · desktop/web film · <i>remove, last in the row</i>'],
+      ['a-desk-series-remove', { opt: 'a', state: 'remove', series: 1 },
+        'A · desktop/web series · <i>remove, last in the row</i>'],
+      ['b-desk-film-remove', { opt: 'b', state: 'remove' },
+        'B · desktop/web film · <i>remove, a line of its own</i>'],
+      ['b-desk-film-restore', { opt: 'b', state: 'restore' },
+        'B · desktop/web film · <i>restore — the undo</i>'],
+      ['b-desk-film-none', { opt: 'b', state: 'none' },
+        'B · desktop/web film · <i>neither — no action</i> · CONTROL'],
+      ['b-desk-series-remove', { opt: 'b', state: 'remove', series: 1 },
+        'B · desktop/web series · <i>remove</i>'],
+      ['c-desk-film-row', { opt: 'c', state: 'remove' },
+        'C · desktop/web film · <i>⋯ in the row</i>'],
+      ['c-desk-film-menu', { opt: 'c', state: 'remove', menu: 1 },
+        'C · desktop/web film · <i>the menu it opens</i>']
+    ];
+    dk.forEach(function (f) {
+      f[1].id = f[0] + sfx;
+      f[1].light = (o.skin === 'daylight');
+      add(K.desk(f[1]), f[2]);
+    });
+  }
+
+  /* -------------------------------------------------------------------------------------------
+     THE MEASUREMENT STUDY.
+     ------------------------------------------------------------------------------------------- */
+  if (o.set === 'study') {
+    add(K.study('study-widths' + sfx),
+      'STUDY · <i>needed width against the box</i> · ' + o.lang);
+  }
+})();
+</script>
+</body>
+</html>

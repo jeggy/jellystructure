@@ -1,0 +1,275 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Where &ldquo;Remove from Continue Watching&rdquo; sits on the title page &mdash; directions</title>
+<!--
+  The document to read for this round. Self-contained: no stylesheet, no script, no image and no
+  network reference of any kind, so it opens anywhere and says the same thing. The pictures it
+  refers to are the PNGs in png/, named <option>-<surface>-<page>-<state>[-focus][-lang][-skin].
+-->
+<style>
+  :root { --ink: #12141b; --ink-2: #262a35; --line: #d3d6e0; --hi: #5b4ee0; --bad: #7a2030;
+          --ok: #1c6b4a; --paper: #ffffff; --wash: #f4f5f8; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: #e9eaef; color: var(--ink);
+         font: 15px/1.6 'Sora', system-ui, -apple-system, 'Segoe UI', sans-serif; }
+  main { max-width: 1020px; margin: 0 auto; padding: 48px 28px 90px; }
+  h1 { font-size: 30px; line-height: 1.15; letter-spacing: -.01em; margin: 0 0 6px; }
+  h2 { font-size: 21px; letter-spacing: -.01em; margin: 44px 0 10px;
+       padding-top: 18px; border-top: 1px solid var(--line); }
+  h3 { font-size: 16px; margin: 24px 0 6px; }
+  p, li { color: var(--ink-2); }
+  .lede { font-size: 16.5px; color: var(--ink); }
+  code { font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: .88em;
+         background: var(--wash); padding: 1px 5px; border-radius: 4px; }
+  table { border-collapse: collapse; width: 100%; margin: 14px 0 6px; background: var(--paper);
+          border: 1px solid var(--line); border-radius: 8px; overflow: hidden; font-size: 14px; }
+  th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line);
+           vertical-align: top; }
+  th { background: var(--wash); font-weight: 700; color: var(--ink); white-space: nowrap; }
+  tr:last-child td { border-bottom: 0; }
+  td.n { font-family: 'JetBrains Mono', ui-monospace, monospace; white-space: nowrap; }
+  .no { color: var(--bad); font-weight: 700; }
+  .yes { color: var(--ok); font-weight: 700; }
+  .rec { background: #efedff; border: 1px solid #c9c2ff; border-radius: 10px;
+         padding: 14px 18px; margin: 14px 0; }
+  .rec b { color: var(--hi); }
+  .note { border-left: 3px solid var(--line); padding: 2px 0 2px 14px; margin: 14px 0;
+          color: var(--ink-2); }
+  .file { font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 12.5px;
+          color: var(--ink); }
+  ul { margin: 8px 0 8px 0; padding-left: 20px; }
+  li { margin: 4px 0; }
+</style>
+</head>
+<body>
+<main>
+
+<h1>Where &ldquo;Remove from Continue Watching&rdquo; sits on the title page</h1>
+<p class="lede">Round <code>continue-remove-placement</code>, 2026-11-27. Android TV, the phone, and
+desktop / Ravilo Web. Three options, drawn in English, Danish and Faroese, in both states plus the
+state where the action does not exist, with the TV in Aurora and Noir and the phone and desktop in
+Daylight.</p>
+
+<h2>What is fixed before the round starts</h2>
+<ul>
+  <li><b>One ghost button, nothing else.</b> No new component, colour, icon or animation. Every
+      control drawn here is the shipped ghost: <code>.btn.ghost</code> on TV, the adopted phone
+      row&rsquo;s ghost on the phone, <code>.bt</code> on desktop.</li>
+  <li><b>Play keeps first focus</b>, the action is never the first focus target, and nothing before
+      it in the row moves.</li>
+  <li><b>The restore label is the undo.</b> A viewer who removes by mistake presses the same place
+      again, so whatever shape the action takes has to be the same shape in both states.</li>
+  <li><b>The label flips at once on press</b>, so the control has to be readable in place &mdash; it
+      cannot be somewhere the viewer has to go back to.</li>
+  <li><b>Three states</b>: in Continue Watching &rarr; <i>Remove from Continue Watching</i>;
+      removed &rarr; <i>Show in Continue Watching</i>; neither &rarr; no action at all.</li>
+  <li><b>The rows the action joins are already full.</b> On TV: Play &middot; Mark watched &middot;
+      Trailer &middot; My List (no Mark watched on a series). On the phone: Play &middot; Download
+      &middot; My List, with My List reduced to a 44&nbsp;dp icon and Download on a fixed width per
+      language, as the owner settled it. On desktop and Ravilo Web: Play &middot; My List.</li>
+</ul>
+
+<h2>The measurement that decides the question</h2>
+<p>The brief asks whether the row can take one more action <i>at Faroese width</i>. Measured, the
+answer is narrower than that and the same in every language. Each figure is the whole row &mdash;
+every control&rsquo;s text in Sora at that surface&rsquo;s size and weight, plus that
+control&rsquo;s padding, border and icon, plus the row&rsquo;s gaps &mdash; against the row&rsquo;s
+real width. <span class="file">study-widths.png</span>, <span class="file">-da</span>,
+<span class="file">-fo</span>.</p>
+
+<table>
+  <tr><th>Row</th><th>Box</th><th>English</th><th>Danish</th><th>Faroese</th><th>Fits?</th></tr>
+  <tr><td>TV, film, action last (A and B)</td><td class="n">1792</td><td class="n">1332</td>
+      <td class="n">&mdash;</td><td class="n">1373</td><td class="yes">yes</td></tr>
+  <tr><td>TV, series, action last (A and B)</td><td class="n">1792</td><td class="n">1076</td>
+      <td class="n">&mdash;</td><td class="n">1111</td><td class="yes">yes</td></tr>
+  <tr><td>Phone, the shipped row today</td><td class="n">372</td><td class="n">296</td>
+      <td class="n">255</td><td class="n">297</td><td class="yes">yes</td></tr>
+  <tr><td><b>Phone, option A</b> (action 4th in the row)</td><td class="n">372</td>
+      <td class="n">568</td><td class="n">484</td><td class="n">577</td>
+      <td class="no">no, by 196&ndash;205</td></tr>
+  <tr><td>Phone, option B (its own line)</td><td class="n">372</td><td class="n">266</td>
+      <td class="n">223</td><td class="n">274</td><td class="yes">yes</td></tr>
+  <tr><td>Desktop / Web, the shipped row today</td><td class="n">480</td><td class="n">314</td>
+      <td class="n">336</td><td class="n">323</td><td class="yes">yes</td></tr>
+  <tr><td><b>Desktop / Web, option A</b> (action last)</td><td class="n">480</td>
+      <td class="n">573</td><td class="n">556</td><td class="n">589</td>
+      <td class="no">no, by 76&ndash;109</td></tr>
+  <tr><td>Desktop / Web, option B (its own line)</td><td class="n">480</td><td class="n">243</td>
+      <td class="n">&mdash;</td><td class="n">250</td><td class="yes">yes</td></tr>
+</table>
+
+<p><b>Option A fails in English too, and it fails on two surfaces, not one.</b> The brief expected
+Faroese to be the break and the phone to be the only casualty. Neither holds. Desktop and Ravilo
+Web have <code>.hero .hb { max-width: 480px }</code>, and that cap does not grow with the window
+&mdash; a 1440&nbsp;px window has the same 480&nbsp;px of row as a 1280&nbsp;px one.</p>
+
+<h2>The three options</h2>
+
+<h3>A &middot; Last in the row &mdash; the brief&rsquo;s lean</h3>
+<p>The action is the last item of the action row, after My List, on every surface.</p>
+<ul>
+  <li><b>TV: good.</b> 1373 of 1792&nbsp;px at the longest language, 419&nbsp;px to spare. Play
+      keeps first focus and nothing before the action moves.
+      <span class="file">ab-tv-film-remove-actionfocus-fo.png</span></li>
+  <li><b>Phone: it takes Play&rsquo;s words away.</b> At 372&nbsp;px the row is over by 205, and the
+      control that gives way first is the primary one: Play renders as
+      <b>&ldquo;&#9654;&nbsp;&hellip;&rdquo;</b> in English and Faroese and
+      &ldquo;&#9654;&nbsp;Fo&hellip;&rdquo; in Danish, while the new action is itself cut to
+      &ldquo;Tak burtur &uacute;&nbsp;&hellip;&rdquo;. Two labels destroyed to add one.
+      <span class="file">a-phone-film-remove-fo.png</span></li>
+  <li><b>Desktop / Web: the new label is cut to nonsense</b> in all three languages &mdash;
+      &ldquo;Remove from C&hellip;&rdquo;, &ldquo;Fjern fra Forts&aelig;t&nbsp;&hellip;&rdquo;,
+      &ldquo;Tak burtur &uacute;&hellip;&rdquo;.
+      <span class="file">a-desk-film-remove-fo.png</span></li>
+</ul>
+
+<h3>B &middot; A line of its own &mdash; recommended</h3>
+<p>The action row is left exactly as it is. On the phone and on desktop / Ravilo Web the action is a
+full-width ghost control on its own line beneath the row. On the TV, where there is room, it stays
+last in the row &mdash; option A&rsquo;s position, which is the right one wherever it fits.</p>
+<ul>
+  <li>Every label whole in every language and both themes, with 98&nbsp;px of slack on the phone and
+      230 on desktop. <span class="file">b-phone-film-remove-fo.png</span>,
+      <span class="file">b-desk-film-remove-fo.png</span></li>
+  <li>Play, Download and My List are untouched, so the owner&rsquo;s &ldquo;Play must not
+      move&rdquo; holds without a second thought.</li>
+  <li>The remove and the restore are the same control in the same place, which is what makes the
+      restore label an undo. <span class="file">b-phone-film-restore-fo.png</span></li>
+  <li>The shape is not new: it is the full-width secondary control the phone download round already
+      drew (<code>.pd-dlfull</code>), with the progress fill taken out.</li>
+  <li><b>Cost:</b> one more tap target on the phone and desktop, and on the phone the synopsis moves
+      down 58&nbsp;px when the action is present. On TV, nothing changes at all.</li>
+</ul>
+
+<h3>C &middot; In the row&rsquo;s overflow</h3>
+<p>A <code>&ctdot;</code> takes the row&rsquo;s last slot and opens something that carries the
+action: a sheet on the phone, a menu on desktop, a panel on TV.</p>
+<ul>
+  <li><b>It fits everywhere</b>, including the phone, and every label stays whole.
+      <span class="file">c-phone-film-row-fo.png</span></li>
+  <li><b>But the undo stops being the same place.</b> Remove is two presses and restore is two
+      presses, through a surface the viewer has to open to find out what state the title is in. The
+      label can no longer flip under the finger that pressed it.</li>
+  <li><b>It is three designs wearing one name</b> &mdash; a bottom sheet, a pointer menu and a TV
+      panel &mdash; and the detail page has none of the three today.</li>
+  <li><b>The <code>&ctdot;</code> has to be there in the state where there is no action</b>, or the
+      row&rsquo;s last slot appears and disappears with the playstate. Drawn both ways; neither is
+      good. <span class="file">c-phone-film-none-fo.png</span></li>
+  <li>On TV it adds a focus stop that says nothing and an overlay the page does not have, against
+      &ldquo;focus motion is unchanged&rdquo;.</li>
+</ul>
+
+<div class="rec">
+  <p style="margin:0"><b>Recommendation: B.</b> It is the only option in which every label is whole
+  on every surface in every language, the only one that leaves Play alone, and the only one in
+  which the restore really is the undo &mdash; the same control, in the same place, with different
+  words. It keeps the brief&rsquo;s lean wherever the lean works: on the TV it <i>is</i> option A.
+  Its whole cost is one more tap target on two surfaces, and it costs the TV nothing.</p>
+</div>
+
+<h2>Every state the recommended direction holds</h2>
+<table>
+  <tr><th>State</th><th>TV</th><th>Phone</th><th>Desktop / Web</th></tr>
+  <tr><td>In Continue Watching &mdash; <i>Remove&hellip;</i></td>
+      <td>last in the row, ghost</td><td>own line, full width</td><td>own line, full width</td></tr>
+  <tr><td>Removed &mdash; <i>Show&hellip;</i></td>
+      <td>same place, same ghost</td><td>same place</td><td>same place</td></tr>
+  <tr><td>Neither &mdash; no action</td>
+      <td colspan="3">the shipped row, unchanged, on all three. Drawn as the control frame of every
+      surface so the &ldquo;nothing moves&rdquo; claim is a picture, not a sentence.</td></tr>
+  <tr><td>Play focused (TV)</td><td colspan="3">the action is not focused and not first; exactly one
+      ring in frame</td></tr>
+  <tr><td>Action focused (TV)</td><td colspan="3">shipped <code>.btn.focused</code> &mdash; 4&nbsp;px
+      ring, <code>translateY(-2px) scale(1.03)</code>. No new motion.</td></tr>
+  <tr><td>Film and series</td><td colspan="3">both drawn on all three surfaces. The series row has no
+      Mark watched, so it is one control shorter.</td></tr>
+  <tr><td>Aurora / Noir / Daylight</td><td>Aurora and Noir</td><td>Aurora and Daylight</td>
+      <td>Aurora and Daylight</td></tr>
+</table>
+
+<h3>States this round did not draw, and why</h3>
+<ul>
+  <li><b>Loading, error, offline.</b> The action is drawn only from a playstate the page already
+      has; the failure path is a toast owned by another piece of work, not a state of this
+      control.</li>
+  <li><b>The pressed / in-flight moment.</b> The label flips at once and a second press is ignored
+      until the server answers &mdash; there is no spinner and no disabled look to draw, which is
+      itself the decision.</li>
+  <li><b>Midnight and Graphite.</b> Aurora and Noir bracket the TV (Noir inverts the accent to
+      amber and is drawn); Daylight is the phone and desktop light theme and is drawn.</li>
+  <li><b>Samsung and Chromecast.</b> Out of this action&rsquo;s scope.</li>
+</ul>
+
+<h2>New strings</h2>
+<p>Two keys. The Danish and Faroese below follow each file&rsquo;s own <code>row.continue</code> and
+<code>action.remove_list</code> wording, which is also what the spec asks for; they are drafts for
+review.</p>
+<table>
+  <tr><th>Key</th><th>English</th><th>Danish</th><th>Faroese</th></tr>
+  <tr><td class="n">action.continue_remove</td><td>Remove from Continue Watching</td>
+      <td>Fjern fra Forts&aelig;t med at se</td><td>Tak &uacute;r Halt fram at s&iacute;ggja</td></tr>
+  <tr><td class="n">action.continue_restore</td><td>Show in Continue Watching</td>
+      <td>Vis i Forts&aelig;t med at se</td><td>V&iacute;s &iacute; Halt fram at s&iacute;ggja</td></tr>
+</table>
+
+<div class="note">
+  <p style="margin:0 0 6px"><b>The pictures draw a different Faroese from the table above, on
+  purpose.</b> The brief named its Faroese stand-in exactly &mdash; <i>Tak burtur &uacute;r Halda
+  fram at hyggja</i> &mdash; and a designer does not swap a string the briefer chose. But the
+  shipped <code>i18n/fo.json</code> already has <code>row.continue</code> =
+  <i>Halt fram at s&iacute;ggja</i> and <code>action.remove_list</code> =
+  <i>Tak &uacute;r m&iacute;num lista</i>, and the shipped file wins wherever a string exists.
+  Read together they give <i>Tak &uacute;r Halt fram at s&iacute;ggja</i> &mdash; <b>eight
+  characters and 66&nbsp;px shorter</b> than the stand-in.</p>
+  <p style="margin:0">Every frame is therefore drawn with the <i>wider</i> of the two, which makes
+  the measurement conservative: what ships will have more room than the pictures show, never less.
+  Both widths are in the study (<i>shipped vocabulary</i> rows). The disagreement is reported, not
+  resolved here.</p>
+</div>
+
+<h2>What the pictures showed that the markup did not</h2>
+<ol>
+  <li><b>On the phone, option A takes Play&rsquo;s word, not the new control&rsquo;s.</b> The
+      arithmetic says &ldquo;over by 205&nbsp;px&rdquo;; the picture says Play reads
+      &ldquo;&#9654;&nbsp;&hellip;&rdquo;. Those are not the same finding, and only the second one
+      settles the option.</li>
+  <li><b>The phone action row is unreadable in the Daylight theme, today, before this round adds
+      anything.</b> <code>ravilo-phone.css</code> has
+      <code>.btn.play { background: var(--ink); color: #0a0c13 }</code>, and Daylight sets
+      <code>--ink: #15171f</code> &mdash; near-black text on a near-black fill, a contrast ratio of
+      <b>1.09:1</b>. Visible in every Daylight phone frame in this round. Not this round&rsquo;s to
+      fix, and not caused by it. The desktop does not have it: <code>.lt .hero .hb</code>
+      re-declares white ink because the hero sits on artwork, and the phone detail page is not in
+      that rule&rsquo;s list.</li>
+  <li><b>Option A on desktop first rendered as a wrapped second row</b> &mdash; a picture almost
+      identical to option B&rsquo;s, which would have put two options in front of the owner that
+      look the same and are not.</li>
+  <li><b>Option C&rsquo;s TV panel and desktop menu both first covered the control that opened
+      them.</b> Redrawn anchored to the row so the option is judged in the shape its designer would
+      ship.</li>
+  <li><b>The desktop menu inherited the hero&rsquo;s white-on-artwork ink</b> and came out as white
+      words on a pale panel in Daylight.</li>
+  <li><b>One hard-coded Faroese string had leaked into the English measurement.</b> In a round whose
+      subject is how wide a language is, that is the one bug that invalidates the figure it appears
+      in.</li>
+</ol>
+
+<h2>The package</h2>
+<ul>
+  <li><span class="file">Continue Remove Placement - Directions.html</span> &mdash; this document.</li>
+  <li><span class="file">png/</span> &mdash; 111 PNGs,
+      <span class="file">&lt;option&gt;-&lt;surface&gt;-&lt;page&gt;-&lt;state&gt;[-focus][-lang][-skin].png</span>.</li>
+  <li><span class="file">frames.html</span>, <span class="file">crp-data.js</span>,
+      <span class="file">crp-kit.js</span>, <span class="file">continue-remove-placement.css</span>
+      &mdash; what the Kotlin is ported from. Every number in every picture comes from
+      <span class="file">crp-data.js</span>; the shipped stylesheets are linked, not copied.</li>
+  <li><span class="file">REPORT.md</span> &mdash; the written report, including what is still
+      open.</li>
+</ul>
+
+</main>
+</body>
+</html>
