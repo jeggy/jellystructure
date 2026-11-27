@@ -72,6 +72,33 @@ object LadderRules {
         return elapsedMs + remaining * 8_000 / rateBps > budgetMs
     }
 
+    /** DEB-5927 (FR-7) — FR-309-5's estimate clause: step down when the estimate × this is under the rung playing. */
+    const val ESTIMATE_DOWNGRADE_FRACTION = 0.8
+    /** DEB-5927 (FR-7) — an estimate resting on fewer segment fetches than this is the player's own guess (FR-309-13). */
+    const val MIN_SEGMENTS_FOR_ESTIMATE = 3
+    /** DEB-5927 (FR-7) — after a stall's cap nothing climbs above it for this long without another stall (FR-309-4's clean-for-120 s). */
+    const val STALL_CAP_HOLD_MS = 120_000L
+    /** DEB-5927 (FR-7) — a cap made under this long ago is not made again: the stall belongs to the rung being left. */
+    const val STALL_CAP_GAP_MS = 10_000L
+
+    /**
+     * DEB-5927 (FR-7), restoring FR-309-5 — the rung to step down to because the player's [estimateBps] × 0.8 is under the rung
+     * playing, or null. Needs [segments] ≥ [MIN_SEGMENTS_FOR_ESTIMATE] fetches (a younger estimate is a guess) and a buffer under 20 s
+     * (with more, the estimate has time to move before the picture is at risk). The rung is the highest at or under the line, the
+     * lowest when none fits, and never one that is not below [currentBps].
+     */
+    fun estimateStepDown(rungsBps: List<Long>, currentBps: Long, estimateBps: Long, segments: Int, bufferedMs: Long): Long? {
+        if (segments < MIN_SEGMENTS_FOR_ESTIMATE || estimateBps <= 0 || bufferedMs >= STEP_DOWN_BUFFER_MS) return null
+        val line = (estimateBps * ESTIMATE_DOWNGRADE_FRACTION).toLong()
+        if (currentBps <= line) return null
+        val sorted = rungsBps.distinct().sorted()
+        val pick = sorted.lastOrNull { it <= line } ?: sorted.firstOrNull() ?: return null
+        return pick.takeIf { it < currentBps }
+    }
+
+    /** DEB-5927 (FR-7), applying FR-5 — the rung a stall caps the play to: one below [currentBps], or null when nothing lies below. */
+    fun stallCapBps(rungsBps: List<Long>, currentBps: Long): Long? = rungsBps.distinct().sorted().lastOrNull { it < currentBps }
+
     /** FR-309-5 — the buffer is under 20 s and lower than at the last evaluation. */
     fun mustStepDown(bufferedMs: Long, lastBufferedMs: Long?): Boolean =
         bufferedMs < STEP_DOWN_BUFFER_MS && lastBufferedMs != null && bufferedMs < lastBufferedMs - FALLING_MARGIN_MS

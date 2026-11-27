@@ -177,4 +177,36 @@ class LadderRulesTest {
         assertEquals("climb", reason(from = 4_000_000, to = 8_000_000, ceiling = 1_500_000, low = true, fallen = true, bufferedMs = 15_000))
         assertEquals("failed_rung", reason(from = 4_000_000, to = 8_000_000, failed = true))
     }
+
+    // DEB-5927 (FR-7) — the receiver's estimate clause and stall cap, on the B1 ladder (1080p / 480p / 360p / 240p, peak bandwidths).
+    private val b1 = listOf(3_189_074L, 2_440_000L, 1_160_000L, 700_000L)
+
+    @Test fun `an estimate under the rung's 0 8 line steps down to the rung under the line`() {
+        assertEquals(700_000L, LadderRules.estimateStepDown(b1, 3_189_074L, 1_000_000L, 5, 400L))
+        assertEquals(1_160_000L, LadderRules.estimateStepDown(b1, 3_189_074L, 1_500_000L, 5, 400L))
+    }
+
+    @Test fun `the lowest rung is taken when none fits the line`() {
+        assertEquals(700_000L, LadderRules.estimateStepDown(b1, 3_189_074L, 390_000L, 5, 400L))
+    }
+
+    @Test fun `no estimate step down on a young estimate, a full buffer or a rung already under the line`() {
+        assertNull(LadderRules.estimateStepDown(b1, 3_189_074L, 1_000_000L, 2, 400L))
+        assertNull(LadderRules.estimateStepDown(b1, 3_189_074L, 1_000_000L, 5, 20_000L))
+        assertNull(LadderRules.estimateStepDown(b1, 700_000L, 1_000_000L, 5, 400L))
+        assertNull(LadderRules.estimateStepDown(b1, 700_000L, 390_000L, 5, 400L))
+        assertNull(LadderRules.estimateStepDown(b1, 3_189_074L, 0L, 5, 400L))
+    }
+
+    @Test fun `a buffer pinned at 0 4 s never reads as falling but the estimate clause still steps down`() {
+        assertFalse(LadderRules.mustStepDown(400L, 450L))
+        assertEquals(700_000L, LadderRules.estimateStepDown(b1, 3_189_074L, 800_000L, 8, 400L))
+    }
+
+    @Test fun `a stall caps one rung down, and nothing below the lowest`() {
+        assertEquals(2_440_000L, LadderRules.stallCapBps(b1, 3_189_074L))
+        assertEquals(700_000L, LadderRules.stallCapBps(b1, 1_160_000L))
+        assertNull(LadderRules.stallCapBps(b1, 700_000L))
+        assertNull(LadderRules.stallCapBps(listOf(2_000_000L), 2_000_000L))
+    }
 }

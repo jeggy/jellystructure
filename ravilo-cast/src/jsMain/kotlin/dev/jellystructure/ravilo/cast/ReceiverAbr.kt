@@ -46,11 +46,35 @@ internal object ReceiverAbr {
         else LadderRules.allowedMaxBps(list, current.toLong(), buffered.toLong(), if (last < 0) null else last.toLong(), oursEncoder)?.toDouble() ?: -1.0
     }
 
+    /** DEB-5927 (FR-7) — segment fetches of this item so far; the estimate clause trusts Shaka's estimate only from 3. Set from each ticket. */
+    var segmentsFetched: () -> Int = { 0 }
+
+    /** [LadderRules.estimateStepDown] for the wrapper: the rung to fall to, or -1 for none. */
+    private val estimateDown: (dynamic, Double, Double, Double) -> Double = { rungs, current, estimate, buffered ->
+        val list = (rungs as Array<Double>).map { it.toLong() }
+        LadderRules.estimateStepDown(list, current.toLong(), estimate.toLong(), segmentsFetched(), buffered.toLong())?.toDouble() ?: -1.0
+    }
+
+    /** [LadderRules.stallCapBps] for the wrapper: the rung one below, or -1 for none. */
+    private val stallCap: (dynamic, Double) -> Double = { rungs, current ->
+        val list = (rungs as Array<Double>).map { it.toLong() }
+        LadderRules.stallCapBps(list, current.toLong())?.toDouble() ?: -1.0
+    }
+
+    /** The newest wrapper's hooks; the receiver calls [onStall] when a delivery stall ends. */
+    private val hooks: dynamic = js("({})")
+
+    /** DEB-5927 (FR-7) — a `buffer_empty` stall of 1 s or more caps the play one rung down at once (a no-op when no wrapper is live). */
+    fun onStall() {
+        runCatching { hooks.stall() }
+    }
+
     /** The `abrFactory` to put in `shakaConfig`; [note] writes the receiver's debug line. */
-    fun factory(note: (String) -> Unit): dynamic = js(FACTORY)(decide, note)
+    fun factory(note: (String) -> Unit): dynamic =
+        js(FACTORY)(decide, estimateDown, stallCap, LadderRules.STALL_CAP_HOLD_MS.toDouble(), LadderRules.STALL_CAP_GAP_MS.toDouble(), hooks, note)
 }
 
-private const val FACTORY = """(function (decide, note) {
+private const val FACTORY = """(function (decide, estimateDown, stallCap, holdMs, gapMs, hooks, note) {
   return function () {
     var S = (typeof shaka !== 'undefined' && shaka.abr && shaka.abr.SimpleAbrManager) ? shaka.abr.SimpleAbrManager : null;
     if (!S) { note('309 abr: no shaka.abr.SimpleAbrManager here; Shaka chooses alone'); return null; }
@@ -66,6 +90,8 @@ private const val FACTORY = """(function (decide, note) {
       proto = Object.getPrototypeOf(proto);
     }
     var cb = null, variants = [], media = null, cur = null, last = -1, enabled = false, timer = null;
+    // DEB-5927 (FR-7) — the ceiling a stall set, when it was set, and how many checks in a row found the video starved.
+    var ceiling = -1, ceilingAt = 0, lastCapAt = -1e9, starved = 0;
     function element() {
       if (media) return media;
       var p = document.querySelector('cast-media-player');
@@ -86,13 +112,40 @@ private const val FACTORY = """(function (decide, note) {
       variants.forEach(function (x) { if (x.bandwidth <= max && (!b || x.bandwidth > b.bandwidth)) b = x; });
       return b;
     }
+    function held() {
+      if (ceiling >= 0 && Date.now() - ceilingAt >= holdMs) ceiling = -1;
+      return ceiling;
+    }
     function bound(v) {
       if (!v || !variants.length) return v;
+      var cap = held();
+      if (cap >= 0 && v.bandwidth > cap) v = best(cap) || v;
       var a = ahead(element());
       if (a < 0) return v;
       var max = decide(bands(), cur ? cur.bandwidth : -1, a, last);
       if (max < 0 || v.bandwidth <= max) return v;
       return best(max) || v;
+    }
+    function switchTo(b, why, a) {
+      note('309 abr: step down ' + cur.bandwidth + ' -> ' + b.bandwidth + ' (' + why + ', ' + Math.round(a) + ' ms buffered)');
+      cur = b;
+      try { cb(b, false); } catch (e) { note('309 abr: switch refused: ' + e); }
+    }
+    // FR-7 — a stall caps one rung down at once and holds the play under the rung it left until 120 s pass without another.
+    function capDown(why, a) {
+      var now = Date.now();
+      if (!enabled || !cb || !cur || !variants.length || variants.indexOf(cur) < 0 || now - lastCapAt < gapMs) return;
+      var to = stallCap(bands(), cur.bandwidth);
+      if (to < 0) return;
+      var b = best(to);
+      if (!b || b === cur || variants.indexOf(b) < 0) return;
+      lastCapAt = now; ceiling = b.bandwidth; ceilingAt = now;
+      switchTo(b, why, a);
+    }
+    var mine = function () { capDown('stall', Math.max(ahead(element()), 0)); };
+    hooks.stall = mine;
+    function starving(el) {
+      return !!el && !el.paused && !el.seeking && !el.ended && el.readyState < 3 && el.currentTime > 0;
     }
     function tick() {
       var a = ahead(element());
@@ -105,13 +158,21 @@ private const val FACTORY = """(function (decide, note) {
         var max = decide(bands(), cur.bandwidth, a, last);
         if (max >= 0 && cur.bandwidth > max) {
           var b = best(max);
-          if (b && b !== cur && variants.indexOf(b) >= 0) {
-            note('309 abr: step down ' + cur.bandwidth + ' -> ' + b.bandwidth + ' (' + Math.round(a) + ' ms buffered)');
-            cur = b;
-            try { cb(b, false); } catch (e) { note('309 abr: switch refused: ' + e); }
-          }
+          if (b && b !== cur && variants.indexOf(b) >= 0) switchTo(b, 'buffer', a);
         }
       }
+      // DEB-5927 (FR-7) — a buffer pinned near empty is not "falling", so the two rules above never see it. FR-309-5's estimate clause:
+      // Shaka's estimate x 0.8 under the rung playing, from 3 fetched segments, with under 20 s buffered.
+      if (a >= 0 && enabled && cb && cur && variants.length && variants.indexOf(cur) >= 0 && typeof inner.getBandwidthEstimate === 'function') {
+        var est = estimateDown(bands(), cur.bandwidth, inner.getBandwidthEstimate(), a);
+        if (est >= 0) {
+          var e2 = best(est);
+          if (e2 && e2 !== cur && variants.indexOf(e2) >= 0) { ceiling = e2.bandwidth; ceilingAt = Date.now(); switchTo(e2, 'estimate', a); }
+        }
+      }
+      // ... and a video that has had nothing to play for two checks in a row is a stall the buffer rules cannot see.
+      starved = (a >= 0 && a < 1000 && starving(element())) ? starved + 1 : 0;
+      if (starved >= 2) { starved = 0; capDown('starved', a); }
       if (a >= 0) last = a;
     }
     w.init = function (switchCb) {
@@ -135,9 +196,10 @@ private const val FACTORY = """(function (decide, note) {
     };
     w.enable = function () { enabled = true; if (!timer) timer = setInterval(tick, 2000); return inner.enable.apply(inner, arguments); };
     w.disable = function () { enabled = false; return inner.disable.apply(inner, arguments); };
-    w.stop = function () { if (timer) { clearInterval(timer); timer = null; } enabled = false; variants = []; cur = null; last = -1; media = null; return inner.stop.apply(inner, arguments); };
+    w.stop = function () { if (timer) { clearInterval(timer); timer = null; } enabled = false; variants = []; cur = null; last = -1; media = null; ceiling = -1; starved = 0; if (hooks.stall === mine) hooks.stall = null; return inner.stop.apply(inner, arguments); };
     w.release = function () {
       if (timer) { clearInterval(timer); timer = null; }
+      if (hooks.stall === mine) hooks.stall = null;
       return typeof inner.release === 'function' ? inner.release.apply(inner, arguments) : undefined;
     };
     note('309 abr: Shaka bounded by the ladder rule');

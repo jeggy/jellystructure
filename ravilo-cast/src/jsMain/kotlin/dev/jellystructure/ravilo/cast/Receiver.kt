@@ -1530,6 +1530,7 @@ private class Receiver {
                 // 309 (FR-309-4/-5) — Shaka chooses within the ladder rule: one rung up at a time, down before the buffer
                 // runs dry (ReceiverAbr; Shaka's own manager if this framework build won't take the factory).
                 ReceiverAbr.oursEncoder = t.encoder == "ours"
+                ReceiverAbr.segmentsFetched = { qoeSegments }
                 runCatching { sc.abrFactory = ReceiverAbr.factory { line: String -> note(line) } }
                 // DEB-3105 (FR-5) — an adaptive play (re)starts at 4 s buffered.
                 sc.streaming.rebufferingGoal = CastRecovery.RESUME_BUFFER_SEC
@@ -1812,6 +1813,8 @@ private class Receiver {
                         val ask = castShouldAskForLadder(frozenMasterRungs, playingBps, qoeCounts.stalls, ladderAskedFor == qoeItem)
                         // The existing handover fact is written synchronously by the QoE route, including for a video copy.
                         if (ask) qoeStalledBps = playingBps?.takeIf { it > 0 }
+                        // DEB-5927 (FR-7) — a delivery stall caps the play one rung down at once, when the master has a rung below.
+                        ReceiverAbr.onStall()
                         postQoe()
                         if (ask) recover("stall_to_ladder")
                     }
