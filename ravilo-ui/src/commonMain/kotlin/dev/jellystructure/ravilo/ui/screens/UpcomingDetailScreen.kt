@@ -43,6 +43,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.jellystructure.ravilo.ui.focus.dpadFocusable
+import dev.jellystructure.ravilo.ui.i18n.LocalLang
 import dev.jellystructure.ravilo.ui.i18n.str
 import dev.jellystructure.ravilo.ui.seams.RemoteImage
 import dev.jellystructure.ravilo.ui.theme.raviloHPad
@@ -266,7 +267,7 @@ private fun ScheduleGrid(item: UpcomingItem, members: List<UpcomingItem>) {
     val colors = RaviloTheme.colors
     val isSeries = item.kind == MediaKind.SERIES
     val rows = listOfNotNull(
-        (if (isSeries) str("up.air_date") else str("up.release_date")) to item.date,
+        (if (isSeries) str("up.air_date") else str("up.release_date")) to dateTextOrRaw(item.date, LocalLang.current),
         item.time?.let { str("up.air_time") to it },
         releaseTypeLabel(item)?.let { str("up.release_type") to it },
         item.network?.let { str("up.network") to it },

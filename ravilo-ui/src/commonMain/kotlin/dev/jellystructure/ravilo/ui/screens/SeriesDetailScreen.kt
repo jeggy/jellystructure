@@ -775,8 +775,7 @@ internal fun SeriesDetailLoaded(
                                         append(" · S${na.season.toString().padStart(2, '0')}E${na.episode.toString().padStart(2, '0')}")
                                         if (!na.title.isNullOrBlank()) append(" “${na.title}”")
                                         append(" · ")
-                                        append(str("sonarr.airs"))
-                                        append(" ${na.airDate}")
+                                        append(nextAiringText(na.airDate, LocalLang.current))
                                     },
                                     color = colors.textSecondary,
                                     fontSize = 13.sp,

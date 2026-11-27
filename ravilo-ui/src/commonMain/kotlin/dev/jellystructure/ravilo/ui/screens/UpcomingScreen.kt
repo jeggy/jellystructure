@@ -60,6 +60,7 @@ import androidx.compose.ui.unit.sp
 import dev.jellystructure.ravilo.ui.LocalLiveConfig
 import dev.jellystructure.ravilo.ui.components.StaticContentRow
 import dev.jellystructure.ravilo.ui.focus.dpadFocusable
+import dev.jellystructure.ravilo.ui.i18n.LocalLang
 import dev.jellystructure.ravilo.ui.i18n.str
 import dev.jellystructure.ravilo.ui.seams.RemoteImage
 import dev.jellystructure.ravilo.ui.theme.RaviloMotion
@@ -489,7 +490,7 @@ private fun UpcomingCard(entry: UpcomingEntry, focusRequester: FocusRequester?, 
             else -> null
         }
         if (wasDue != null) {
-            Text(str("up.was_due", mapOf("date" to wasDue)), color = Color(0xFFE0393A), fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
+            Text(str("up.was_due", mapOf("date" to dateTextOrRaw(wasDue, LocalLang.current))), color = Color(0xFFE0393A), fontSize = 10.sp, fontWeight = FontWeight.SemiBold)
         }
     }
 }
