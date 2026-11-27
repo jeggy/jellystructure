@@ -576,7 +576,7 @@ private class Screen(private val serverUrl: String) {
         }
         val t = remembered.ticket
         ticket = t
-        selectedAudio = remembered.fileAudio ?: currentAudioPos(t)
+        selectedAudio = currentAudioPos(t)   // DEB-5917 — the track that plays until a select holds; a remembered in-file pick is made at the first PLAYING
         pendingFileAudio = remembered.fileAudio
         // R285 — positions in receiverSubtitles(), the list the remote is shown; this used to index
         // the ticket's raw list, which stops matching the moment a ticket interleaves PGS and text.
@@ -647,11 +647,18 @@ private class Screen(private val serverUrl: String) {
         return t.directPlay && !a.external && a.codec?.lowercase() in backend.capabilities().audioCodecs
     }
 
-    /** DEB-5503 (FR-44) — make audio [pos] the one that plays in the file; false when the player lists other tracks than the ticket (the caller restreams). */
-    private fun selectFileAudio(t: StreamTicket, pos: Int): Boolean {
+    /**
+     * DEB-5503 (FR-44) — make audio [pos] the one that plays in the file. DEB-5917: [onResult] is true only when the select held (the player's
+     * current stream says so); false when it is impossible, threw, or did not take, and the caller restreams to our ladder.
+     */
+    private fun selectFileAudio(t: StreamTicket, pos: Int, onResult: (Boolean) -> Unit) {
         val inContainer = t.audio.filter { !it.external }
-        return fileAudioSelectable(t, pos) && backend.selectFileAudio(inContainer.indexOf(t.audio[pos]), inContainer.size)
+        if (!fileAudioSelectable(t, pos)) { onResult(false); return }
+        backend.selectFileAudio(inContainer.indexOf(t.audio[pos]), inContainer.size, onResult)
     }
+
+    /** DEB-5917 (FR-44) — a restream for audio on a direct play asks as a device that plays HLS only, so the answer is our ladder and never the same file again. */
+    private fun ladderCapabilities() = backend.capabilities().copy(hlsOnly = true)
 
     /** DEB-5503 (FR-44) — Jellyfin's stream index of the audio a restream of this ticket must keep: a transcode's own, or the pick made in a direct play's file. */
     private fun carriedAudio(): Int? {
@@ -672,7 +679,7 @@ private class Screen(private val serverUrl: String) {
         val series = seriesId?.let { ScreenTrackMemory.series(user, it) }
         val global = ScreenTrackMemory.global(user)
         val audioPos = (rememberedAudioIndex(series, audioInputs(t)) ?: rememberedAudioIndex(global, audioInputs(t)))
-            ?.takeIf { it != currentAudioPos(t) }
+            ?.takeIf { it != currentAudioPos(t) && t.audio.size > 1 }   // DEB-5917 — a file with one audio track never restreams for audio
         val subPos = rememberedSubtitleIndex(series, subtitleInputs(t)) ?: rememberedSubtitleIndex(global, subtitleInputs(t))
         val pick = subPos?.let { receiverSubPick(t, it) }
         val burn = (pick as? ReceiverSubPick.Burn)?.streamIndex
@@ -688,7 +695,9 @@ private class Screen(private val serverUrl: String) {
         if (audioPos != null && burn == null && !unburn && fileAudioSelectable(t, audioPos)) return RememberedStart(t, text, fileAudio = audioPos)
         val audioStream = audioPos?.let { t.audio[it].index } ?: t.audioStreamIndex
         val subStream = burn ?: if (unburn) -1 else (t.burnedSubtitleIndex ?: -1)
-        val next = runCatching { api.restream(id, subStream, startAt, backend.capabilities(), audioStream) }.getOrNull()
+        // DEB-5917 (FR-44) — an audio the player cannot take in the file asks as HLS only: the answer is our ladder with that audio.
+        val caps = if (t.directPlay && audioPos != null) ladderCapabilities() else backend.capabilities()
+        val next = runCatching { api.restream(id, subStream, startAt, caps, audioStream) }.getOrNull()
             ?: return RememberedStart(t, text)   // the restream did not come: the stream the start gave is still a good one
         return RememberedStart(next, text)
     }
@@ -879,19 +888,26 @@ private class Screen(private val serverUrl: String) {
         val t = ticket ?: return
         val wanted = t.audio.getOrNull(idx) ?: return
         rememberAudioPick(idx)
+        if (t.audio.size < 2) return   // DEB-5917 — one audio track: nothing to change
         if (t.directPlay) { if (idx != selectedAudio) chooseFileAudio(idx); return }
         if (wanted.index == ticket?.audioStreamIndex) return
         GlobalScope.launch { restream(ticket?.burnedSubtitleIndex ?: -1, wanted.index, thenShow = selectedSub) }
     }
 
-    /** DEB-5503 (FR-44) — audio [idx] of a direct play: in the file when the player lists the ticket's tracks, a restream with that audio when it does not. */
+    /**
+     * DEB-5503 (FR-44) — audio [idx] of a direct play: in the file when the player takes it, a restream with that audio when it does not.
+     * DEB-5917 — the select is checked; a failed or impossible one restreams once, as HLS only. If that restream is answered with the file
+     * again, the item plays on with the track it has: [restream] makes no further attempt and the picker marks the track playing.
+     */
     private fun chooseFileAudio(idx: Int) {
         val t = ticket ?: return
-        val before = selectedAudio
-        if (selectFileAudio(t, idx)) { selectedAudio = idx; sendStatus(); return }
-        selectedAudio = before
         val wanted = t.audio.getOrNull(idx) ?: return
-        GlobalScope.launch { restream(t.burnedSubtitleIndex ?: -1, wanted.index, thenShow = selectedSub) }
+        if (idx == selectedAudio || t.audio.size < 2) return   // nothing changes: no select, no restream
+        selectFileAudio(t, idx) { held ->
+            if (ticket !== t) return@selectFileAudio   // the viewer moved on while the select was being checked
+            if (held) { selectedAudio = idx; sendStatus() }
+            else GlobalScope.launch { restream(t.burnedSubtitleIndex ?: -1, wanted.index, thenShow = selectedSub, audioHlsOnly = true) }
+        }
     }
 
     /** R285 — text is drawn here, a picture subtitle is a burn-in restream. False when nothing changed
@@ -1751,11 +1767,11 @@ private class Screen(private val serverUrl: String) {
      * running stream alone — a track change that did not happen is better than a player that stopped.
      * False only when the call failed; [atMs] is the position to ask at when AVPlay cannot say (FR-63's errored stream).
      */
-    private suspend fun restream(subIndex: Int, audioIndex: Int?, thenShow: Int, belowBandwidthBps: Long? = null, atMs: Long? = null): Boolean {
+    private suspend fun restream(subIndex: Int, audioIndex: Int?, thenShow: Int, belowBandwidthBps: Long? = null, atMs: Long? = null, audioHlsOnly: Boolean = false): Boolean {
         val id = itemId ?: return true
         val pos = atMs ?: backend.positionMs()
         val wasPlaying = playing
-        val t = runCatching { api.restream(id, subIndex, pos, backend.capabilities(), audioIndex, belowBandwidthBps = belowBandwidthBps) }.getOrNull()
+        val t = runCatching { api.restream(id, subIndex, pos, if (audioHlsOnly) ladderCapabilities() else backend.capabilities(), audioIndex, belowBandwidthBps = belowBandwidthBps) }.getOrNull()
             ?: run { if (loaded && !buffering && !recovering) show(); sendStatus(); return false }   // FR-32 — a freeze's buffering view must not outlive a restream that never came
         if (itemId != id) return true                  // the viewer moved on while we were negotiating
         ticket = t
