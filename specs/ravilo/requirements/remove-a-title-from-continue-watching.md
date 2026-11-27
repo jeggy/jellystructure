@@ -119,9 +119,10 @@ The movie and series detail pages show one action when the playstate says so:
 | `continue_hidden` | `action.continue_restore` | Show in Continue Watching |
 | neither | — | no action |
 
-Pressing it calls FR-4 through `DetailStore`, the way `setPlayed` and `setFavorite` do, and redraws from the answer.
-Nothing changes on screen before the answer arrives: no optimistic state (constitution). A failed call leaves the page
-as it was, as Mark watched does today.
+Pressing it calls FR-4 through `DetailStore`, the way `setPlayed` and `setFavorite` do. It behaves like Mark watched
+under DEB-5835 FR-6 (owner, 2026-11-27: *"At once, undone with a note if the save fails"*): the label flips at once on
+this page, a second press is ignored until the server answers, the answer replaces the local state, and Home's row
+changes only after a success. A failed call puts the label back and shows DEB-5835 FR-5's toast.
 The restore label is the undo: a viewer who removes by mistake presses the same place again.
 
 It is never the first focus target. Play stays first on TV, and the action never moves Play or the buttons before it.
@@ -205,5 +206,5 @@ One engineer. Slices in order. Slices 1–3 need no design. Slice 4 waits for th
 5. **The action (FR-6).** After the round. `ravilo-ui/.../screens/MovieDetailScreen.kt`, `SeriesDetailScreen.kt`,
    `DetailStore.kt` (`setContinueHidden`, read-after-write like `setFavorite`). Proof:
    `JAVA_HOME=~/.jdks/jbr-21.0.11 ./gradlew :ravilo-ui:desktopTest --tests '*ContinueRemoveActionTest*' --console=plain`
-   (label per state, no action when neither, no change before the answer, Play keeps first focus), then the
+   (label per state, no action when neither, the label flips at once and goes back on a failure, Play keeps first focus), then the
    Android TV and phone compiles.
