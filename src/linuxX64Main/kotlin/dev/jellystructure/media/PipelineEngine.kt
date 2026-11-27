@@ -326,7 +326,10 @@ suspend fun runPipeline(
                             "ingest",
                         )
                     }
-                    sweep.missingIds.forEach { realtimeIngest.enqueue(it) }
+                    // DEB-5536 (FR-195-4) — an id backing off is the drain's to retry when due, not the sweep's.
+                    val sweepNow = store.nowMs()
+                    sweep.missingIds.filterNot { dirtyItemStore.isBackingOff(it, sweepNow) }
+                        .forEach { realtimeIngest.enqueue(it) }
                     // FR-181-1a — surfaced for review on the item's own History tab, never auto-removed
                     // (Phase 95's non-destructive invariant).
                     for (staleId in sweep.staleTopLevelIds) {

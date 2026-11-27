@@ -65,6 +65,13 @@ class DirtyItemStore(private val db: JellystructureDb) {
     fun due(nowMs: Long, limit: Int): List<String> =
         db.dirtyItemQueries.due(now = nowMs, limit = limit.toLong()).executeAsList().map { it.jellyfin_id }
 
+    /**
+     * DEB-5536 (FR-195-4) — true when [jellyfinId] has a row whose `next_attempt_at` is still ahead.
+     * The library sweep skips such an id; the drain retries it when due.
+     */
+    fun isBackingOff(jellyfinId: String, nowMs: Long): Boolean =
+        db.dirtyItemQueries.isBackingOff(jellyfin_id = jellyfinId, now = nowMs).executeAsOne() > 0L
+
     fun countDue(nowMs: Long): Long = db.dirtyItemQueries.countDue(now = nowMs).executeAsOne()
 
     fun count(): Long = db.dirtyItemQueries.count().executeAsOne()

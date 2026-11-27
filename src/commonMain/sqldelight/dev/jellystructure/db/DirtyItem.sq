@@ -52,6 +52,10 @@ SELECT * FROM dirty_item ORDER BY created_at ASC;
 due:
 SELECT * FROM dirty_item WHERE next_attempt_at <= :now ORDER BY created_at ASC LIMIT :limit;
 
+-- DEB-5536 (FR-195-4) — is this id still inside its backoff window? The sweep's missing-id enqueue asks.
+isBackingOff:
+SELECT COUNT(*) FROM dirty_item WHERE jellyfin_id = :jellyfin_id AND next_attempt_at > :now;
+
 countDue:
 SELECT COUNT(*) FROM dirty_item WHERE next_attempt_at <= :now;
 

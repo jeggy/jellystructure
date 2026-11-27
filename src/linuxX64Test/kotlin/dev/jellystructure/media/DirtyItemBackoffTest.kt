@@ -130,4 +130,14 @@ class DirtyItemBackoffTest {
         store.markDirty("old", "x", now)
         assertEquals(now, store.oldestCreatedAt())
     }
+
+    @Test
+    fun `DEB-5536 only an id whose next attempt is still ahead is backing off`() {
+        val t = 1_000_000L
+        store.markDirty("failing", "x", t) // next attempt = t + BASE
+        assertTrue(store.isBackingOff("failing", t + BASE - 1)) // window still open
+        assertTrue(!store.isBackingOff("failing", t + BASE)) // due
+        assertTrue(!store.isBackingOff("failing", t + BASE + 1))
+        assertTrue(!store.isBackingOff("never-failed", t)) // no row
+    }
 }
