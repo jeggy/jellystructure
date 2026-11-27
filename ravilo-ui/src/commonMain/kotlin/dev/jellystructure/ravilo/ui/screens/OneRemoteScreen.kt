@@ -195,16 +195,20 @@ fun OneRemoteScreen(
 
                 // ── Next-up mirrored (the receiver owns the countdown; cancelling is SENT) ──
                 val nextUp = s.nextUpSecs
-                if (nextUp != null && !unreachable && !m.viewOnly && m.canNextUp && !m.radioShape) {   // DEB-2660 — a station has no *Up next*
+                val asking = s.stillWatching   // DEB-5843 (FR-7) — the receiver asks *Are you still watching?*: one button in the countdown's place
+                if ((nextUp != null || asking) && !unreachable && !m.viewOnly && m.canNextUp && !m.radioShape) {   // DEB-2660 — a station has no *Up next*
                     Column(
                         Modifier.fillMaxWidth().background(colors.surfaceVariant, RoundedCornerShape(14.dp)).padding(14.dp),
                     ) {
-                        Text(str("player.up_next"), color = colors.accentSecondary, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp)
+                        Text(str(if (asking) "player.still_watching" else "player.up_next"), color = colors.accentSecondary, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.2.sp)
                         Text(s.nextTitle ?: str("detail.episode"), color = colors.text, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, fontFamily = Sora, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Spacer(Modifier.height(10.dp))
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            RemotePill(str("player.play_in", mapOf("secs" to nextUp.toString())), primary = true) { act.nextUpPlay() }
-                            RemotePill(str("player.watch_credits"), primary = false) { act.nextUpCancel() }
+                            if (asking) RemotePill(str("player.continue_watching"), primary = true) { act.nextUpPlay() }
+                            else if (nextUp != null) {
+                                RemotePill(str("player.play_in", mapOf("secs" to nextUp.toString())), primary = true) { act.nextUpPlay() }
+                                RemotePill(str("player.watch_credits"), primary = false) { act.nextUpCancel() }
+                            }
                         }
                     }
                     Spacer(Modifier.height(gap(18.dp)))

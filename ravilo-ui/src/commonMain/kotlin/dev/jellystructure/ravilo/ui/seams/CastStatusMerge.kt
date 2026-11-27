@@ -80,7 +80,10 @@ fun mergeCastStatus(prev: CastRemoteStatus?, said: CastReceiverMessage?, media: 
     // R384 (FR-R384-3) — the receiver's countdown runs on over a finished film: while its last word is a countdown (a
     // `nextup`, or a status that carries the seconds), the finished media is not the end of the cast — the card, the
     // mini bar and the remote stay until the next episode loads or the receiver says *ended*.
-    val counting = said?.nextupSecs != null && (said.type == "nextup" || said.type == "status") && event != "ended"
+    // DEB-5843 (FR-7) — and while the receiver asks *Are you still watching?* (a status that says so, no seconds in it): paused, and just as
+    // much not the end of the cast. A receiver that does not know the field never sends it.
+    val asking = said?.type == "status" && said.stillWatching == true && event != "ended"
+    val counting = (said?.nextupSecs != null && (said.type == "nextup" || said.type == "status") && event != "ended") || asking
     val ended = !counting && (event == "ended" || media.idleFinished)
     val subs = said?.subtitleTracks ?: emptyList()
     // R285 — an active CAF text track is the selection; with none active, a burned-in subtitle (which has no CAF
@@ -118,7 +121,7 @@ fun mergeCastStatus(prev: CastRemoteStatus?, said: CastReceiverMessage?, media: 
         durationMs = if (station) 0L else duration,
         // 2026-10-05 — BUFFERING (after a seek, a stall) is neither: the last known stands. It read as *Paused* on
         // the phone's bar while the TV kept playing.
-        playing = if (soft) stationPlaying else if (unknown || media.playerState == "BUFFERING" || (counting && idle)) p.playing else media.playerState == "PLAYING",
+        playing = if (asking) false else if (soft) stationPlaying else if (unknown || media.playerState == "BUFFERING" || (counting && idle)) p.playing else media.playerState == "PLAYING",
         buffering = if (soft) stationBuffering else if (unknown) p.buffering else media.playerState == "BUFFERING" || media.playerState == "LOADING",
         loaded = (if (unknown) p.loaded else !idle) || said?.type == "status" || counting,
         ended = ended,
@@ -127,6 +130,7 @@ fun mergeCastStatus(prev: CastRemoteStatus?, said: CastReceiverMessage?, media: 
         hasNext = said?.hasNext ?: p.hasNext,
         nextUpSecs = if (event == "nextup" || (event == "status" && counting)) said?.nextupSecs else if (event == "status" || ended) null else p.nextUpSecs,
         nextTitle = said?.nextTitle ?: p.nextTitle,
+        stillWatching = if (event == "status") asking else if (event == "nextup" || ended) false else p.stillWatching,
         busyRetryAfter = if (event == "busy") said?.retryAfter else if (event == "status" || event == "tracks") null else p.busyRetryAfter,
         busySinceMs = if (event == "busy") (said?.sinceMs ?: nowMs) else if (event == "status" || event == "tracks") null else p.busySinceMs,
         noServer = if (event == "noserver") true else if (event == "status" || event == "tracks") false else p.noServer,

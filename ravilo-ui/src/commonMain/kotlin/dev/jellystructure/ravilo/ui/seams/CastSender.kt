@@ -39,6 +39,8 @@ data class CastRemoteStatus(
     /** FR-R245-9 · Next-up mirrored — the RECEIVER owns this countdown. */
     val nextUpSecs: Int? = null,
     val nextTitle: String? = null,
+    /** DEB-5843 (FR-7) — the receiver is asking *Are you still watching?*: the episode is paused, and its card offers *Continue watching*. */
+    val stillWatching: Boolean = false,
     /** FR-R245-9 · Server busy — phase 182's 503 as the receiver saw it, with when it started waiting. */
     val busyRetryAfter: Int? = null,
     val busySinceMs: Long? = null,

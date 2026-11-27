@@ -162,4 +162,28 @@ class CastStatusMergeTest {
         // A real idle report still ends it.
         assertFalse(mergeCastStatus(lost, null, CastMediaSnapshot(playerState = "IDLE"), null, 2).playing)
     }
+
+    @Test
+    fun `DEB-5843 FR-7 a status that says still_watching shows the ask and is not the end of the cast`() {
+        val paused = CastMediaSnapshot(playerState = "PAUSED", positionMs = 1_300_000, durationMs = 1_320_000)
+        val st = mergeCastStatus(null, CastReceiverMessage(type = "status", itemId = "e3", nextTitle = "E4", hasNext = true, stillWatching = true), paused, "status", 0)
+        assertTrue(st.stillWatching); assertTrue(st.loaded); assertFalse(st.ended); assertFalse(st.playing); assertNull(st.nextUpSecs)
+        assertEquals("E4", st.nextTitle)
+        // Finished under the countdown, then asked: the idle finished media does not end the cast either.
+        val finished = CastMediaSnapshot(playerState = "IDLE", idleFinished = true)
+        val after = mergeCastStatus(st, CastReceiverMessage(type = "status", itemId = "e3", stillWatching = true), finished, "status", 1)
+        assertTrue(after.stillWatching); assertFalse(after.ended); assertTrue(after.loaded)
+    }
+
+    @Test
+    fun `DEB-5843 FR-7 an absent field is today's state, and the next load or an end clears the ask`() {
+        val paused = CastMediaSnapshot(playerState = "PAUSED")
+        val old = mergeCastStatus(null, CastReceiverMessage(type = "status", itemId = "e3"), paused, "status", 0)
+        assertFalse(old.stillWatching)
+        val asked = mergeCastStatus(null, CastReceiverMessage(type = "status", itemId = "e3", stillWatching = true), paused, "status", 0)
+        val next = mergeCastStatus(asked, CastReceiverMessage(type = "status", itemId = "e4"), CastMediaSnapshot(playerState = "PLAYING"), "status", 1)
+        assertFalse(next.stillWatching)
+        assertFalse(mergeCastStatus(asked, CastReceiverMessage(type = "ended", itemId = "e3"), CastMediaSnapshot(), "ended", 1).stillWatching)
+        assertTrue(mergeCastStatus(asked, null, paused, null, 1).stillWatching, "a media-only update keeps the ask")
+    }
 }
