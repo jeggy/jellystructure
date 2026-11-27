@@ -5,12 +5,13 @@ package dev.jellystructure.server
 // routes are excluded (their duration is the client's download speed), and so is /ws.
 internal const val SLOW_REQUEST_MS = 1000L
 
-private val excludedParts = listOf("/image/", "/image", "/artwork", "/stream", "/hls/", "/logo", "/radio/", "/poster", "/download")
+private val excludedSegments = setOf("image", "stream", "hls", "radio", "logo")
 
 fun slowRequestLine(method: String, template: String, status: Int, ms: Long): String? {
     if (ms <= SLOW_REQUEST_MS) return null
     if (!template.startsWith("/api/")) return null
-    if (excludedParts.any { template.contains(it) }) return null
+    // Only reads carry a download; a POST such as /stream/stop is handler work.
+    if (method == "GET" && template.split('/').any { it in excludedSegments }) return null
     return "slow request: $method $template $status ${ms}ms"
 }
 

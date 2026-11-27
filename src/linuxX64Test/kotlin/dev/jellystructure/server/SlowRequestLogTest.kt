@@ -23,6 +23,15 @@ class SlowRequestLogTest {
         assertNull(slowRequestLine("GET", "/api/image/{id}", 200, 5000))
         assertNull(slowRequestLine("GET", "/api/tv/stream/{id}/master.m3u8", 200, 5000))
         assertNull(slowRequestLine("GET", "/ws", 200, 5000))
+        for (r in listOf("/api/tv/image/{itemId}/{type}", "/api/tv/stream/{id}/master.m3u8", "/api/tv/livetv/logo/{id}", "/api/track/{id}/stream")) {
+            assertNull(slowRequestLine("GET", r, 200, 5000), r)
+        }
+    }
+
+    @Test fun handlerWorkRoutesThatLookLikeMediaAreLogged() {
+        for (r in listOf("/api/auth/logout", "/api/media/batch/artwork", "/api/{id}/artwork/use", "/api/tv/download/start", "/api/stream/stop")) {
+            assertNotNull(slowRequestLine("POST", r, 200, 5000), r)
+        }
     }
 
     @Test fun templateStripsSelectors() {

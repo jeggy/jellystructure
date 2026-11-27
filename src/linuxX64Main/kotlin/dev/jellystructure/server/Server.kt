@@ -91,6 +91,7 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
 import io.ktor.serialization.kotlinx.json.json
+import io.ktor.util.AttributeKey
 import kotlinx.serialization.json.Json
 import io.ktor.server.application.ApplicationCallPipeline
 import io.ktor.server.application.call
@@ -105,12 +106,12 @@ import io.ktor.server.response.cacheControl
 import io.ktor.server.response.respond
 import io.ktor.server.response.respondBytes
 import io.ktor.server.response.respondText
+import io.ktor.server.routing.RoutingRoot
 import io.ktor.server.routing.get
 import io.ktor.server.routing.route
 import io.ktor.server.routing.routing
 import io.ktor.server.websocket.WebSockets
 import io.ktor.server.websocket.webSocket
-import kotlinx.coroutines.launch
 import io.ktor.websocket.CloseReason
 import io.ktor.websocket.Frame
 import io.ktor.websocket.close
@@ -126,8 +127,10 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 import kotlinx.io.files.Path
 import kotlinx.io.files.SystemFileSystem
+import kotlin.time.TimeSource
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import platform.posix.exit
@@ -265,11 +268,11 @@ fun startServer(
         // behavioural gain, since "an API route now also answers HEAD, body-free" has no downside.
         install(AutoHeadResponse)
         // FR-6 (DEB-5847): one INFO line for an /api request whose handler took over 1 s.
-        val slowStart = io.ktor.util.AttributeKey<kotlin.time.TimeSource.Monotonic.ValueTimeMark>("slowRequestStart")
-        monitor.subscribe(io.ktor.server.routing.RoutingRoot.RoutingCallStarted) { call ->
-            call.attributes.put(slowStart, kotlin.time.TimeSource.Monotonic.markNow())
+        val slowStart = AttributeKey<TimeSource.Monotonic.ValueTimeMark>("slowRequestStart")
+        monitor.subscribe(RoutingRoot.RoutingCallStarted) { call ->
+            call.attributes.put(slowStart, TimeSource.Monotonic.markNow())
         }
-        monitor.subscribe(io.ktor.server.routing.RoutingRoot.RoutingCallFinished) { call ->
+        monitor.subscribe(RoutingRoot.RoutingCallFinished) { call ->
             val mark = call.attributes.getOrNull(slowStart) ?: return@subscribe
             val line = slowRequestLine(
                 call.request.local.method.value, routeTemplate(call.route.toString()),
