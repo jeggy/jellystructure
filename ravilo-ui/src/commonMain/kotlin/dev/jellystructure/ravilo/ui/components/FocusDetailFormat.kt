@@ -38,8 +38,11 @@ internal fun focusDetailCountText(facts: FocusDetailFacts): String? {
 internal fun focusDetailResumeText(card: MediaCard, facts: FocusDetailFacts): String? {
     card.nextUpLabel?.let { return it }
     val pct = card.progressPct ?: return null
-    if (pct <= 0f || pct >= 100f) return null
+    if (pct <= 0f || pct >= 1f) return null
     val runtime = facts.runtimeMinutes ?: return str("action.resume")
-    val minsLeft = max(1, round(runtime * (1 - pct / 100f)).toInt())
-    return str("fd.min_left", mapOf("n" to minsLeft.toString()))
+    return str("fd.min_left", mapOf("n" to minutesLeft(runtime, pct).toString()))
 }
+
+/** [pct] is [MediaCard.progressPct], 0..1 (DEB-5836, FR-1). */
+internal fun minutesLeft(runtime: Int, pct: Float): Int =
+    max(1, round(runtime * (1 - pct)).toInt())
