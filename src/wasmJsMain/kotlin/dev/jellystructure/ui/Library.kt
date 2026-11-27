@@ -34,14 +34,6 @@ import org.w3c.dom.events.Event
 
 private val scanJson = Json { classDiscriminator = "type"; ignoreUnknownKeys = true }
 
-private const val TMDB_IMG = "https://image.tmdb.org/t/p/w342"
-
-// Phase 133: posterPath is usually a TMDB file_path fragment ("/abc.jpg"), but a manually-uploaded
-// poster with no TMDB equivalent instead holds the jellystructure-served on-disk URL
-// ("/tv/image/{id}/poster") — route to it directly instead of prefixing the TMDB CDN.
-internal fun posterSrc(posterPath: String, tmdbPrefix: String): String =
-    if (posterPath.startsWith("/tv/image/")) posterPath else "$tmdbPrefix$posterPath"
-
 private const val LIB_SLICE = 60  // items fetched per infinite-scroll slice
 private const val MIN_SEARCH_LEN = 2  // shorter queries fall back to the unfiltered list, no request
 private var libSlice = 0          // slices loaded so far for the current filter set; next fetch = libSlice + 1
@@ -244,15 +236,6 @@ fun renderLibrary(container: Element, scope: CoroutineScope, query: Map<String, 
     attachLibraryListeners(scope)
     wireLibraryWorkbench(scope)
     scope.launch { refreshHeldBackNote(scope) }
-    // Bug fix: one delegated listener on the grid instead of one addEventListener per card — card
-    // count grows with the library (and with how much of it has been scrolled through), so a
-    // per-card listener was unbounded growth for no benefit; #poster-grid itself is recreated fresh
-    // by the innerHTML assignment above, so this is re-attached once per Library render.
-    document.getElementById("poster-grid")?.addEventListener("click") { ev ->
-        val target = (ev.target as? Element)?.closest(".poster[data-id]") ?: return@addEventListener
-        val id = target.getAttribute("data-id") ?: return@addEventListener
-        App.navigate("/media/$id")
-    }
     // Bug fix: a card with no stored posterPath (see posterCardHtml) falls back to attempting the real
     // artwork route rather than assuming there's nothing to show — a genuine miss (item truly has no
     // poster on disk) needs to swap that broken `<img>` for the plain placeholder. `error` events don't
@@ -739,39 +722,6 @@ private fun appendPosterCards(grid: Element?, items: List<MediaItem>) {
         grid.appendChild(card)
         if (id != null) libCardsById[id] = card
     }
-}
-
-private fun posterCardHtml(item: MediaItem): String {
-    val badge = when {
-        item.languageMix  -> """<span class="badge warn" style="font-size:.62rem;">lang mix</span>"""
-        item.issueCount > 0 -> """<span class="badge bad" style="font-size:.62rem;">${item.issueCount} issue${if (item.issueCount != 1) "s" else ""}</span>"""
-        else              -> """<span class="badge ok" style="font-size:.62rem;">ok</span>"""
-    }
-    // Phase 184 (FR-184-8) — a small chip on the handful of hand-set titles; the automatic majority
-    // stays unmarked (no chip at all when metadataLanguage is null).
-    val langChip = item.metadataLanguage?.let {
-        """ <span class="badge info lang" style="font-size:.62rem;" title="Metadata language manually set to ${it.esc()}">${it.esc()}</span>"""
-    } ?: ""
-    val imgContent = if (item.posterPath != null) {
-        """<img src="${posterSrc(item.posterPath, TMDB_IMG)}" alt="${item.title.esc()}" loading="lazy"
-             style="width:100%;height:100%;object-fit:cover;border-radius:4px 4px 0 0;">"""
-    } else {
-        // Bug fix: posterPath is only ever set from a TMDB match or a manual Artwork-tab save — a real
-        // on-disk poster that arrived any other way (bundled with the original download, or Phase 171's
-        // per-basename music-video convention) leaves this null even though art genuinely exists. Fall
-        // back to the real serving route (the same one the Artwork tab's own "on disk" status comes
-        // from) instead of assuming null means missing; a genuine miss swaps to the placeholder via the
-        // delegated "error" listener wired in renderLibrary() (img error events don't bubble, only
-        // capture, hence the capture-phase listener there rather than a plain click-style one here).
-        """<img class="poster-fallback" src="/api/tv/image/${item.jellyfinId ?: item.id}/poster?w=320" alt="${item.title.esc()}" loading="lazy"
-             style="width:100%;height:100%;object-fit:cover;border-radius:4px 4px 0 0;">"""
-    }
-    return """
-        <div class="poster" data-id="${item.jellyfinId ?: item.id}" style="cursor:pointer;">
-          <div class="imgslot">$imgContent</div>
-          <div class="ttl">${item.title.esc()}</div>
-          <div class="yr">${item.year ?: "—"} · $badge$langChip</div>
-        </div>"""
 }
 
 // `String.esc()` moved to `commonMain`'s `MusicCoverHtml.kt` with FR-278-16's correction (2026-10-14,
