@@ -513,6 +513,8 @@ fun startServer(
                             """"music":${musicPipeline?.takeIf { dev.jellystructure.music.MusicScanner.musicLibraries(configStore.current).isNotEmpty() }?.store?.health()?.let { Json.encodeToString(dev.jellystructure.model.MusicHealth.serializer(), it) } ?: "null"},""" +
                             // Phase 280 (FR-280-7) — null when no books library is mapped. Counts only.
                             """"audiobooks":${musicPipeline?.audiobooks?.takeIf { dev.jellystructure.audiobooks.AudiobooksScanner.audiobookLibraries(configStore.current).isNotEmpty() }?.let { b -> HEALTH_JSON.encodeToString(dev.jellystructure.model.AudiobooksHealthDto.serializer(), dev.jellystructure.server.routes.audiobooksHealth(b.store, b)) } ?: "null"},""" +
+                            // DEB-5709 (FR-5) — counts only; the in-memory list, no outbound call.
+                            """"catalog":${catalogHealthJson(mediaStore)},""" +
                             """"memory":${dev.jellystructure.ops.MemoryStats.snapshot().toJson()}}""",
                         ContentType.Application.Json,
                     )
@@ -1018,6 +1020,14 @@ private val HASHED_FRONTEND_ASSET_NAME = Regex("[0-9a-f]{16,}")
 
 /** Phase 280 — the health block's audiobook counts are all defaults when nothing is wrong; they are still said (a 0 is an answer). */
 private val HEALTH_JSON = Json { encodeDefaults = true }
+
+/** DEB-5709 (FR-5) — what a viewer would see (`titles`, the live items) and what is held back (`missing_from_source`).
+ *  Counts only, read from the store's in-memory list: /api/health is unauthenticated and makes no outbound call. */
+internal suspend fun catalogHealthJson(store: MediaStore): String {
+    val all = store.allItems()
+    val missing = all.count { it.missingFromSource }
+    return """{"titles":${all.size - missing},"missing_from_source":$missing}"""
+}
 
 private suspend fun io.ktor.server.application.ApplicationCall.serveFrontendFile(
     dir: String,
