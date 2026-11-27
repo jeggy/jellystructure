@@ -62,3 +62,23 @@ On DEB-5356 the owner approved his own set, whose DUID `URN:tizen:deviceid=` alr
 - with no verified release, APPROVE answers `APPROVED`.
 
 **No wire change.** The states, fields and routes are FR-2's and FR-3's, and every installed phone from v1.72 decodes `READY` already.
+
+## Amendment — 2026-11-27 (DEB-5905): the admin page follows the push and shows each viewer's TVs together
+
+The owner, on DEB-5905, after a second TV's request never reached this page: *"So it's easier to see a list of all my Samsung TVs and all my TV requests."* The page loads its list once, when it opens, and again only on *Refresh*. So it can't show a request that arrives while it is open. The constitution says the admin renders server-pushed state, and the support tickets (DEB-1500) and the Dashboard (DEB-2498) already work that way. Nothing tells the owner a request is waiting either. The phone half is the amendment of the same date in `samsung-tv-install-from-the-phone.md`.
+
+**FR-9 · The list follows the push.** Each of these writes publishes a new `JobEvent.SamsungTvRequestsChanged` on the admin `/ws` socket, the way `SupportTicketChanged` does:
+- a create or reopen that saves a row (FR-1);
+- a withdrawal that changes a row (FR-2);
+- a decision (FR-3);
+- a reconciliation that changes at least one row (FR-4, FR-7).
+
+The event carries only `requested`, the count of rows in `REQUESTED`. It carries no DUID, name or account. An open Samsung TV requests page then re-reads `GET /api/samsung-tv/requests` and renders that answer. *Refresh* stays.
+
+**FR-10 · A count on the menu item.** The Ravilo section's *Samsung TV requests* item shows the number of Requested rows, with the same `count` badge the Triage and AI items use. It is hidden at zero. The count is read when the shell loads (an additive `requested` field on the FR-3 list, or the event's count) and follows every FR-9 event.
+
+**FR-11 · One block per viewer.** The page groups its rows by requester. Each block is headed by the viewer's display name and how many TVs they have in each state. Inside a block the rows stay newest first, and the blocks are ordered by their newest row. Withdrawn rows are in their block under a quiet *Withdrawn (n)* that is closed by default. Every row keeps FR-5's columns and controls.
+
+**Verification.** `:linuxX64Test`: each of FR-9's four writes publishes one event with the right count, a refused or unchanged write publishes none, and the list carries `requested`. The page is built in the existing Wasm CI job. QA checks that a request sent from the phone appears on an open page without *Refresh*, and that the menu count rises with the request and falls with its decision.
+
+**Wire.** These changes are additive: a new admin push event and a new field on the admin list. The viewer routes and every DTO an installed phone reads are unchanged. An old admin page ignores the event.

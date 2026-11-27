@@ -141,3 +141,29 @@ Rannvá drew FR-13 three ways on DEB-5510 (`3b1b9f470`, `design/incoming/2026-11
 - the question in `fo` at the 200 % font setting, with the cards stacked.
 
 FR-9's gate holds: the owner signs those screenshots off on DEB-5504 before the build merges to `main`. **No wire change.**
+
+## Amendment — 2026-11-27 (DEB-5905): a second TV is added from the overview, and every request is on it
+
+The owner, on DEB-5905: *"I tried add an additional Samsung TV to my jeggy user, and the process was a pain, from our ravilo android app … when I finally did everything, the request does not show up on the jellystructure admin part. Let's make this process cleaner. So it's easier to see a list of all my Samsung TVs and all my TV requests."*
+
+**What happened.** Prod holds one request for his account: the first TV, Ready since 2026-11-23. No request for a second TV reached the server, so the admin page had nothing to show. The shipped guide holds only one request. `SamsungGuide.open()` reads the first row that is not Withdrawn, so with one Ready TV the guide opens on *Your TV is approved* and its one button, *Install on TV*. It has no way to add another TV. The second TV can only be reached by a detour. *Install on TV* scans and offers the TVs found. The chosen TV then fails an FR-4 check or FR-7's DUID check, and the failure's button leads back to a scan of every TV and on into steps 1–4. FR-10's overview is specced and drawn (DEB-5413): it shows a *Not set up* TV with *Set up this TV*. It is not built, because the owner's pick of its direction is still open. The server can't tell which branch his attempt took: the backend's log began again at a restart, and the proxy logs only errors. So QA reproduces it.
+
+**FR-14 · The overview is the guide's home for any viewer with a request.** This replaces FR-10's *at least one Approved or Ready request* and FR-6's *Requested and Rejected open as before*. Opening the guide shows *Your Samsung TVs* whenever the viewer has a request that is not Withdrawn. Every such request is on it, as FR-10 items 2–4 draw it. A Requested card also carries FR-6's *Withdraw*, and a Rejected card carries the owner's note and *Ask again*. A viewer with no request still opens on FR-2's intro. `open()` no longer lands on the one-request Waiting, Ready or Rejected screens. FR-6's Approved screen survives only as the Approved card's line, *Comes with the next Ravilo release*.
+
+**FR-15 · Adding a TV starts from its card and ends on the overview.**
+- *Set up this TV* on a *Not set up* card runs steps 1–4 (FR-3, FR-13) for that TV. It is the card's own action, not a scan of every TV.
+- Once step 4's request is sent, the guide returns to the overview, and that TV's card shows the server's answer. It shows *Waiting for approval* for a Requested row, and FR-10's approved card when FR-7 of `samsung-tv-install-requests.md` answers Ready. Above the list, one line says *Request sent* until the guide is closed. The phone never shows a request as sent unless the server answered `200` or `201` with a row. A refused send stays on step 4 with FR-6's one sentence and *Try again*, and the phone log carries the status.
+- A failed FR-4 or FR-7 check started from a card goes back to that TV's own step or to the overview, never to the list of every TV found. A DUID that belongs to another of the viewer's requests goes back to the overview, where each TV's card has its own button.
+- A TV the scan doesn't find keeps FR-10 item 4's *Search again*. The guide never asks for an address.
+
+**What it changes elsewhere.**
+- **FR-12's screenshot states** gain three: two TVs, one approved and one *Waiting for approval*; *Request sent* over a new *Waiting for approval* card; and a Rejected card with a note. They are covered by `GuideScreenshotsTest`, light and dark. The direction is the owner's pick on DEB-5905. When he has picked, it is written into FR-10 as before.
+- **Verification.** `:ravilo-ui:desktopTest` (`SamsungGuideTest`) covers these:
+  - `open()` lands on the overview for one Requested row, for one Rejected row, and for one Ready row beside one Requested row;
+  - *Set up this TV* leads to step 1 for that TV;
+  - a send that succeeds lands on the overview with the new card;
+  - a refused send stays on step 4;
+  - a DUID mismatch from a card goes back to the overview.
+- **QA**, on the row filed from DEB-5905, against the build before this one: on the Pixel 7, with one Ready request and a second Tizen emulator not set up, run the shipped guide to add the second TV and record every screen and the server's rows. Then repeat it on this build.
+
+**No wire change.** The phone reads FR-2's viewer list, which already returns every row.
