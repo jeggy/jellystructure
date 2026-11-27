@@ -1326,3 +1326,63 @@ line for segment 0, with no `start at segment 0` (FR-313-22). The log of a prewa
 - FR-313-23 and FR-313-24 are one piece: both change `place` and `planFor`.
 - FR-313-25 stands alone.
 - FR-313-26 follows FR-313-25 (both change `EncoderJobs.start`).
+
+## Amendment 2026-11-28 (DEB-5988) — a rung's level holds its frame rate, so a 30 or 60 fps file is not refused
+
+> Found on DEB-5024 (the Samsung buffers often), from the refusal DEB-5078 first saw on the Tizen emulator. DEB-5082's
+> log of a refusal (DEB-3093 FR-8) made the cause readable, and DEB-5952 reproduced it on prod `v1.73-139`. No wire
+> change: the master's `CODECS` values change with the levels, and no client reads them as data. No schema change.
+
+**What the code does today.** `levelOf` picks a rung's level from its box height alone. For H.264 the levels are 4.1
+(1080), 3.1 (720) and 3.0 (everything lower). For HEVC they are 5.1, 5.0, 4.1, 3.1 and 3.0. A level also limits how many
+macroblocks (H.264) or luma samples (HEVC) a second the encoder may produce. NVENC enforces that limit: it refuses
+the whole job with *"InitializeEncoder failed: invalid param (8): Invalid Level"*, and ffmpeg exits 234. So:
+
+- H.264 at 3.0 holds an 854×480 rung only up to 25 fps (40 500 MB/s). The refused play on 2026-11-27 was rungs
+  `1000p/444p/360p/240p`; the refusal came from output stream 1, the 444p rung at 3.0, so the source was over ~27 fps.
+- At 50 or 60 fps every H.264 rung is refused, and the HEVC 720p and 480p rungs are too.
+- A refused file goes to Jellyfin for that device class for 6 hours (DEB-3093). On the Samsung that is the video copy
+  FR-32 of the Samsung spec restreams away from, and on a thin path the one that has no lower quality.
+- **How many files.** The library's Jellyfin DB on 2026-11-28 has 10 797 video streams. 545 of them run at 27–32.5 fps:
+  their 480p-box rung is refused. 281 run at 32.5–61 fps: every rung is refused. Together that is 7.7 % of the library.
+
+### FR-313-28 — A rung's level holds its own frame size, frame rate and bitrate
+
+- Each rung's level is the **lowest level whose limits hold that rung, and never below the level today's table gives
+  its box**. With that floor, a rung that fits today keeps its level and `CODECS` string. Its limits are:
+  - H.264: frame size in macroblocks, macroblocks per second at the source's frame rate, and `-maxrate`/`-bufsize`
+    against MaxBR/MaxCPB (High profile).
+  - HEVC: luma picture size, luma samples per second, and the Main tier bitrate.
+
+  The rung's size is its real output (`width × height`, rounded up to 16 for H.264), not its box. The level then goes to
+  `-level:v:N` and to the rung's `CODECS` string (`avc1.6400xx` with the level's hex; `hvc1.…L<level×30>`).
+- **The source's frame rate travels with the plan** (`EncoderSource.frameRate`). The build picks where it comes from:
+  Jellyfin's `RealFrameRate`, which the start already fetches, or ffprobe's `avg_frame_rate` on the scanned track. An
+  interlaced source counts at its field rate only if the encoder outputs fields; today it outputs frames.
+- **Unknown frame rate:** the level is chosen as for 60 fps. A rung announced one level too high costs nothing on the
+  devices we serve. A refused job costs the whole play.
+- **What stays.** At 24, 25 and 30 fps a 1080p H.264 rung stays 4.1 and a 720p one 3.1, so a 4.1-only decoder still
+  sees them. HEVC 2160p stays 5.1 (the 2026-10-09 fix). Frame rates are never reduced: a 50 or 60 fps file keeps its
+  motion on every rung.
+- A device whose decoder cannot take a rung at its source's frame rate would not decode the file directly either. This
+  amendment adds no device level check.
+
+### Tests
+
+- `EncoderPlanTest`, table-driven over `levelOf` and `videoCodecString`:
+  - H.264 854×444 at 23.976 → 3.0, at 29.97 → 3.1;
+  - 1920×1080 at 25 → 4.1, at 50 → 4.2;
+  - 1280×720 at 60 → 3.2;
+  - 640×360 at 60 → 3.1;
+  - unknown frame rate → the 60 fps level;
+  - HEVC 1280×720 at 60 → 4.0, 3840×2160 at 24 → 5.1.
+
+  Each `CODECS` string matches its level.
+- `encoderCommand` for a 29.97 fps source with the 2026-11-27 rungs writes `-level:v:1 3.1`.
+- `encoderSourceOf` (or the start path) carries the frame rate into the plan.
+
+### Proof (QA, after the deploy)
+
+A play on our encoder of a 29.97 fps file, and of a 50 fps file, from a Tizen-like `playback/start` (DEB-5952's recipe).
+Each logs `start at segment 0 — H264 … rungs` and writes its first segment. No `Invalid Level` and no `refused this plan`
+appear in the backend log for either.
