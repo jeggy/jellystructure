@@ -24,6 +24,10 @@ private fun ByteArray.crc32Hex(): String {
     return (crc xor 0xFFFFFFFFL).toString(16).padStart(8, '0')
 }
 
+/** DEB-5847 (FR-3) — the optional `w` of an admin image route: a pixel width, clamped to a sane range; null
+ *  (absent, empty or not a number) means "the original, exactly as before". */
+internal fun parseImageWidth(raw: String?): Int? = raw?.toIntOrNull()?.coerceIn(32, 1600)
+
 /** Content-hash ETag + long-lived Cache-Control on an image response; a matching If-None-Match short-
  *  circuits to 304 before the bytes are even sent. Artwork is immutable at a given URL in this app (a
  *  changed poster gets a new path/version, not an in-place overwrite), so a long max-age is safe. */

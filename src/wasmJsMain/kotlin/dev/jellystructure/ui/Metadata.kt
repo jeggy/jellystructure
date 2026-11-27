@@ -179,7 +179,7 @@ private fun renderLogoGrid(entries: List<MetadataEntry>, kind: String, linkPrefi
         for (e in entries) {
             val encoded = dev.jellystructure.encodeURIComponent(e.name)
             val logoHtml = if (e.hasLogo) {
-                """<img src="/api/metadata/$kind/$encoded/artwork" alt="${e.name}" style="max-width:90%;max-height:46px;object-fit:contain" loading="lazy">"""
+                """<img src="/api/metadata/$kind/$encoded/artwork?w=100" alt="${e.name}" style="max-width:90%;max-height:46px;object-fit:contain" loading="lazy">"""
             } else {
                 """<span style="font-size:.72rem;font-weight:600;color:var(--ink-soft);text-align:center;padding:2px 4px;line-height:1.3">${e.name}</span>"""
             }

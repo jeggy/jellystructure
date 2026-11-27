@@ -121,6 +121,9 @@ class LogoDownloader(
         return done
     }
 
+    /** DEB-5847 (FR-3) — the file behind a logo, or null when there is none; what the resized variants read from. */
+    fun existingLogoPath(kind: String, name: String): String? = logoFile(kind, name).takeIf { SystemFileSystem.exists(Path(it)) }
+
     fun serveLogo(kind: String, name: String): ByteArray? {
         val path = Path(logoFile(kind, name))
         return if (SystemFileSystem.exists(path)) FileIo.readBytes(path) else null

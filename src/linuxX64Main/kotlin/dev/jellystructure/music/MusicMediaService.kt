@@ -123,7 +123,7 @@ class MusicMediaService(
             if (ok) {
                 knownFailures?.forget(KnownFailures.COVER_ART, url)
                 covers++
-                store.putAlbum(a.copy(coverState = MusicArt.FILE, coverSource = "caa", coverMissingOnCaa = false))
+                store.putAlbum(a.copy(coverState = MusicArt.FILE, coverSource = "caa", coverMissingOnCaa = false, updatedAt = nowEpochSec()))
                 changedAlbums += a
                 history?.record(a.id, "music_cover", "Cover from the Cover Art Archive")
             } else {
@@ -147,12 +147,12 @@ class MusicMediaService(
                     return artwork.downloadTo(url, dest)
                 }
                 if (fa != null) {
-                    if (put("thumb", fa.thumbs.firstOrNull()?.url, ar.imageState)) { updated = updated.copy(imageState = MusicArt.FILE, imageSource = "fanart.tv", imageCredit = null); pictures++ }
-                    if (put("background", fa.backgrounds.firstOrNull()?.url, ar.backdropState)) updated = updated.copy(backdropState = MusicArt.FILE)
-                    if (put("logo", fa.logos.firstOrNull()?.url, ar.logoState)) updated = updated.copy(logoState = MusicArt.FILE)
+                    if (put("thumb", fa.thumbs.firstOrNull()?.url, ar.imageState)) { updated = updated.copy(imageState = MusicArt.FILE, imageSource = "fanart.tv", imageCredit = null, updatedAt = nowEpochSec()); pictures++ }
+                    if (put("background", fa.backgrounds.firstOrNull()?.url, ar.backdropState)) updated = updated.copy(backdropState = MusicArt.FILE, updatedAt = nowEpochSec())
+                    if (put("logo", fa.logos.firstOrNull()?.url, ar.logoState)) updated = updated.copy(logoState = MusicArt.FILE, updatedAt = nowEpochSec())
                 } else if (ar.imageState != MusicArt.FILE || scopeAll) {
                     ar.urls["image"]?.let { WikimediaCommons.picture(it) }?.let { pic ->
-                        if (put("thumb", pic.url, ar.imageState)) { updated = updated.copy(imageState = MusicArt.FILE, imageSource = "commons", imageCredit = pic.credit); pictures++ }
+                        if (put("thumb", pic.url, ar.imageState)) { updated = updated.copy(imageState = MusicArt.FILE, imageSource = "commons", imageCredit = pic.credit, updatedAt = nowEpochSec()); pictures++ }
                     }
                 }
             }
@@ -413,7 +413,7 @@ class MusicMediaService(
         val dest = coverPath(a) ?: return false
         if (!artwork.downloadTo(url, dest)) return false
         artwork.markManual(dest)
-        store.putAlbum(a.copy(coverState = MusicArt.FILE, coverSource = source, coverMissingOnCaa = false))
+        store.putAlbum(a.copy(coverState = MusicArt.FILE, coverSource = source, coverMissingOnCaa = false, updatedAt = nowEpochSec()))
         history?.record(a.id, "music_cover", "Cover chosen by hand ($source)")
         refreshInJellyfin(listOf(a), emptyList())
         return true
@@ -429,10 +429,12 @@ class MusicMediaService(
         return true
     }
 
+    // DEB-5847 (FR-4) — a replaced picture moves `updatedAt`, which is the `?v=` of every grid and page URL, so a
+    // day-long cache on a versioned URL never shows the old bytes.
     private fun withArt(ar: MusicArtist, kind: String, state: String, source: String?, credit: String?) = when (kind) {
-        "thumb" -> ar.copy(imageState = state, imageSource = source, imageCredit = credit)
-        "background" -> ar.copy(backdropState = state)
-        else -> ar.copy(logoState = state)
+        "thumb" -> ar.copy(imageState = state, imageSource = source, imageCredit = credit, updatedAt = nowEpochSec())
+        "background" -> ar.copy(backdropState = state, updatedAt = nowEpochSec())
+        else -> ar.copy(logoState = state, updatedAt = nowEpochSec())
     }
 
     /** An upload: validated as an image by its bytes, written as the folder's own file, and locked. */
@@ -440,7 +442,7 @@ class MusicMediaService(
         val a = store.album(albumId) ?: return false
         val dest = coverPath(a) ?: return false
         if (!writeImage(dest, bytes)) return false
-        store.putAlbum(a.copy(coverState = MusicArt.FILE, coverSource = "upload", coverMissingOnCaa = false))
+        store.putAlbum(a.copy(coverState = MusicArt.FILE, coverSource = "upload", coverMissingOnCaa = false, updatedAt = nowEpochSec()))
         history?.record(a.id, "music_cover", "Cover uploaded")
         refreshInJellyfin(listOf(a), emptyList())
         return true
@@ -466,7 +468,7 @@ class MusicMediaService(
         val a = store.album(albumId) ?: return false
         val dest = coverPath(a) ?: return false
         artwork.removeImage(dest)
-        store.putAlbum(a.copy(coverState = if (existingCover(a) != null) MusicArt.FILE else MusicArt.NONE, coverSource = null))
+        store.putAlbum(a.copy(coverState = if (existingCover(a) != null) MusicArt.FILE else MusicArt.NONE, coverSource = null, updatedAt = nowEpochSec()))
         refreshInJellyfin(listOf(a), emptyList())
         return true
     }

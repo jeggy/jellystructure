@@ -46,6 +46,17 @@ internal fun muImageStyle(url: String): String = "background:#0c0e14 center/cove
 internal fun muCoverImgHtml(url: String): String =
     """<img class="mu-covim" loading="lazy" decoding="async" alt="" src="${url.esc()}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover">"""
 
+/**
+ * DEB-5847 (FR-5) — the Artists circle's picture: the same lazy `<img>` as [muCoverImgHtml], plus the round clip
+ * `.mu-circ` does not make itself (it is `overflow:visible` so the chip can sit on the rim). Still inline, so
+ * no CSS file changes; the chip and the no-picture flag that follow it in the cell paint over it.
+ */
+internal fun muCircleImgHtml(url: String): String =
+    """<img class="mu-circim" loading="lazy" decoding="async" alt="" src="${url.esc()}" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:50%">"""
+
+/** DEB-5847 (FR-3) — a grid picture is asked for at twice the width it is drawn at. */
+internal const val MU_GRID_PICTURE_W = 320
+
 /** An album cover or its wordmark (FR-277-3). [extraClass] joins `mu-cov`; [extraStyle] is appended to the style. */
 internal fun muCoverHtml(title: String, url: String?, extraClass: String = "", chip: String = "", extraStyle: String = ""): String =
     if (url != null) """<div class="mu-cov $extraClass" style="background:#0c0e14$extraStyle">${muCoverImgHtml(url)}$chip</div>"""

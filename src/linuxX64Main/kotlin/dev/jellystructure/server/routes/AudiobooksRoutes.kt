@@ -106,7 +106,7 @@ fun Route.audiobooksRoutes(configStore: ConfigStore, music: MusicPipeline, jelly
                 }
                 return@get call.respond(HttpStatusCode.NotFound)
             }
-            serveFile(call, file)
+            serveFile(call, file, maxAge = 60)
         }
 
         // ── Phase 281: the Audiobook page ──

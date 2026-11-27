@@ -276,11 +276,16 @@ class RaviloArtworkService(
     suspend fun serveMusicFile(path: String, cacheKey: String, type: String, width: Int?): Pair<ByteArray, String>? =
         resizeServe(cacheKey, path, type, width)
 
+    /** DEB-5847 (FR-3) — a studio/network logo (PNG, alpha kept) at [width] px, resized once and held like every
+     *  other entry here. [cacheKey] names the entry; the source file's size keys freshness. */
+    suspend fun serveLogoFile(path: String, cacheKey: String, width: Int): Pair<ByteArray, String>? =
+        resizeServe(cacheKey, path, "logo-w", width)
+
     /** The resize itself; shared by the request path and [presize]. Null when ffmpeg produced nothing. */
     private suspend fun resizeInto(cacheKey: String, sourcePath: String, type: String, width: Int?, srcSize: Long): Pair<ByteArray, String>? {
         val cachePath = "$cacheDir/$cacheKey"
         val ctPath = "$cachePath.ct"
-        val isPng = type == "logo"
+        val isPng = type == "logo" || type == "logo-w"
         val ct = if (isPng) "image/png" else "image/jpeg"
         val tmpOut = "$cacheDir/.rsz_$cacheKey.${if (isPng) "png" else "jpg"}"
         val ok = when (type) {
@@ -288,6 +293,7 @@ class RaviloArtworkService(
             "backdrop" -> FfmpegRunner.resizeImage(sourcePath, tmpOut, width = width?.takeIf { it > 0 } ?: 1920)
             "still"    -> FfmpegRunner.resizeImage(sourcePath, tmpOut, width = width?.takeIf { it > 0 } ?: 640)
             "logo"     -> FfmpegRunner.resizeImage(sourcePath, tmpOut, height = 300)
+            "logo-w"   -> FfmpegRunner.resizeImage(sourcePath, tmpOut, width = width?.takeIf { it > 0 } ?: 100)
             else       -> false
         }
         val bytes = if (ok) runCatching { FileIo.readBytes(Path(tmpOut)) }.getOrNull() else null

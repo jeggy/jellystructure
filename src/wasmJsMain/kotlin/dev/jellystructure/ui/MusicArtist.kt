@@ -151,7 +151,7 @@ private fun arPanel(scope: CoroutineScope) {
 }
 
 private fun albumCell(a: MusicAlbumRow, repeated: Set<String> = emptySet()): String =
-    """<a class="mu-cell" href="#/album/${a.id}">${muCoverHtml(a.title, if (a.cover) "/api/music/image/album/${a.id}?v=${a.v}" else null, chip = muAlbumChip(a))}<div class="ttl" title="${a.title.esc()}">${a.title.esc()}</div>${muFolderLine(a, repeated)}<div class="yr">${a.year?.let { "$it · " } ?: ""}${muPlural(a.songs, "song")}</div></a>"""
+    """<a class="mu-cell" href="#/album/${a.id}">${muCoverHtml(a.title, if (a.cover) "/api/music/image/album/${a.id}?v=${a.v}&w=$MU_GRID_PICTURE_W" else null, chip = muAlbumChip(a))}<div class="ttl" title="${a.title.esc()}">${a.title.esc()}</div>${muFolderLine(a, repeated)}<div class="yr">${a.year?.let { "$it · " } ?: ""}${muPlural(a.songs, "song")}</div></a>"""
 
 private fun arOverview(p: MusicArtistPageDto): String {
     val r = p.artist

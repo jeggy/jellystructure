@@ -82,4 +82,15 @@ class MusicCoverHtmlTest {
         // on screen, and FR-278-16 is about the 809 that are not on screen.
         assertTrue("url('/c.jpg')" in muImageStyle("/c.jpg"), muImageStyle("/c.jpg"))
     }
+
+    // DEB-5847 (FR-5) — the Artists circle is the same lazy <img>, round-clipped inline (the box is overflow:visible).
+    @Test
+    fun `an artist circle is a lazy round img and not a background image`() {
+        val h = muCircleImgHtml("/api/music/image/artist/r1/thumb?v=7&w=$MU_GRID_PICTURE_W")
+        assertTrue("<img " in h && """loading="lazy"""" in h && """decoding="async"""" in h, h)
+        assertTrue("""alt=""""" in h, "decorative: an empty alt keeps a 404 from drawing a glyph: $h")
+        assertTrue("position:absolute" in h && "inset:0" in h && "object-fit:cover" in h && "border-radius:50%" in h, h)
+        assertTrue("&amp;w=320" in h, "the picture is asked for at the size it is drawn, 2x: $h")
+        assertFalse("url(" in h, h)
+    }
 }

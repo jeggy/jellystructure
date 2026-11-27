@@ -1,6 +1,7 @@
 package dev.jellystructure.server.routes
 
 import dev.jellystructure.media.GenreCatalog
+import dev.jellystructure.server.parseImageWidth
 import dev.jellystructure.server.respondCachedBytes
 import dev.jellystructure.config.AppConfig
 import dev.jellystructure.config.ConfigStore
@@ -151,7 +152,7 @@ private suspend fun computeAgeRatings(store: MediaStore, cfg: AppConfig?): AgeRa
     return AgeRatingsResponse(mapped, unmapped, cascadeConfigured = true)
 }
 
-fun Route.metadataRoutes(store: MediaStore, tagStore: JsTagStore, logoDownloader: LogoDownloader, seedingSnapshot: SeedingSnapshot, configStore: ConfigStore? = null, musicTags: dev.jellystructure.music.MusicJsTagService? = null) {
+fun Route.metadataRoutes(store: MediaStore, tagStore: JsTagStore, logoDownloader: LogoDownloader, seedingSnapshot: SeedingSnapshot, configStore: ConfigStore? = null, musicTags: dev.jellystructure.music.MusicJsTagService? = null, images: dev.jellystructure.tv.RaviloArtworkService? = null) {
     route("/metadata") {
         // Phase 216 (FR-216-9) — grouped through TaxonomyKey, the same normaliser the viewer-side
         // BrowseService.facets() counts with, so this page and Ravilo's Discover wall state the same
@@ -214,6 +215,13 @@ fun Route.metadataRoutes(store: MediaStore, tagStore: JsTagStore, logoDownloader
             route("/{name}") {
                 get("/artwork") {
                     val name = call.parameters["name"] ?: return@get call.respond(HttpStatusCode.BadRequest)
+                    // DEB-5847 (FR-3/4) — `?w=` is the wall's own size, resized once and held on disk; a logo is
+                    // content-addressed, so a day-long cache is safe and a change shows on the next ETag check.
+                    val width = parseImageWidth(call.request.queryParameters["w"])
+                    val sized = if (width != null && images != null) logoDownloader.existingLogoPath("studios", name)?.let { path ->
+                        images.serveLogoFile(path, "admin-logo-studios-${name.replace(Regex("[^a-zA-Z0-9._-]"), "_").take(120)}-$width", width)
+                    } else null
+                    if (sized != null) return@get call.respondCachedBytes(sized.first, ContentType.parse(sized.second))
                     val bytes = logoDownloader.serveLogo("studios", name)
                         ?: return@get call.respond(HttpStatusCode.NotFound)
                     call.respondCachedBytes(bytes, ContentType.Image.PNG)
@@ -243,6 +251,13 @@ fun Route.metadataRoutes(store: MediaStore, tagStore: JsTagStore, logoDownloader
             route("/{name}") {
                 get("/artwork") {
                     val name = call.parameters["name"] ?: return@get call.respond(HttpStatusCode.BadRequest)
+                    // DEB-5847 (FR-3/4) — `?w=` is the wall's own size, resized once and held on disk; a logo is
+                    // content-addressed, so a day-long cache is safe and a change shows on the next ETag check.
+                    val width = parseImageWidth(call.request.queryParameters["w"])
+                    val sized = if (width != null && images != null) logoDownloader.existingLogoPath("networks", name)?.let { path ->
+                        images.serveLogoFile(path, "admin-logo-networks-${name.replace(Regex("[^a-zA-Z0-9._-]"), "_").take(120)}-$width", width)
+                    } else null
+                    if (sized != null) return@get call.respondCachedBytes(sized.first, ContentType.parse(sized.second))
                     val bytes = logoDownloader.serveLogo("networks", name)
                         ?: return@get call.respond(HttpStatusCode.NotFound)
                     call.respondCachedBytes(bytes, ContentType.Image.PNG)

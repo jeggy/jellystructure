@@ -17,6 +17,8 @@ import io.ktor.http.content.forEachPart
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.request.receiveMultipart
 import io.ktor.server.response.respondBytes
+import dev.jellystructure.server.parseImageWidth
+import dev.jellystructure.server.respondCachedBytes
 import io.ktor.utils.io.readRemaining
 import kotlinx.io.files.Path
 import kotlinx.io.files.SystemFileSystem
@@ -75,8 +77,23 @@ internal suspend fun receiveImage(call: ApplicationCall): ByteArray? {
     return bytes?.takeIf { it.isNotEmpty() }
 }
 
-/** A music image file, typed by its own bytes; 404 when there is none. Cached briefly — a replaced cover shows after a reload. */
-internal suspend fun serveFile(call: ApplicationCall, path: String?) {
+/** DEB-5847 (FR-4) — a URL that carries a version (`?v=`) is cacheable for a day; one that does not is
+ *  revalidated every time (an ETag makes that a `304`), so a replaced picture never hides behind a stale cache. */
+internal fun imageMaxAge(call: ApplicationCall): Int = if (call.request.queryParameters["v"] != null) 86_400 else 0
+
+/**
+ * A music image file, typed by its own bytes; 404 when there is none. Content ETag + `304` (FR-4).
+ * DEB-5847 (FR-3) — with `?w=` the picture is the resized, disk-held variant [images] makes (one resize in flight
+ * per key, fresh while the source's size matches); without `w`, or when no resize came out, the original, as before.
+ * [cacheKey] names the resized entry (it carries the width). [maxAge] overrides FR-4's version rule for a caller
+ * (the audiobooks' covers keep their 60 s) whose version does not move with the bytes.
+ */
+internal suspend fun serveFile(call: ApplicationCall, path: String?, images: dev.jellystructure.tv.RaviloArtworkService? = null, cacheKey: String = "", maxAge: Int? = null) {
+    val width = parseImageWidth(call.request.queryParameters["w"])
+    if (path != null && width != null && images != null) {
+        val r = images.serveMusicFile(path, "$cacheKey-$width", "poster", width)
+        if (r != null) return call.respondCachedBytes(r.first, ContentType.parse(r.second), maxAge ?: imageMaxAge(call))
+    }
     val bytes = path?.let { runCatching { FileIo.readBytes(Path(it)) }.getOrNull() } ?: return call.respond(HttpStatusCode.NotFound)
     val type = when (dev.jellystructure.media.sniffImageSignature(bytes)) {
         dev.jellystructure.media.SniffedImage.PNG -> ContentType.Image.PNG
@@ -85,15 +102,14 @@ internal suspend fun serveFile(call: ApplicationCall, path: String?) {
         dev.jellystructure.media.SniffedImage.SVG -> ContentType.Image.SVG
         else -> ContentType.Image.JPEG
     }
-    call.response.headers.append("Cache-Control", "private, max-age=60")
-    call.respondBytes(bytes, type)
+    call.respondCachedBytes(bytes, type, maxAge ?: imageMaxAge(call))
 }
 
 /**
  * Phase 276 — the admin's MusicBrainz surface: *Match now*, Find match… (search, releases, identify by sound, use),
  * lock / clear, genre ticks, *Match this track…*, and the providers card's own save (FR-276-8/9).
  */
-fun Route.musicRoutes(configStore: ConfigStore, music: MusicPipeline, appScope: CoroutineScope, jobs: dev.jellystructure.media.MediaJobQueue? = null, jellyfinClient: dev.jellystructure.auth.JellyfinClient? = null, publishQueue: dev.jellystructure.publish.PublishQueue? = null, videos: suspend () -> Collection<dev.jellystructure.model.MediaItem> = { emptyList() }, jsTagStore: dev.jellystructure.media.JsTagStore? = null) {
+fun Route.musicRoutes(configStore: ConfigStore, music: MusicPipeline, appScope: CoroutineScope, jobs: dev.jellystructure.media.MediaJobQueue? = null, jellyfinClient: dev.jellystructure.auth.JellyfinClient? = null, publishQueue: dev.jellystructure.publish.PublishQueue? = null, videos: suspend () -> Collection<dev.jellystructure.model.MediaItem> = { emptyList() }, jsTagStore: dev.jellystructure.media.JsTagStore? = null, images: dev.jellystructure.tv.RaviloArtworkService? = null) {
     val matcher = music.matcher
     val jsTags = jsTagStore?.let { MusicJsTagService(music.store, it, music.audiobooks?.store) }
     val noAnswer = mapOf("error" to "MusicBrainz didn't answer — try again in a moment")
@@ -240,12 +256,11 @@ fun Route.musicRoutes(configStore: ConfigStore, music: MusicPipeline, appScope: 
             // Phase 278 — no cover file, but Jellyfin has art (embedded in a track): show Jellyfin's.
             if (file == null && a.coverState == dev.jellystructure.model.MusicArt.JELLYFIN && jellyfinClient != null) {
                 val cfg = configStore.current
-                val img = jellyfinClient.getItemPrimaryImage(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken, a.id)
+                val img = jellyfinClient.getItemPrimaryImage(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken, a.id, parseImageWidth(call.request.queryParameters["w"]) ?: 600)
                     ?: return@get call.respond(HttpStatusCode.NotFound)
-                call.response.headers.append("Cache-Control", "private, max-age=60")
-                return@get call.respondBytes(img.first, ContentType.parse(img.second))
+                return@get call.respondCachedBytes(img.first, ContentType.parse(img.second), imageMaxAge(call))
             }
-            serveFile(call, file)
+            serveFile(call, file, images, "admin-music-album-${a.id}")
         }
         get("/image/artist/{id}/{kind}") {
             val a = music.store.artist(call.parameters["id"]!!) ?: return@get call.respond(HttpStatusCode.NotFound)
@@ -253,12 +268,11 @@ fun Route.musicRoutes(configStore: ConfigStore, music: MusicPipeline, appScope: 
             val file = media.existingArtistImage(a, kind)
             if (file == null && kind == "thumb" && a.imageState == dev.jellystructure.model.MusicArt.JELLYFIN && jellyfinClient != null) {
                 val cfg = configStore.current
-                val img = jellyfinClient.getItemPrimaryImage(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken, a.id)
+                val img = jellyfinClient.getItemPrimaryImage(cfg.apiKeys.jellyfinUrl, cfg.apiKeys.jellyfinToken, a.id, parseImageWidth(call.request.queryParameters["w"]) ?: 600)
                     ?: return@get call.respond(HttpStatusCode.NotFound)
-                call.response.headers.append("Cache-Control", "private, max-age=60")
-                return@get call.respondBytes(img.first, ContentType.parse(img.second))
+                return@get call.respondCachedBytes(img.first, ContentType.parse(img.second), imageMaxAge(call))
             }
-            serveFile(call, file)
+            serveFile(call, file, images, "admin-music-artist-${a.id}-$kind")
         }
 
         get("/album/{id}/nfo") {

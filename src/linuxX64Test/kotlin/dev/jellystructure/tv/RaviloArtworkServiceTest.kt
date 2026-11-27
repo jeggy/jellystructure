@@ -86,4 +86,21 @@ class RaviloArtworkServiceTest {
         assertEquals("$key-320", service.stillCacheKey("show", ep, width = 320))
         assertEquals("show-season1-poster", service.seasonPosterCacheKey("show", 1))
     }
+
+    // DEB-5847 (FR-3) — the admin's resized music picture and studio logo ride the same gate fallback as every
+    // other entry: a small original is served rather than a 503, and nothing counts as a resize on the request path.
+    @Test
+    fun `a saturated gate serves a small music picture and a small logo as they are`() = runBlocking {
+        val pic = ByteArray(900) { (it % 241).toByte() }
+        write("$root/media/folder.jpg", pic)
+        write("$root/media/logo.png", pic)
+        service.forceGateTimeoutForTests = true
+
+        val music = assertNotNull(service.serveMusicFile("$root/media/folder.jpg", "admin-music-artist-a1-thumb-320", "poster", 320))
+        assertContentEquals(pic, music.first)
+        val logo = assertNotNull(service.serveLogoFile("$root/media/logo.png", "admin-logo-studios-x-100", 100))
+        assertContentEquals(pic, logo.first)
+        assertEquals("image/png", logo.second)
+        assertEquals(0, service.stats().resizesOnRequestLastHour)
+    }
 }

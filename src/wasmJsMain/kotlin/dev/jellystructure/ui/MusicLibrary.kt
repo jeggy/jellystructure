@@ -432,8 +432,10 @@ private fun body(d: MusicBrowseDto): String {
         "artists" -> buildString {
             append("""<div class="mu-agrid">""")
             for (r in d.artists) {
-                val pic = if (r.picture) muImageStyle("/api/music/image/artist/${r.id}/thumb?v=${r.v}") else muWordmarkStyle(r.name)
+                // DEB-5847 (FR-3/5) — a lazy <img> at the size it is drawn, not a background of the 1000 px original.
+                val pic = if (r.picture) "background:#0c0e14" else muWordmarkStyle(r.name)
                 append("""<a class="mu-cell" href="#/artist/${r.id}" data-id="${r.id}"><div class="mu-circ" style="$pic">""")
+                if (r.picture) append(muCircleImgHtml("/api/music/image/artist/${r.id}/thumb?v=${r.v}&w=$MU_GRID_PICTURE_W"))
                 if (!r.picture) append("""${muInitials(r.name).esc()}${if (r.folder) """<i class="mu-nocov" title="No picture"></i>""" else ""}""")
                 append(muMatchChip(r.match))
                 append("""</div><div class="ttl">${r.name.esc()}</div><div class="yr">${if (r.albums > 0) muPlural(r.albums, "album") + " · " else "credited · "}${muPlural(r.songs, "song")}</div></a>""")
@@ -451,7 +453,7 @@ private fun body(d: MusicBrowseDto): String {
             append("""<div class="mu-grid${if (muSelected.isNotEmpty()) " selecting" else ""}">""")
             val repeated = muRepeatedTitles(d.albums)
             for (a in d.albums) {
-                val url = if (a.cover) "/api/music/image/album/${a.id}?v=${a.v}" else null
+                val url = if (a.cover) "/api/music/image/album/${a.id}?v=${a.v}&w=$MU_GRID_PICTURE_W" else null
                 append("""<a class="mu-cell${if (a.id in muSelected) " on" else ""}" href="#/album/${a.id}" data-id="${a.id}"><span class="mu-sel" data-sel="${a.id}">✓</span>""")
                 append(muCoverHtml(a.title, url, chip = muAlbumChip(a)))
                 append("""<div class="ttl" title="${a.title.esc()}">${a.title.esc()}</div><div class="sub">${a.artist.esc()}</div>${muFolderLine(a, repeated)}<div class="yr">${a.year?.let { "$it · " } ?: ""}${muPlural(a.songs, "song")}${if (a.extras > 0) " + " + muPlural(a.extras, "extra") else ""}</div></a>""")
