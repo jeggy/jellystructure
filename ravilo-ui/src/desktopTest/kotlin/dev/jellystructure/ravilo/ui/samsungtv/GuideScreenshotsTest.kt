@@ -86,9 +86,11 @@ class GuideScreenshotsTest {
         "39-ov-not-installed" to ov(TvCard(living, ready, InstalledRavilo.NotInstalled)),
         "40-ov-two-approved" to ov(TvCard(living, ready, on("1.70")), TvCard(bedroom, row(2, bedroom, "READY", "v1.71"), InstalledRavilo.NotInstalled)),
         "41-ov-version-unknown" to ov(TvCard(living, ready, InstalledRavilo.Unknown)),
+        // FR-10c: every found TV first (Approved, Waiting, Not approved, Not set up), then the requests the scan did not find.
         "42-ov-all-badges" to ov(
             TvCard(living, ready, on("1.70")), TvCard(bedroom, row(2, bedroom, "REQUESTED")),
-            TvCard(null, row(3, living, "REJECTED", note = "Not this one.")), TvCard(found("192.168.1.11", "Hallway TV", "QE32Q50A"), null), found = 3,
+            TvCard(found("192.168.1.11", "Hallway TV", "QE32Q50A"), null),
+            TvCard(null, row(3, living, "REJECTED", note = "Not this one.")), found = 3,
         ),
     )
 

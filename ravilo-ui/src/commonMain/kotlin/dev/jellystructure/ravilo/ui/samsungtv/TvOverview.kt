@@ -47,7 +47,8 @@ data class TvCard(
     val action: CardAction get() = when (request?.state) {
         null -> if (tv != null) CardAction.SET_UP else CardAction.NONE
         "REQUESTED" -> CardAction.WITHDRAW
-        "REJECTED" -> CardAction.ASK_AGAIN
+        // Ask again needs the TV on this Wi-Fi to read its id, so a request the scan did not find has no action beyond Withdraw (FR-10 item 4).
+        "REJECTED" -> if (tv != null) CardAction.ASK_AGAIN else CardAction.NONE
         "READY" -> {
             val installed = (onTv as? InstalledRavilo.Version)?.version
             val latest = latest

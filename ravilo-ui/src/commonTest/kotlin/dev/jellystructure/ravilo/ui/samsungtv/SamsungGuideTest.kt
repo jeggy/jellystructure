@@ -283,6 +283,30 @@ class GuideTest {
         assertEquals(null, cards.last().tv)   // the Approved row nothing found comes after every found TV
     }
 
+    @Test fun mixedFoundAndUnfoundRowsKeepEveryFoundTvAboveEveryUnfoundRequest() {
+        val rows = listOf(
+            row("REJECTED", "AAAAAAAAAAAAA").copy(id = 1, model = "M1", name = "Gone"),     // not found
+            row("REQUESTED", "BBBBBBBBBBBBB").copy(id = 2, model = "M2", name = "Waits"),   // found
+            row("READY", duid).copy(id = 3, model = "M3", name = "Ready"),                  // not found
+        )
+        val cards = overviewCards(rows, listOf(found("1.1.1.1", "M2", "Waits"), found("1.1.1.2", "M9", "Hallway")), { null })
+        // found: Waiting, then Not set up; unfound: Approved, then Not approved
+        assertEquals(listOf(Badge.WAITING, Badge.NOT_SET_UP, Badge.APPROVED, Badge.REJECTED), cards.map { it.badge })
+        assertEquals(listOf(true, true, false, false), cards.map { it.tv != null })
+    }
+
+    @Test fun anUnfoundRejectedCardHasNoActionAndAFoundOneHasAskAgain() = runTest {
+        val unfound = TvCard(null, row("REJECTED", duid).copy(decisionNote = "No"))
+        assertEquals(CardAction.NONE, unfound.action); assertEquals("No", unfound.request?.decisionNote)
+        val foundCard = TvCard(SamsungTv("1.1.1.1", "UE55RU7445", "Living", "5.0", true, null), row("REJECTED", duid))
+        assertEquals(CardAction.ASK_AGAIN, foundCard.action)
+        // askAgain on the unfound card does nothing; on the found card it goes to step 1 for that TV.
+        val g = guide(Phone(), Backend(mutableListOf(row("REJECTED", duid)))); g.open(); advanceUntilIdle()
+        val ov = assertIs<GuideScreen.Overview>(g.screen.value)
+        g.askAgain(unfound); advanceUntilIdle(); assertEquals(ov, g.screen.value)
+        g.askAgain(ov.cards.single()); assertIs<GuideScreen.Step1>(g.screen.value)
+    }
+
     // ─── FR-11 — the version the TV says it has ───────────────────────────────────────────────────────────────
 
     @Test fun theThreeAnswersOfTheTvAndTheStatusItGaveThem() {

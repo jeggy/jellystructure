@@ -264,8 +264,8 @@ class SamsungGuide(
         }
     }
 
-    /** *Ask again* on a Rejected card: FR-3's steps for that TV when the scan found it, the scan otherwise. */
-    fun askAgain(card: TvCard) { if (card.tv != null) setUp(card) else find() }
+    /** *Ask again* on a Rejected card the scan found: FR-3's steps for that TV. An unfound card has no such action (FR-10 item 4). */
+    fun askAgain(card: TvCard) { if (card.action == CardAction.ASK_AGAIN) setUp(card) }
 
     /**
      * *Install on TV*, *Update* and *Reinstall* on a card (FR-15): the checks and the install run for **that card's request**. A
