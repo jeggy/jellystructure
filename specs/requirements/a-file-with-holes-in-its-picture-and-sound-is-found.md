@@ -117,6 +117,12 @@ with live playback. The sweep this spec adds is the census, deferred while anyon
   the episodes, as phase 255's block does. The Checks card's *Verify files* line (FR-261-10) counts a file
   with holes as a finding, so a title with holes never reads *clean*. FR-261-9's per-title outcome is the
   worst state across `file_integrity` **and** `file_timeline`.
+
+  *Amended 2026-11-27 (DEB-5848):* the season line never overstates. A file missing less than a minute is
+  said in whole seconds (rounded, at least 1 s), never rounded up to a minute: *"S01: 1 episode, 2 s missing"*,
+  *"S01: 3 episodes, 2 to 40 s missing each"*, *"S01: 2 episodes, 2 s to 4 minutes missing each"*. A season
+  whose files all miss a minute or more reads as before. Found on a BluRay episode whose block said *"about 1
+  minute missing"* above a body that said, correctly, *"0:01 in all"* (1.7 s).
 - **FR-7 — the suggestion is text, chosen by the case. One builder** (`TimelineHolesAdvice`, commonMain,
   pure, unit-tested):
 
