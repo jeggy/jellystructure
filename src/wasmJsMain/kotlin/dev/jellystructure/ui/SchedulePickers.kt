@@ -111,12 +111,15 @@ internal object SchedPickers {
 
     private fun change(key: String, root: Element, slot: Slot, field: String, value: String) {
         val old = slot.form
-        val new = old.with(field, value)
+        val new = old.with(field, value, today())
         if (new == old) return
         slot.form = new
         val text = new.schedule(today())
-        slot.emitted = text
-        slot.onChange(text)
+        // a switch that leaves the stored string as it was saves nothing and marks nothing changed (FR-3.7)
+        if (text != slot.emitted) {
+            slot.emitted = text
+            slot.onChange(text)
+        }
 
         if (schedStructure(new) != root.getAttribute("data-sch-structure") || field == "unit") redrawLines(root, slot, field)
         else patch(root, slot, field)

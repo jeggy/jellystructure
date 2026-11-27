@@ -127,17 +127,17 @@ class SchedulePickerHtmlTest {
 
     @Test
     fun `at least one weekday stays on`() {
-        assertEquals(weeks(1), weeks(1).with("day", "1"))
-        assertEquals(weeks(1, 2), weeks(1).with("day", "2"))
-        assertEquals(weeks(2), weeks(1, 2).with("day", "1"))
+        assertEquals(weeks(1), weeks(1).with("day", "1", today))
+        assertEquals(weeks(1, 2), weeks(1).with("day", "2", today))
+        assertEquals(weeks(2), weeks(1, 2).with("day", "1", today))
     }
 
     @Test
     fun `an unreadable value leaves the form as it was`() {
         val f = weeks(1, 2)
-        assertEquals(f, f.with("n", "")); assertEquals(f, f.with("at", "25:00")); assertEquals(f, f.with("from", "2026-02-30")); assertEquals(f, f.with("nonsense", "x"))
-        assertEquals(100, f.with("n", "500").n)
-        assertEquals(1, f.with("n", "0").n)
+        assertEquals(f, f.with("n", "", today)); assertEquals(f, f.with("at", "25:00", today)); assertEquals(f, f.with("from", "2026-02-30", today)); assertEquals(f, f.with("nonsense", "x", today))
+        assertEquals(100, f.with("n", "500", today).n)
+        assertEquals(1, f.with("n", "0", today).n)
     }
 
     @Test
@@ -281,5 +281,33 @@ class SchedulePickerHtmlTest {
         assertTrue("Checks on a site are never closer than 6 hours apart." in held)
         assertTrue("""<label>Check</label>""" in held)
         assertFalse("data-af-sched" in held, "the old picker is gone")
+    }
+
+    private fun assertSwitchKeeps(f: SchedForm, then: SchedForm = f.with("unit", "cron", today)) {
+        assertEquals(SchedMode.CRON, then.mode)
+        assertEquals(f.schedule(today), then.schedule(today))
+    }
+
+    @Test
+    fun `choosing Custom keeps the schedule the control held`() {
+        val hours = SchedForm.of("0 */6 * * *")
+        assertSwitchKeeps(hours)
+        assertEquals("0 */6 * * *", hours.with("unit", "cron", today).schedule(today))
+        assertSwitchKeeps(weeks(1, 2))
+        assertEquals("0 4 * * 1,2", weeks(1, 2).with("unit", "cron", today).schedule(today))
+        val everyTwo = weeks(3, n = 2)
+        assertSwitchKeeps(everyTwo)
+        assertEquals(everyTwo.schedule(today), everyTwo.with("unit", "cron", today).schedule(today))
+        val off = SchedForm.of("", SchedOptions(canOff = true))
+        assertSwitchKeeps(off)
+        assertEquals("", off.with("unit", "cron", today).schedule(today))
+    }
+
+    @Test
+    fun `Custom to Days and back holds the Days schedule not the old text`() {
+        val custom = SchedForm(SchedMode.CRON, cron = "5 1 * * *")
+        val days = custom.with("unit", "days", today)
+        val back = days.with("unit", "cron", today)
+        assertEquals(days.schedule(today), back.schedule(today))
     }
 }

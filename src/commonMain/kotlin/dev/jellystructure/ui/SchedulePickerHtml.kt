@@ -94,8 +94,8 @@ data class SchedForm(
     }
 
     /** One field changed. [value] is what the control holds; an unreadable value leaves the form as it was. */
-    fun with(field: String, value: String): SchedForm = when (field) {
-        "unit" -> SchedMode.of(value)?.let { unit(it) } ?: this
+    fun with(field: String, value: String, today: IsoDate): SchedForm = when (field) {
+        "unit" -> SchedMode.of(value)?.let { unit(it, today) } ?: this
         "n" -> value.trim().toIntOrNull()?.let { copy(n = it.coerceIn(1, 100)) } ?: this
         "day" -> value.toIntOrNull()?.takeIf { it in 0..6 }?.let { d -> if (d in days) (if (days.size > 1) copy(days = days - d) else this) else copy(days = days + d) } ?: this
         "at" -> value.split(':').takeIf { it.size == 2 }?.let { (h, m) -> h.toIntOrNull()?.takeIf { it in 0..23 }?.let { hh -> m.toIntOrNull()?.takeIf { it in 0..59 }?.let { copy(hour = hh, minute = it) } } } ?: this
@@ -112,9 +112,10 @@ data class SchedForm(
     }
 
     /** Choosing a unit keeps N, the time and anything the new unit shares; the new unit's own fields keep what they held. */
-    private fun unit(m: SchedMode): SchedForm = when {
+    private fun unit(m: SchedMode, today: IsoDate): SchedForm = when {
         m == mode -> this
-        m == SchedMode.CRON -> copy(mode = m, cron = cron.ifBlank { "0 4 * * *" })
+        // Custom opens holding the schedule the control held a moment before, so the switch alone changes nothing (FR-3.7)
+        m == SchedMode.CRON -> copy(mode = m, cron = schedule(today))
         else -> copy(mode = m)
     }
 
