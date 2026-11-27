@@ -15,7 +15,7 @@ credential, no account, no code (option S1 of the DEB-5687 research `research-in
 - **In:** the backend (one admin route, one public page), the admin frontend (*Users & devices*), the Compose setup
   screen on Android TV, phone, macOS and Linux, and the Android phone's link handling.
 - **Ravilo Web** needs no client change: it already starts with no setup (`ravilo-web` `RaviloRootActuals.kt:76-79`),
-  and the page's *Watch in your browser* opens it.
+  and the page's *Use Ravilo in the browser* opens it.
 - **Out:** the Samsung app (it already probes before saving, `ravilo-screen/…/ScreenSetup.kt:57`, FR-R269-3), the
   Chromecast receiver (the phone tells it the server), iOS.
 - **No sign-in path changes.** No route under `/api/tv/login`, `/api/tv/signin/*` or single sign-on is touched, no
@@ -57,8 +57,14 @@ credential, no account, no code (option S1 of the DEB-5687 research `research-in
   - the link, with **Copy**;
   - a QR of the link, drawn from `QrEncoder.encode` (`:shared`) by a small new DOM drawer;
   - *On a TV, open Ravilo and type* followed by `address`;
-  - one line: *The link holds no password. The viewer signs in with their own account, which must exist in Jellyfin
-    first (or is made at their first single sign-on).*
+  - one line: *The link holds no password. The viewer signs in with their own account, which must exist on this
+    server first (or is made at their first single sign-on).* (Settled 2026-11-27, design round: an admin reads this
+    line out to a viewer, and a viewer never hears the server software's name.)
+  - **Copy** shows a local *Copied* for 2 s. It is a confirmation of the admin's own press, not server state, so it is
+    outside the server-pushed-state rule.
+  - The QR drawer sizes its modules from the matrix it is given. `QrEncoder.encode` already chooses the smallest
+    version that holds the link, so a long host gives a larger version, never a failure. Proof: a 60-character host
+    draws and decodes back.
 - With `url` null: no link, no QR, no Copy. The sheet says *Set the Public address in Settings → Connections first*
   and links there.
 - New classes go in `design/app/wf.css`. Admin text is English and is not in `i18n/`.
@@ -71,9 +77,10 @@ credential, no account, no code (option S1 of the DEB-5687 research `research-in
   `Referrer-Policy: no-referrer` and `Cache-Control: no-store`.
 - It shows the word Ravilo and the server's host, and never the server software's name, a version or a status code
   (Key Invariant 12; DEB-2233 FR-15). Its query string is ignored.
-- Four parts, in this order:
-  1. **Watch in your browser**: the Ravilo Web address (`SingleSignOnService.webBase()`). Absent when that is null.
-  2. **Open the Ravilo app**: `dev.jellystructure.ravilo:/join?s=<public_url>`, the value written from configuration.
+- Four parts, in this order (the order is the owner's pick after the design round; see DEB-5861):
+  There is no iPhone button: iOS is out of scope, and the browser part is the iPhone route.
+  1. **Use Ravilo in the browser**: the Ravilo Web address (`SingleSignOnService.webBase()`). Absent when that is null.
+  2. **Open in Ravilo**: `dev.jellystructure.ravilo:/join?s=<public_url>`, the value written from configuration.
   3. **Get the app**: one button per platform. **Android** links to `<webBase>/join?s=<public_url>` on the Ravilo
      Web address (FR-5a): a phone with Ravilo installed opens the app with the invite, and any other phone opens
      Ravilo Web (owner, 2026-11-27: *"link to [the Ravilo Web address] which in it self would link to the already
@@ -111,7 +118,9 @@ credential, no account, no code (option S1 of the DEB-5687 research `research-in
 - With a saved address, an arriving invite is dropped, whatever it names. Changing server stays *Wrong server?*.
 - The address a link gives is `https` only. A typed `http://` LAN address still works; this rule is in the link
   parser, not in the platform (`usesCleartextTraffic` stays).
-- Pre-filled from a link, the setup screen shows one line above the field: `setup.from_invite`.
+- Pre-filled from a link, the setup screen shows one line above the field: `setup.from_invite`. The line stays through
+  a failed check (FR-7) until the viewer edits the field.
+- Pre-filled from a link, **focus starts on Connect**, not the field (TV and pointer clients alike).
 
 ### FR-7 — Connect checks the address first (Android TV, phone, macOS, Linux)
 
