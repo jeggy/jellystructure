@@ -164,7 +164,12 @@ The owner, on DEB-5905: *"I tried add an additional Samsung TV to my jeggy user,
   - a send that succeeds lands on the overview with the new card;
   - a refused send stays on step 4;
   - a DUID mismatch from a card goes back to the overview.
-- **QA**, on the row filed from DEB-5905, against the build before this one: on the Pixel 7, with one Ready request and a second Tizen emulator not set up, run the shipped guide to add the second TV and record every screen and the server's rows. Then repeat it on this build.
+- **The shipped detour is reproduced in `SamsungGuideTest`, not on devices** (corrected 2026-11-27). No phone we have can find two Samsung sets on its own /24:
+  - the Pixel's Wi‑Fi is the home LAN, where the Tizen emulators aren't (DEB-5356, 13:15Z);
+  - the emulated phone's /24 is the emulator's NAT, which holds one host address at most;
+  - the Tizen 10 emulator doesn't expose 8001 at all (FR-11).
+
+  So DEB-5908 is cancelled. A fake platform with two TVs and one Ready row walks the shipped guide's branches. Reading the code, the one branch that ends on a success screen without a request is this: the scan finds only the first TV, *Install on TV* reinstalls that TV, and the guide shows *Ravilo is on your TV*, which doesn't name the TV. The test records that against the old `open()`. The new overview must not have the path. With one Ready row and a scan that finds only that TV, no screen says a request was sent, and no button acts on a TV without a card.
 
 **No wire change.** The phone reads FR-2's viewer list, which already returns every row.
 
