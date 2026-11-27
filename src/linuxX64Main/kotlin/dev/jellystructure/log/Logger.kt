@@ -46,12 +46,15 @@ object Logger {
     /** 93g: mark a run finished in the runs index. */
     suspend fun finishRun(runId: String) = activityLog?.finishRun(runId)
 
+    @OptIn(kotlinx.cinterop.ExperimentalForeignApi::class)
     private suspend fun emit(level: String, category: String, msg: String, mediaId: String?) {
         val ctx = currentCoroutineContext()
         val workerId = ctx[WorkerId]?.id
         val run = ctx[RunContext]
         val prefix = if (workerId != null) "[W#$workerId] " else ""
-        println("[$level] $prefix$msg")
+        // One fputs of the whole line, so threads never interleave two messages on one line.
+        platform.posix.fputs("[$level] $prefix$msg\n", platform.posix.stdout)
+        platform.posix.fflush(platform.posix.stdout)
         activityLog?.log(level, category, "$prefix$msg", mediaId, run?.runId, run?.step)
     }
 }

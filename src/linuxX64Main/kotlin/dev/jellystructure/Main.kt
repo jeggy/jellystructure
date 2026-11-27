@@ -273,7 +273,7 @@ fun main() = runBlocking {
     val detailService = DetailService(mediaStore, jellyfinClient, configStore, artworkDownloader, mediaSegmentStore, raviloDeviceService, playbackStartSampleStore,
         appLanguage = { userId -> raviloConfigService.getConfig(userId).uiLanguage })  // Phase 271
     // Phase 232 (FR-232-5) — title clearlogo ink: in memory, judged in the background, warmed once at boot.
-    val clearlogoInk = dev.jellystructure.media.ClearlogoInk(rootScope, dataDir)
+    val clearlogoInk = dev.jellystructure.media.ClearlogoInk(rootScope, dataDir, crashMarkerDir)
     detailService.clearlogoInk = clearlogoInk
     homeFeedService.clearlogoInk = clearlogoInk
     // Phase 269 — each viewer's Recommended list: built in the background, read by the Home row.

@@ -190,7 +190,7 @@ class ConfigStore(private val filePath: String) {
         val mangledCount = map.keys.count(::isMangled)
         if (mangledCount == 0) return
         val fixed = map.mapKeys { (k, _) -> if (isMangled(k)) k.substring(1, k.length - 1) else k }
-        Logger.warn("Config: repaired $mangledCount ktoml-mangled age_rating_map key(s)", "config")
+        Logger.info("Config: repaired $mangledCount ktoml-mangled age_rating_map key(s)", "config")
         _config = _config.copy(metadata = _config.metadata.copy(ageRatingMap = fixed))
     }
 

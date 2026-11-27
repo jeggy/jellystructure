@@ -6,7 +6,12 @@ import dev.jellystructure.model.MediaItem
 import dev.jellystructure.ops.GateClass
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.Json
+import kotlin.time.Duration.Companion.minutes
+import kotlin.time.TimeMark
+import kotlin.time.TimeSource
 import kotlinx.io.files.Path
 import kotlinx.io.files.SystemFileSystem
 
@@ -21,18 +26,56 @@ import kotlinx.io.files.SystemFileSystem
  * artwork untouched) and queues the file; the next request has the answer. [warm] fills the map in the
  * background at boot. One worker, background gate class — never on the request path.
  */
-class ClearlogoInk(private val scope: CoroutineScope, private val tmpDir: String) {
+class ClearlogoInk(
+    private val scope: CoroutineScope,
+    private val tmpDir: String,
+    /** Where `clearlogo-ink.json` lives; `null` keeps the map in memory only. */
+    private val configDir: String? = null,
+    /** The ink of one logo at [path] (a scratch file [raw] is available); `null` = unreadable. */
+    private val inkOf: suspend (path: String, raw: String) -> String? = { path, raw ->
+        if (FfmpegRunner.rawRgbaThumb(path, raw, SIZE)) runCatching { clearlogoInkOf(FileIo.readBytes(Path(raw)), SIZE, SIZE) }.getOrNull() else null
+    },
+) {
     private val known = HashMap<String, String>()
+    private val inkFile = configDir?.let { "$it/clearlogo-ink.json" }
+    private var dirty = false
+    private var lastWrite: TimeMark? = null
     private val queued = HashSet<String>()
     private val work = Channel<String>(Channel.UNLIMITED)
 
     init {
+        load()
         scope.launch(GateClass.BACKGROUND) {
             for (path in work) {
                 runCatching { judge(path) }.onFailure { Logger.warn("Clearlogo ink failed for $path: ${it.message}", "artwork") }
                 queued.remove(path)
+                flush(force = false)
             }
         }
+    }
+
+    /** A missing or corrupt file means start empty. */
+    private fun load() {
+        val f = inkFile ?: return
+        runCatching {
+            if (!SystemFileSystem.exists(Path(f))) return
+            known.putAll(Json.decodeFromString<Map<String, String>>(FileIo.readText(Path(f))))
+        }
+    }
+
+    /** At most one write a minute; a verdict that lands inside the minute is written once the queue is idle and the minute is up. */
+    private suspend fun flush(force: Boolean) {
+        val f = inkFile ?: return
+        if (!dirty) return
+        val last = lastWrite
+        if (!force && last != null && last.elapsedNow() < MIN_WRITE_GAP) {
+            if (!work.isEmpty) return
+            delay(MIN_WRITE_GAP - last.elapsedNow())
+        }
+        runCatching { FileIo.writeText(Path(f), Json.encodeToString<Map<String, String>>(known)) }
+            .onFailure { Logger.warn("Clearlogo ink file not written: ${it.message}", "artwork") }
+        dirty = false
+        lastWrite = TimeSource.Monotonic.markNow()
     }
 
     private fun keyFor(path: String): String? {
@@ -54,10 +97,11 @@ class ClearlogoInk(private val scope: CoroutineScope, private val tmpDir: String
         val key = keyFor(path) ?: return
         if (key in known) return
         val raw = "$tmpDir/.clearlogo-ink-${path.hashCode().toUInt()}.rgba"
-        val ink = if (FfmpegRunner.rawRgbaThumb(path, raw, SIZE)) runCatching { clearlogoInkOf(FileIo.readBytes(Path(raw)), SIZE, SIZE) }.getOrNull() else null
+        val ink = inkOf(path, raw)
         runCatching { SystemFileSystem.delete(Path(raw), mustExist = false) }
         known[key] = ink ?: UNKNOWN                     // an unreadable logo is not retried for this file
+        dirty = true
     }
 
-    private companion object { const val SIZE = 32; const val UNKNOWN = "?" }
+    private companion object { const val SIZE = 32; const val UNKNOWN = "?"; val MIN_WRITE_GAP = 1.minutes }
 }
