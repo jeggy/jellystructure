@@ -78,7 +78,7 @@
   "tx.scoped_note": "teljir bert tað, hesin vangin kann síggja",
   "tx.empty": "Einki til henda vanga enn",
   "request.sub": "Kanna og bið um tað, sum manglar",
-  "search_seerr": "Leita í Seerr",
+  "search_seerr": {"text": "Leita fyri at biðja", "note": "DEB-5836 FR-3 — draft Faroese, review before release."},
   "request.search_hint": "Leita eftir filmum og serium at biðja um",
   "request.in_language": "Bið um á…",
   "request.change_language": "Broyt mál",
@@ -378,7 +378,7 @@
   "browse.see_all": "→ Sí alt ({count})",
   "browse.see_all_short": "Sí alt",
   "browse.from_row": "Úr \"{row}\"",
-  "browse.seerr_more": "Meira við {name} · bið á Seerr",
+  "browse.seerr_more": {"text": "Meira við {name}, sum tú kanst biðja um", "note": "DEB-5836 FR-3 — draft Faroese, review before release."},
   "settings.appearance": "Útsjónd",
   "theme.aurora": "Aurora",
   "theme.midnight": "Midnight",
@@ -710,7 +710,7 @@
     "note": "Draft Faroese — review before release."
   },
   "setup.server_prompt": {
-    "text": "Skriva adressuna á jellystructure-ambætaranum tínum",
+    "text": "Skriva adressuna á Ravilo-ambætaranum hjá tær",
     "note": "Draft Faroese — review before release."
   },
   "action.watch_now": {
@@ -865,7 +865,7 @@
     "note": "Draft Faroese — review before release."
   },
   "request.empty": {
-    "text": "Einki er at biðja um enn — legg keldur afturat í Ravilo-uppsetingini.",
+    "text": "Einki er uppslag enn. Leita eftir einum heiti fyri at biðja um tað.",
     "note": "Draft Faroese — review before release."
   },
   "action.resume_mins_left": {

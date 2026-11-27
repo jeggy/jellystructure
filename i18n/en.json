@@ -81,7 +81,7 @@
   "tx.scoped_note": "counting only what this profile can watch",
   "tx.empty": "Nothing here for this profile yet",
   "request.sub": "Browse and request what's missing",
-  "search_seerr": "Search Seerr",
+  "search_seerr": "Search to request",
   "request.search_hint": "Search movies and shows to request",
   "request.in_language": "Request in…",
   "request.change_language": "Change language",
@@ -393,7 +393,7 @@
   "browse.see_all": "→ See all ({count})",
   "browse.see_all_short": "See all",
   "browse.from_row": "From \"{row}\"",
-  "browse.seerr_more": "More with {name} · request on Seerr",
+  "browse.seerr_more": "More with {name} you can request",
   "settings.appearance": "Appearance",
   "theme.aurora": "Aurora",
   "theme.midnight": "Midnight",
@@ -791,7 +791,7 @@
     "note": "R279 — the input's label on first run, before any server is known."
   },
   "setup.server_prompt": {
-    "text": "Enter your jellystructure server address",
+    "text": "Enter your Ravilo server address",
     "note": "R279 — the line above the input on first run."
   },
   "action.watch_now": {
@@ -955,8 +955,8 @@
     "note": "R279 — the hover tooltip on web.fullscreen."
   },
   "request.empty": {
-    "text": "Nothing to request yet — add feeds in the Ravilo config editor.",
-    "note": "R279 — the Discover → Request tab with no feeds configured. 'Ravilo config editor' is the admin page's own name."
+    "text": "Nothing suggested yet. Search for a title to request it.",
+    "note": "R279 — the Discover → Request tab with no suggestions. DEB-5836 FR-3: no mention of the config editor, a viewer cannot open it."
   },
   "action.resume_mins_left": {
     "text": "{resume} · {n} min left",

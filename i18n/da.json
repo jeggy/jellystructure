@@ -78,7 +78,7 @@
   "tx.scoped_note": "tæller kun det, denne profil må se",
   "tx.empty": "Ingenting til denne profil endnu",
   "request.sub": "Gennemse og anmod om det, der mangler",
-  "search_seerr": "Søg i Seerr",
+  "search_seerr": {"text": "Søg for at anmode", "note": "DEB-5836 FR-3 — draft Danish, review before release."},
   "request.search_hint": "Søg efter film og serier at anmode om",
   "request.in_language": "Anmod på…",
   "request.change_language": "Skift sprog",
@@ -378,7 +378,7 @@
   "browse.see_all": "→ Se alle ({count})",
   "browse.see_all_short": "Se alle",
   "browse.from_row": "Fra \"{row}\"",
-  "browse.seerr_more": "Mere med {name} · anmod på Seerr",
+  "browse.seerr_more": {"text": "Mere med {name}, du kan anmode om", "note": "DEB-5836 FR-3 — draft Danish, review before release."},
   "settings.appearance": "Udseende",
   "theme.aurora": "Aurora",
   "theme.midnight": "Midnight",
@@ -710,7 +710,7 @@
     "note": "Draft Danish — review before release."
   },
   "setup.server_prompt": {
-    "text": "Skriv adressen på jeres jellystructure-server",
+    "text": "Skriv adressen på jeres Ravilo-server",
     "note": "Draft Danish — review before release."
   },
   "action.watch_now": {
@@ -865,7 +865,7 @@
     "note": "Draft Danish — review before release."
   },
   "request.empty": {
-    "text": "Der er ikke noget at anmode om endnu — tilføj feeds i Ravilo-konfigurationen.",
+    "text": "Intet foreslået endnu. Søg efter en titel for at anmode om den.",
     "note": "Draft Danish — review before release."
   },
   "action.resume_mins_left": {
