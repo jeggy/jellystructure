@@ -2221,3 +2221,81 @@ FR-6. What moves here:
 - **FR-14 and FR-15** gain two packed font files (64 KB at most), outside the 1 MB bundle budget; cold start to Home
   grows by no more than 100 ms. `config.xml` still gains nothing. FR-13's engine floor and FR-14's *opacity and
   transform only* hold.
+
+## Amendment 2026-11-27, fourth (DEB-5503) — an audio pick leaves direct play, and the off switch has its own route
+
+QA on the Tizen 5.0 emulator (DEB-5507, 2026-11-26) passed the starts, the seeks, the sidecar and PGS subtitles, the
+DTS start and the hand-over to the ladder. Two legs failed:
+- **The in-file audio switch.** `setSelectTrack('AUDIO', n)` either threw `PLAYER_ERROR_INVALID_PARAMETER`, or returned
+  while `getCurrentStreamInfo()` still listed the old track. `getTotalTrackInfo()`'s list was right. The app then took
+  FR-44's restream, still posting `hls_only = false`, so the server answered with the same file. The app tried again,
+  and the page froze for 87–105 s and stopped at 0 ms. This happened on 4 of 4 tries. The server keeps the pick, so
+  every later start on that viewer also restreamed (`audio=default`), even on files with one audio track.
+- **The off switch.** `PUT /api/config` answers 204 and leaves `[ravilo]` as stored, because DEB-731 made a Settings save
+  never touch `[ravilo]`. The only way to change FR-46's lever was to edit `config.toml` and restart.
+
+**What the field saw.** The household's set has run 1.73 since 2026-11-26 04:36Z. All 35 of its starts since then were on
+our ladder, and none was a direct play: its path is still unproven, so DEB-4541's floor rungs hold. (The QoE-at-first-frame
+change that proves a path, DEB-5629, came after the 1.73 cut.) So no viewer has met either failure yet. They will once a
+path is proven.
+
+**FR-44, amended — audio.** The *Audio* bullet is replaced by:
+- **The server decides first.** A start, prepare, prewarm or restream from a `tizen` device is negotiated as if its
+  capabilities said `hls_only = true` when the chosen audio track is not the file's default track. The chosen track is
+  FR-23's remembered audio or the picker's choice. The default is the track Jellyfin marks default, otherwise the first
+  (as `PlaybackService` already picks the carried track). The answer is our ladder with that audio, as before DEB-5503.
+  When the chosen track is the default, FR-43 applies. Because this is the server's rule, every installed `.wgt` is
+  covered with no update, 1.73 included.
+- **The app checks its own select.** The in-file path stays for a server that answers a direct play anyway, but a select
+  counts only when it holds. After `setSelectTrack('AUDIO', index)`, the app reads `getCurrentStreamInfo()` within 1 s
+  of the next `PLAYING`. The select holds only if its `AUDIO` entry has that index. A throw, or the old track still
+  current, is a failed select.
+- **A failed or impossible select restreams with `hls_only = true`**, carrying that audio, so the answer is our ladder
+  and never the same file.
+- **One audio restream per pick.** If an audio restream is answered with a direct play of the same file, the app does
+  not try again. The item plays on with the track it has, and the picker marks the track actually playing.
+- **No restream when nothing changes.** The app restreams for audio only when the ticket's chosen track differs from
+  the one playing. A file with one audio track never restreams for audio.
+
+Subtitles, position, FR-43 and FR-45 are unchanged.
+
+*What it costs:* when the chosen audio is not a file's default track, that file starts the way it did before 1.73.
+Android TV is untouched.
+
+**FR-46, amended — the lever's own route.** The lever is `PUT /api/tv/admin/playback/samsung-direct-play` with
+`{ "on": true | false }`, under an admin session, built like 304b's `household-control` route:
+- it writes `[ravilo] samsung_direct_play` both to `config.toml` and to the live config, and answers `{ "on": … }`;
+- `GET` on the same path answers `{ "on": … }`, so a flip can be read back;
+- the next start reads the new value, with no restart.
+
+`PUT /api/config` still never touches `[ravilo]` (DEB-731). There is still no admin UI. The route is new and only adds to
+the wire: no existing field changes.
+
+**Proof (CI).**
+- `linuxX64Test`:
+  - a `tizen` start, prepare, prewarm and restream whose chosen audio is not the default negotiate with no direct-play
+    profile, and carry that audio;
+  - the same with the default chosen gets FR-43's containers;
+  - an Android TV start with the same pick still direct-plays;
+  - the new route flips the switch, and the next `tizen` start reads it;
+  - a `PUT /api/config` in between leaves the switch as it was.
+- `ravilo-screen` e2e, with the fake AVPlay:
+  - `setSelectTrack` throws: one restream, posting `hls_only = true`;
+  - `setSelectTrack` returns, but `getCurrentStreamInfo()` keeps the old track: the same one restream;
+  - an audio restream answered with the same direct file: no second restream, and it plays on;
+  - a one-track file with a remembered pick: no restream.
+
+**Proof (QA, `tizen-emulator`).**
+- Re-run DEB-5507's audio leg on Tizen 5.0 against a backend carrying the server rule. Run it twice: once with the 1.73
+  `.wgt` (expect a ladder start with the picked audio and no freeze), and once with a `.wgt` carrying the app's check.
+- Run the whole FR-43 to FR-46 plan on the newer image, which was skipped because 5.0 failed.
+- The switch leg, through the new route.
+- The DTS pick on a file with a non-DTS default track, if one exists.
+
+**Build order**, for one engineer (the two pieces can run side by side):
+1. **The server rule and the route** (FR-44's first bullet, FR-46) in the backend. This fixes the installed 1.73 `.wgt`,
+   so it goes first.
+2. **The app's check** (FR-44's other bullets) in `ravilo-screen`.
+
+**Field read.** It still needs a `.wgt` on the household's set that can prove its path (DEB-5629). Read 14 days from the
+first direct play there, against 4 970 ms.
