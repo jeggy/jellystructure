@@ -165,6 +165,8 @@ data class CastReceiverMessage(
     @SerialName("since_ms") val sinceMs: Long? = null,
     @SerialName("nextup_secs") val nextupSecs: Int? = null,
     @SerialName("next_title") val nextTitle: String? = null,
+    /** DEB-5843 (FR-7) — additive: `true` on the `status` sent while the receiver asks *Are you still watching?*. An old phone ignores it. */
+    @SerialName("still_watching") val stillWatching: Boolean? = null,
     @SerialName("audio_tracks") val audioTracks: List<CastTrack> = emptyList(),
     @SerialName("subtitle_tracks") val subtitleTracks: List<CastTrack> = emptyList(),
     @SerialName("selected_audio") val selectedAudio: Int = 0,

@@ -271,3 +271,132 @@ test.describe("Chromecast receiver (R297, R299)", () => {
     expect(pageErrors).toEqual([]);
   });
 });
+
+// DEB-5843 (FR-1, FR-4, FR-6, FR-7) — "Are you still watching?" on the Chromecast receiver. Three unattended auto-advances and 90 minutes
+// since the last sender command or PLAY / PAUSE / SEEK; the clock is Playwright's, so the 90 and the 30 minutes are jumped. The backend is
+// answered by the test (no scan, no Jellyfin): this proves what the receiver decides, draws and sends, not what a Chromecast's CAF does.
+test.describe("DEB-5843 FR-6 — Are you still watching? on the Chromecast receiver", () => {
+  const MIN = 60_000;
+  const API = APP_URL;
+  const episodes = Array.from({ length: 8 }, (_, i) => ({ id: `ep-${i + 1}`, title: `Reel ${i + 1}`, kicker: `S1 · E${i + 1}`, credits_start_ms: 80_000 }));
+
+  async function openSeries(page: import("@playwright/test").Page) {
+    await page.clock.install();
+    const json = (route: any, body: object) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(body) });
+    await page.route(`${API}/api/**`, async (route) => {
+      const path = new URL(route.request().url()).pathname;
+      if (route.request().method() === "OPTIONS") return route.fulfill({ status: 204 });
+      if (path === "/api/tv/cast/redeem") {
+        return json(route, { device_token: "t", session: { device_id: "d", user_id: "u", display_name: "Viewer", is_admin: false } });
+      }
+      if (path === "/api/tv/config") return json(route, { autoplay_next: true, skip_secs: 6 });
+      if (path === "/api/tv/playback/start") {
+        const body = JSON.parse(route.request().postData() ?? "{}");
+        return json(route, {
+          jellyfin_base_url: API, access_token: "", item_id: body.item_id, container: "ts", direct_play: false,
+          hls_url: `${API}/hls/${body.item_id}/master.m3u8`, start_position_ms: 0, expires_at: 9_999_999_999,
+        });
+      }
+      return route.fulfill({ status: 204 });
+    });
+    await openReceiver(page, API);
+    await page.evaluate(() => { (window as any).__castDuration = 120; });
+  }
+  const load = (page: any, data: object) => page.evaluate((d: object) => (window as any).__castLoad(d), data);
+  const first = (page: any) => load(page, { server_url: API, code: "abc123", item_id: "ep-1", title: "Reel 1", device_name: "E2E", lang: "en", sub_size: "M", episodes, current_index: 0 });
+  const timeAt = (page: any, sec: number) => page.evaluate((s: number) => { (window as any).__castTime = s; (window as any).__castFire("TIME_UPDATE", { currentMediaTime: s }); }, sec);
+  const loads = (page: any): Promise<any[]> => page.evaluate(() => (window as any).__castLoads);
+  const calls = (page: any): Promise<string[]> => page.evaluate(() => (window as any).__castPlayerCalls);
+  const sentOf = async (page: any, type: string) => (await castSent(page)).filter((m) => m.type === type);
+
+  /** The receiver's own next load, handed back through the interceptor as CAF would. */
+  async function followLoad(page: any, n: number) {
+    await expect.poll(async () => (await loads(page)).length).toBe(n);
+    const req = (await loads(page))[n - 1];
+    await load(page, req.customData);
+  }
+
+  /** Episode 1 from a sender, then episodes 2 and 3 by the countdown, standing at episode 3's card with [quietMinutes] gone since. */
+  async function toThirdCard(page: any, quietMinutes: number) {
+    await openSeries(page);
+    expect(await first(page)).not.toBeNull();
+    for (const n of [1, 2]) {
+      await timeAt(page, 81);
+      await expect(page.locator("#nextup")).toHaveClass(/\bon\b/);
+      await page.clock.runFor(8_000);   // skip_secs 6, then the tick
+      await followLoad(page, n);
+    }
+    await timeAt(page, 81);
+    await expect(page.locator("#nextup")).toHaveClass(/\bon\b/);
+    await page.clock.fastForward(quietMinutes * MIN);
+  }
+
+  test("episodes 2 and 3 start by themselves and, 90 minutes on, the 4th asks: paused, no buttons, nothing advances, the senders are told", async ({ page }) => {
+    test.setTimeout(90_000);
+    await toThirdCard(page, 91);
+    await page.clock.runFor(8_000);
+    await expect(page.locator("#nu-k")).toHaveText("Are you still watching?");
+    await expect(page.locator("#nu-c")).toHaveText("Press play to keep watching");
+    await expect(page.locator("#nu-t")).toHaveText("Reel 4");
+    await expect(page.locator("#nextup")).toHaveClass(/\bon\b/);
+    expect(await calls(page)).toContain("pause");
+    expect((await loads(page)).length, "the 4th episode did not load").toBe(2);
+    const status = (await sentOf(page, "status")).at(-1);
+    expect(status.still_watching, "the status says the ask is up").toBe(true);
+    expect(status.nextup_secs ?? null, "and carries no countdown").toBeNull();
+    await page.clock.runFor(60_000);
+    expect((await loads(page)).length, "and it waits").toBe(2);
+  });
+
+  test("three short episodes do not ask: the 4th loads by itself", async ({ page }) => {
+    test.setTimeout(90_000);
+    await toThirdCard(page, 0);
+    await page.clock.runFor(8_000);
+    await expect.poll(async () => (await loads(page)).length).toBe(3);
+    await expect(page.locator("#nu-k")).not.toHaveText("Are you still watching?");
+  });
+
+  test("a PLAY from the TV remote or a sender continues; a PAUSE is only input", async ({ page }) => {
+    test.setTimeout(90_000);
+    await toThirdCard(page, 91);
+    await page.clock.runFor(8_000);
+    await expect(page.locator("#nu-k")).toHaveText("Are you still watching?");
+    expect(await page.evaluate(() => (window as any).__castIntercept("PAUSE")), "a PAUSE goes through").toBe("same");
+    expect((await loads(page)).length).toBe(2);
+    expect(await page.evaluate(() => (window as any).__castIntercept("PLAY")), "a PLAY is taken by the receiver").toBeNull();
+    await expect.poll(async () => (await loads(page)).length).toBe(3);
+    expect((await loads(page))[2].customData.item_id).toBe("ep-4");
+  });
+
+  test("a sender's next or nextup_play continues too", async ({ page }) => {
+    test.setTimeout(90_000);
+    await toThirdCard(page, 91);
+    await page.clock.runFor(8_000);
+    await expect(page.locator("#nu-k")).toHaveText("Are you still watching?");
+    await page.evaluate(() => (window as any).__castCommand({ type: "nextup_play" }));
+    await expect.poll(async () => (await loads(page)).length).toBe(3);
+  });
+
+  test("a sender's nextup_cancel ends at the idle view", async ({ page }) => {
+    test.setTimeout(90_000);
+    await toThirdCard(page, 91);
+    await page.clock.runFor(8_000);
+    await expect(page.locator("#nu-k")).toHaveText("Are you still watching?");
+    await page.evaluate(() => (window as any).__castCommand({ type: "nextup_cancel" }));
+    await expect.poll(async () => (await sentOf(page, "ended")).length).toBeGreaterThan(0);
+    await expect(page.locator("#nextup")).not.toHaveClass(/\bon\b/);
+    expect((await loads(page)).length).toBe(2);
+  });
+
+  test("an ask left alone for 30 minutes ends at the idle view", async ({ page }) => {
+    test.setTimeout(90_000);
+    await toThirdCard(page, 91);
+    await page.clock.runFor(8_000);
+    await expect(page.locator("#nu-k")).toHaveText("Are you still watching?");
+    await page.clock.fastForward(31 * MIN);
+    await page.clock.runFor(1_000);
+    await expect.poll(async () => (await sentOf(page, "ended")).length).toBeGreaterThan(0);
+    await expect(page.locator("#nextup")).not.toHaveClass(/\bon\b/);
+    expect((await loads(page)).length).toBe(2);
+  });
+});

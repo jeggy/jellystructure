@@ -238,6 +238,11 @@ private class Receiver {
     /** R384 (FR-R384-3) — the item whose countdown a sender cancelled (*Watch credits*): it is not put up again, and
      *  the item's end is an end. Without it the next time update put the card straight back. */
     private var nextUpCancelledFor: String? = null
+    // DEB-5843 (FR-1, FR-6) — "Are you still watching?": the shared rule on this TV-class receiver's clock, whether the ask is up
+    // and the 30-minute close. A sender's LOAD (it carries a code) is a hand-start and so is input; the receiver's own loads are not.
+    private val stillWatching = dev.jellystructure.shared.tv.StillWatching(tvClass = true, startMs = nowMs())
+    private var stillAsk = false
+    private var stillAskJob: Job? = null
     private var busySinceMs: Long? = null
     private var introSkipped = false
     private var subSize = "M"
@@ -445,6 +450,18 @@ private class Receiver {
                     null
                 }
             } }.onFailure { console.warn("ravilo-cast: no interceptor for $type on this framework (${it.message})") }
+        }
+        // DEB-5843 (FR-2, FR-6) — a PLAY, PAUSE or SEEK the framework hands the receiver (the TV's own remote reaches it this
+        // way over HDMI-CEC) is input; a PLAY while the ask is up is *continue*. Each registered on its own, like the others.
+        for (name in listOf("PLAY", "PAUSE", "SEEK")) {
+            runCatching {
+                val types: dynamic = messages.MessageType
+                val type: dynamic = types[name]
+                if (type != null) playerManager.setMessageInterceptor(type) { request: dynamic ->
+                    stillWatching.onInput(nowMs())
+                    if (name == "PLAY" && stillAsk) { loadNext(); null } else request
+                }
+            }.onFailure { console.warn("ravilo-cast: no interceptor for $name on this framework (${it.message})") }
         }
         // R356 (FR-R356-14b, 2026-10-02) — a STOP from a controller other than Ravilo's own (Play services' Cast card's
         // *Stop cast*, Google Home, the Assistant, a display's own Stop) ends the cast. It used to stop the player only:
@@ -704,6 +721,7 @@ private class Receiver {
         val data = withQueueNow(sent)
         // R359 (FR-R359-3) — a sender's LOAD is a new queue: what was waiting for the one before is dropped.
         if (data.code.isNotEmpty()) startQueue(data)
+        if (data.code.isNotEmpty()) stillWatching.onInput(nowMs())   // DEB-5843 (FR-1) — a sender's play is a hand-start
         // R279 — the hand-off payload's `lang` is the CASTING USER's own configured uiLanguage
         // (the sender reads it off their config before minting the code), so it is the only thing
         // on this device that knows which of a household's viewers pressed play. Adopted first, and
@@ -1867,23 +1885,53 @@ private class Receiver {
                 delay(1_000)
                 left--
             }
+            // DEB-5843 (FR-6) — three unattended episodes and 90 quiet minutes: ask instead of loading the next.
+            if (stillWatching.decide(nowMs())) { askStillWatching(next); return@launch }
             el("nextup").classList.remove("on")
             loadNext()
+        }
+    }
+
+    /**
+     * DEB-5843 (FR-6, FR-7) — pause the item if it still plays (one that ended under the countdown has nothing to pause), keep the
+     * card with its words changed and no buttons, and tell the senders (`still_watching`). A PLAY or a sender's next continues,
+     * [cancelNextUp] and 30 minutes unanswered end at the idle view.
+     */
+    private fun askStillWatching(next: CastEpisode) {
+        if (!finishedUnderNextUp) runCatching { playerManager.pause() }
+        stillAsk = true
+        nextUpLeft = null
+        el("nu-k").textContent = ReceiverStrings.t("player.still_watching"); el("nu-t").textContent = next.title
+        el("nu-c").textContent = ReceiverStrings.t("receiver.still_watching_hint")
+        el("nextup").classList.add("on")
+        note("still watching? asked (${current?.itemId})")
+        sendStatus()
+        stillAskJob = GlobalScope.launch {
+            delay(dev.jellystructure.shared.tv.STILL_WATCHING_CLOSE_MS)
+            if (!stillAsk) return@launch
+            note("still watching? unanswered: the cast ends")
+            val stopped = finishedUnderNextUp   // its stop went out at the end
+            endNextUp()
+            if (!stopped) stopSession()
+            endedHere()
         }
     }
 
     /** The countdown, if one runs, is over: no card, no seconds, nothing left to finish. */
     private fun endNextUp() {
         nextUpJob?.cancel(); nextUpJob = null; nextUpLeft = null; finishedUnderNextUp = false
+        stillAsk = false; stillAskJob?.cancel(); stillAskJob = null   // DEB-5843 — an answered or replaced ask is over
         el("nextup").classList.remove("on")
     }
 
     private fun cancelNextUp() {
         val finished = finishedUnderNextUp
+        val asked = stillAsk
         if (nextUpJob != null) nextUpCancelledFor = current?.itemId
         endNextUp()
         // R384 (FR-R384-3) — cancelled after the film already ended: what its end would have done without a countdown.
-        if (finished) { endedHere(); return }
+        // DEB-5843 (FR-6) — and a cancel of the ask ends at the idle view too; a paused item's session is stopped where it is.
+        if (finished || asked) { if (!finished) stopSession(); endedHere(); return }
         send(CastReceiverMessage(type = "status", itemId = current?.itemId, title = current?.title, kicker = current?.kicker, artUrl = current?.artUrl, hasNext = nextEpisode() != null, receiverId = receiverId))
     }
 
@@ -1992,6 +2040,7 @@ private class Receiver {
     // ── phone → receiver ──
     private fun onCommand(raw: String) {
         val cmd = runCatching { json.decodeFromString(CastCommand.serializer(), raw) }.getOrNull() ?: return
+        stillWatching.onInput(nowMs())   // DEB-5843 (FR-2) — a person sent it
         // R359 (FR-R359-3) — the rest of a long queue; it may come before its LOAD has been taken up.
         if (cmd.type == "queue_part") { onQueuePart(cmd); return }
         // R359 (FR-R359-4) — an edit's places are the whole queue's: while it is still arriving, the edit waits for it.
@@ -2171,7 +2220,8 @@ private class Receiver {
             type = "status", itemId = d.itemId, title = d.title, kicker = d.kicker, artUrl = d.artUrl,
             // R384 (FR-R384-3) — a status during the countdown says it runs (the player's IDLE after a film's end sends
             // one): the senders keep the card and do not read the finished media as the end of the cast.
-            nextupSecs = nextUpLeft.takeIf { nextUpJob != null && !music }, nextTitle = nextEpisode()?.title.takeIf { nextUpJob != null && !music },
+            nextupSecs = nextUpLeft.takeIf { nextUpJob != null && !music && !stillAsk }, nextTitle = nextEpisode()?.title.takeIf { nextUpJob != null && !music },
+            stillWatching = true.takeIf { stillAsk },   // DEB-5843 (FR-7) — additive: an old phone ignores it and shows a paused episode
             hasNext = if (music) nextStep(byViewer = true) != CastNext.End else nextEpisode() != null, audioTracks = audios, subtitleTracks = subs,
             // R285 — facts, not constants: these were `0` and "whichever track is flagged default",
             // whatever was actually playing. The burned-in track IS the selection while one is burned in.

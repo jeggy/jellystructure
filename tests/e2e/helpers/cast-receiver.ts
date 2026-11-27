@@ -20,6 +20,8 @@ export function fakeCafInitScript() {
   w.__castTime = 0;             // what getCurrentTimeSec() answers (DEB-4994): the player's clock, in seconds
   w.__castActive = [];          // what the text-track manager's getActiveIds() answers: [] unless a test is the platform's caption control
   w.__castSetActive = [];       // every setActiveByIds(ids) the receiver asked CAF for
+  w.__castDuration = 0;         // what getDurationSec() answers (DEB-5843): the item's length, in seconds
+  w.__castPlayerCalls = [];     // DEB-5843 — every pause() / play() the receiver itself asked CAF for
   const interceptors: Record<string, (req: any) => any> = {};
   const listeners: Record<string, Array<(ev: any) => void>> = {};
   const noop = () => {};
@@ -31,7 +33,9 @@ export function fakeCafInitScript() {
     getStats() { return {}; },
     getTextTracksManager() { return { getActiveIds: () => w.__castActive, setActiveByIds: (ids: number[]) => { w.__castSetActive.push(Array.from(ids)); }, getTracks: () => [] }; },
     getCurrentTimeSec() { return w.__castTime; },
-    getDurationSec() { return 0; },
+    getDurationSec() { return w.__castDuration; },
+    pause() { w.__castPlayerCalls.push("pause"); w.__castState = "PAUSED"; },
+    play() { w.__castPlayerCalls.push("play"); w.__castState = "PLAYING"; },
     seek: noop,
     setTextTrackStyle: noop,
     load(req: any) { w.__castLoads.push(req); },
@@ -54,7 +58,7 @@ export function fakeCafInitScript() {
     framework: {
       CastReceiverContext: { getInstance: () => ctx },
       messages: {
-        MessageType: { LOAD: "LOAD", EDIT_TRACKS_INFO: "EDIT_TRACKS_INFO" },
+        MessageType: { LOAD: "LOAD", EDIT_TRACKS_INFO: "EDIT_TRACKS_INFO", PLAY: "PLAY", PAUSE: "PAUSE", SEEK: "SEEK" },
         StreamType: { BUFFERED: "BUFFERED" },
         TrackType: { TEXT: "TEXT" },
         TextTrackType: { SUBTITLES: "SUBTITLES", FORCED: "FORCED" },
@@ -78,6 +82,10 @@ export function fakeCafInitScript() {
   // DEB-4994 — a phone's or a Mac's EDIT_TRACKS_INFO, through the receiver's interceptor as CAF routes it. Answers what
   // the interceptor hands back to CAF (the request itself, unchanged) or null.
   w.__castEdit = (req: any) => { const r = interceptors.EDIT_TRACKS_INFO(req); return r === req ? "same" : r ? "other" : null; };
+  // DEB-5843 — a PLAY / PAUSE / SEEK a sender or the TV's remote hands the receiver; answers what the interceptor hands back
+  // to CAF: the request itself (go on), or null (the receiver took it).
+  w.__castIntercept = (type: string, req: any = {}) => { const r = interceptors[type]?.({ type, ...req }); return r == null ? null : "same"; };
+  w.__castInterceptors = () => Object.keys(interceptors);
   w.__castHasInterceptor = () => typeof interceptors.LOAD === "function" && typeof interceptors.EDIT_TRACKS_INFO === "function";
 }
 
