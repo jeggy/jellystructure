@@ -301,6 +301,38 @@ This applies to an HLS play, ours or Jellyfin's.
 >   held, so a low-buffer hold cannot be produced on purpose. The backstop stays proven by `CastRecoveryTest` alone. The hold
 >   does not starve the network, and it adds nothing to Android, which keeps its own flag.
 
+> *Amendment 2026-11-27 (DEB-5928) — on the receiver, a stop with nothing to play is a delivery stall, and a freeze on
+> Jellyfin's stream is recovered, not ended.*
+> QA's lab pass on DEB-5041 (leg A3) capped a cast of Jellyfin's single video-copy stream below its bitrate. The picture
+> stopped for 5–6 s while the media pipeline had nothing to play, yet `buffered` read 6–7 s ahead. The receiver counted it
+> as `frozen_with_buffer`, so DEB-4541 FR-4 never asked for a ladder and no `stalled_bps` was written. At 5 s the frozen
+> recovery asked `castRecoveryStep`, which ends any stream that did not come from our encoder, so the cast ended about 25 s
+> after the cap with *couldn't play this*. The backend logged it like a viewer stopping. Uncapped controls played clean.
+> Two things were wrong. The DEB-4636 amendment above restated slice 3's measure without its *"is not buffering"*, and it
+> kept `castRecoveryStep` unchanged, although slice 3 counts the three steps per item *"whichever encoder served"*.
+> - **What "not buffering" means on the receiver.** CAF's player state cannot tell the two cases apart. It reads `BUFFERING`
+>   both for a delivery wait and for DEB-4636's clock stopping with a full buffer, so the receiver does not use it. The
+>   receiver reads the video element's `readyState` instead. A stop is `frozen_with_buffer` only while `readyState` is
+>   `HAVE_FUTURE_DATA` (3) or more **and** ≥ 3 s is buffered ahead, which is today's rule with the readiness check added.
+>   With `readyState` at `HAVE_CURRENT_DATA` (2) or less, the element has nothing to play past the frame on screen. That stop
+>   is a **delivery wait**: cause `buffer_empty`, counted as a rebuffer and fed to 309's record and to DEB-4541 FR-4,
+>   **whatever `buffered` says**. The receiver's watch classes the stop when it reaches 1 s, from that sample, whether or not CAF
+>   has raised `BUFFERING`. A wait CAF also reports is still one stop, never two. The stop's entry keeps the buffer-ahead
+>   reading as it is, and the debug `note` for the stop names the `readyState`. No wire change.
+> - **The freeze steps are per item, on any stream.** A frozen recovery (`frozen`) and the 30 s backstop (`encoder_stuck`)
+>   take FR-5.2's steps by how many of them this item has had, not by who served the stream that froze. The first asks our
+>   encoder, with FR-5.2's ceiling. The second asks Jellyfin (`not_our_encoder`) with the same ceiling. The third ends on the
+>   error screen. A Jellyfin stream's first freeze is therefore a restream to our encoder, not the end of the cast. If our
+>   encoder cannot take the play (FR-313-12's fallbacks), the server answers with Jellyfin's stream as it does today, and that
+>   counts as the first step. DEB-4541 FR-4's `stall_to_ladder` is not one of the three steps, and it stays once per item.
+>   Errors after the first picture keep DEB-3105's `castRecoveryStep` as it is.
+> - **Unchanged:** the 1 s, 3 s, 5 s and 30 s figures, FR-5.2's ceiling, Android, the Samsung app (FR-32 there has its own
+>   split), and the `qa_hold` above. A held clock leaves `readyState` at 4, so acceptance 9 still reads `frozen_with_buffer`.
+> - **Tests** (`CastRecoveryTest`, pure): the stop's kind from (`readyState`, ahead): (4, 6 s) is frozen, (1, 6 s) and
+>   (2, 6 s) are delivery, and (4, 1 s) is neither. The per-item step for a stream that is not ours is ours, then Jellyfin,
+>   then the end, and the same holds for a stream that is ours. An item that has already had `stall_to_ladder` still gets
+>   its first freeze step.
+
 ### FR-6 — A subtitle never holds the picture, and is always the track it says (amends 179)
 
 - **Only the shown subtitle is loaded.** The ticket still lists every text track (the picker needs them), but the

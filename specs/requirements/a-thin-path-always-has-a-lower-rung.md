@@ -119,6 +119,23 @@ lowest rung already), the receiver asks for a restream at its position through D
 - CAF resets the player on a `LOAD`, so the switch is a short stop (DEB-3093 FR-9). It is one stop instead of a train of
   them, and it happens at most once per item.
 
+> *Amendment 2026-11-27 (DEB-5928).* QA's lab pass on DEB-5041 (leg A3) capped Jellyfin's single stream below its
+> bitrate. The receiver never asked for a ladder, because it counted the wait as a frozen picture. It also checks FR-4 only
+> when a wait ends, so a wait that outlasts the cap would never be counted. Two changes:
+> - **The stall FR-3 and FR-4 count** includes the receiver's delivery wait as DEB-2205 FR-5's amendment of the same date
+>   defines it: a stop while the video element's `readyState` is 2 or less, with cause `buffer_empty`, whatever `buffered`
+>   reads ahead and whether or not CAF reports `BUFFERING`.
+> - **"One stall of 4 s or more" fires at 4 s**, not when the wait ends. When a delivery wait on a rung with no lower choice
+>   reaches 4 s, the receiver closes it as a `QoeStall` of the length it has reached and posts the report. The QoE route then
+>   writes `stalled_bps` (FR-3) before the ask, as it does today. After that the receiver asks `stall_to_ladder`. The rest of
+>   the wait belongs to the recovery's own `recovery` entry, so one wait is never two stalls. The two-stalls-in-2-minutes
+>   trigger still counts stalls as they end.
+>
+> Unchanged: once per item, the rung test, and the same-stream answer that stops a second ask. The tests are in
+> `CastRecoveryTest`. A wait still open at 4 s on a single-variant master asks. The same wait at 3.9 s does not. A wait on
+> a rung with a lower rung listed does not ask. **Proof:** acceptance 4 below,
+> run on a real Chromecast as DEB-5928 asks, with a Jellyfin video-copy item and its uncapped control.
+
 ### FR-5 — The decision is visible
 
 The encoder summary's `held_by` (DEB-3093 FR-7) gains `floor_rungs` when FR-2 added them, and the admin's *Playing now*
@@ -252,3 +269,106 @@ that is not proven gets the climb rung, the Chromecast and Android TV included.
 **Proof (QA, parked on DEB-4608, does not block the build).** On the `tizen-emulator` row with the QA cap at 7 Mb/s and an
 uncapped control: the log's ladder lists 720p, the play starts at 480p, and `variant_switches_up ≥ 1` in the item's QoE
 row. *Field read*, 14 days after the deploy: the household set's start rung and its `proven_bps`.
+
+## Amendment 2026-11-27 (DEB-5927) — the receiver steps down on a buffer that is empty, not only one that is falling
+
+**What the lab saw.** QA's pass on DEB-5041 (leg B1): a Chromecast receiver, no record, a 1.5 Mb/s cap from before the `LOAD`,
+our ladder `1080p@1998k/480p@1500k/360p@600k/240p@300k` with the start on the top. Over 7 minutes the receiver stayed on
+`variant_height=1080 @ 3189074`: 20 `buffer_empty` stalls of 2.6–7 s (buffer ahead 0.3–0.5 s), 141 s of rebuffering, zero
+down-switches, Shaka's estimate 0.39–1.07 Mb/s, and no `309 abr: step down` line in the sender's log. A cap that arrived mid-play
+(B2, on 360p) did step down, so Shaka's own ABR can.
+
+**Why.** The receiver's ladder rule (`ReceiverAbr`, over `LadderRules`) steps down only when the buffer is under 20 s **and
+falling** (`mustStepDown`: lower than at the last look by more than 500 ms). A buffer pinned at 0.3–0.5 s, refilled by every
+segment and emptied again, never reads as falling, so the rule that exists to catch exactly this never fires. FR-309-5's second
+clause, *"or its estimate × 0.8 drops under the current rung"*, is not enforced by the receiver at all, and FR-5 of
+`trouble-never-reaches-the-viewer.md` (*a stall caps one rung down at once*), which Android, the web and the Mac follow, is not
+enforced there either. The receiver left the choice to Shaka alone, and on the top-rung start Shaka did not move.
+
+### FR-7 — The receiver's ladder rule has the estimate clause and the stall cap
+
+On an adaptive play (any laddered master, ours or Jellyfin's):
+
+- **Estimate clause (restores FR-309-5).** When at least 3 segments have been fetched for this item (the same gate as the QoE
+  report's estimate, FR-309-13), the buffer is under 20 s, and Shaka's bandwidth estimate × 0.8 is under the bandwidth of the rung
+  playing, the receiver switches to the highest rung whose bandwidth is at most estimate × 0.8, or to the lowest rung when none
+  is. It checks every 2 s, with the rule above, whatever Shaka chose.
+- **Stall cap (applies FR-5 to the receiver).** A `buffer_empty` stall of 1 s or more, or a video that has had nothing buffered
+  and not been seeking or paused for two checks in a row (4 s), caps the play **one rung down at once**, to the lowest when it is
+  there. A cap made under 10 s ago is not made again (the stall belongs to the rung being left). The cap holds the receiver below
+  the rung it left for **120 s** with no further stall (FR-309-4's clean-for-120 s), then lifts, and the climb is the stock one.
+- Neither rule changes the start rung (309's start is the server's, as *What this does not do* says), and neither runs when the
+  master lists no lower rung (FR-4 asks for the ladder then).
+- Each step down writes the existing `309 abr:` debug line with its reason (`estimate`, `stall`, `starved`).
+
+**Tests.** `LadderRulesTest` covers the pure parts (`estimateStepDown`: below the 0.8 line it picks the rung under the line, the
+lowest when none fits, nothing with fewer than 3 segments, with a buffer of 20 s or more, or when the rung is already under the
+line; the stall cap's target and its 120 s hold). The wrapper itself is JavaScript over the CAF framework's Shaka and cannot run
+under Gradle; it is covered by the QA ticket for this task, which repeats B1 on a Chromecast with the server-side cap and an
+uncapped control: no `buffer_empty` stall of 2 s or more after the first minute, and a `309 abr: step down` line within a minute of
+the start.
+
+## Amendment 2026-11-27 (DEB-5929) — a failed start is reported once the backend answers again
+
+> Tróndur on DEB-5929, 2026-11-27: *"fix the receiver. Don't weaken the acceptance."* Step 6 stays a drop.
+
+**What the lab showed** (DEB-5041, leg A4). All traffic to the receiver was dropped from the `LOAD` until it gave up
+(58 s, Shaka 1003 on segment 0, CAF `LOAD_FAILED` 905), and then restored. No QoE row with `start_failure_status`
+arrived, and no `playback: start failed` line was logged. The session stayed *Lab tv is offline · paused at 0:00* under
+*Playing everywhere* until Stop was pressed. With a 0.1 Mb/s cap instead, FR-6 worked as written. Two things lose the
+report:
+
+- `stopSession()` sends the item's final QoE report and its stop exactly once, at the moment the receiver gives up. On a
+  total drop the receiver is still offline at that moment. `postPlaybackQoe` swallows its own failure, by R216's
+  invariant, so the receiver cannot tell that the report was lost.
+- The lost stop is why the row stayed. The 90 s stop watchdog reaped it. One progress report before any picture is
+  enough for `everReported`, so FR-R372-13 kept the row *paused · offline* on FR-R372-8's 10 min clock instead of ending
+  it `failed`. The row was doing what R372 promises. It lingers because the receiver's own stop, the stop that *found
+  live 2026-10-09* (1) relies on, never arrives.
+
+A total drop is what an away-from-home link going dark looks like, so FR-6 has to hold for it.
+
+**FR-6, amended: the receiver keeps a failed start's report and stop until they are delivered.** When the receiver
+ends an item that never reached a first frame (FR-6's first bullet), it does this:
+
+1. **It builds the item's final QoE report once**, at the failure, with `startFailureStatus` set as FR-6 says. It sends
+   that report and then the stop at the held position, the same route and body as today.
+2. **A send that gets no HTTP answer, or a 5xx, is held and sent again.** The retries come 5 s later, then at doubling
+   gaps up to 30 s, as the events socket reconnects (`eventLoop`). The report goes first. The stop goes only once the
+   report has been answered, so the log line comes before the row ends.
+3. **Any 2xx or 4xx answer ends that post's retries.** A 4xx means the post was refused, and sending it again would not
+   change that.
+4. **The hold ends after 10 min**, or when the receiver app unloads, whichever is first. After 10 min, FR-R372-8 has
+   ended the row `offline` and the stop has nothing left to end. Nothing is written to storage: a report from a
+   receiver that was closed while the link was dark is lost, as it is today.
+5. **A new `LOAD` drops a held stop, but not a held report.** A stop that lands after a new start on this place can end
+   the new session (FR-289-2), and the new start already ends the old row (R368's `replaced`). The report is about the
+   old item only, so it keeps its schedule.
+6. **One `playback: start failed` line per item still holds,** because the receiver sends again only when it got no
+   answer. The one case left is a report that reached the backend while its answer was lost. That report can log twice,
+   and this is accepted: the wire has no id to deduplicate on, and adding one would be a wire change.
+
+**What it gives.** When the link comes back while the receiver app is loaded, the QoE row and the log line arrive within
+30 s. The stop follows, and the row ends `stopped` 15 s later through the stop hold (`onStop`). It no longer shows as a
+phantom play until the 10 min window runs out. While the link stays dark, nothing on the receiver can reach the backend,
+and FR-R372-8's 10 min clock still bounds the row.
+
+**Not changed:** the reap rule (FR-R372-13) and the session windows (FR-R372-8). A play that reached a first frame
+keeps its one-shot report and its stop. R372's owner choice keeps that play's place on the offline clock, and a late
+stop would take *Play here* away from it. No wire change: the receiver's shared client gains a QoE post that says
+whether it was answered, alongside the existing one. `postPlaybackQoe` keeps its never-throws contract for every other
+caller. Nothing changes on the backend.
+
+**Acceptance 6, amended.** Drop all traffic to the receiver from the `LOAD` until it gives up, then restore traffic
+and wait 60 s. The item's QoE row has `start_failure_status = -1`, and the log has exactly one
+`playback: start failed …` line for it. The session has ended (`end_reason = stopped`). It no longer reads
+*offline · paused at 0:00* under *Playing everywhere*. Keep the 0.1 Mb/s cap leg as the control: one row, one line, and
+no change from today.
+
+**Tests:**
+- `CastRecoveryTest` gets a pure schedule for a held failed-start post. It sends again after no answer or a 5xx, and
+  stops after a 2xx or a 4xx. The gaps run 5 s, 10 s, 20 s, 30 s, 30 s. Nothing is sent after 10 min. A new `LOAD`
+  drops the stop and keeps the report. The stop is not sent before the report has been answered. All of this runs on an
+  injected clock, with no sleeping.
+- `PlaybackSessionsTest` (or `SessionEndingTest`): a stop for a row the watchdog has already reaped to *paused ·
+  offline* ends it `stopped` once the stop hold runs out.
