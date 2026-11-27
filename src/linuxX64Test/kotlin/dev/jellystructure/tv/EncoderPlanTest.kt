@@ -16,8 +16,8 @@ import kotlin.test.assertTrue
 
 /** Phase 313 — the encoder's rules: rungs, codec, the command, the master, the budget, the fallback (FR-313-8/-12). */
 class EncoderPlanTest {
-    private val hdr4k = EncoderSource("/m/film.mkv", 7_200_000, "hevc", 3840, 2160, 50_000_000, hdr = true)
-    private val scope2_4 = EncoderSource("/m/wide.mkv", 7_200_000, "hevc", 3840, 1600, 40_000_000, hdr = true)
+    private val hdr4k = EncoderSource("/m/film.mkv", 7_200_000, "hevc", 3840, 2160, 50_000_000, hdr = true, frameRate = 23.976)
+    private val scope2_4 = EncoderSource("/m/wide.mkv", 7_200_000, "hevc", 3840, 1600, 40_000_000, hdr = true, frameRate = 23.976)
 
     @Test fun `the top rung is capped by its own output — not the source`() {
         // The 2026-10-06 cast's 24.4 Mbps 1080p H.264 top rung is the case this removes.
@@ -152,14 +152,68 @@ class EncoderPlanTest {
     }
 
     @Test fun `codec strings are exact per rung`() {
-        assertEquals("avc1.640029", videoCodecString(EncoderCodec.H264, 1080, false))
-        assertEquals("avc1.64001f", videoCodecString(EncoderCodec.H264, 720, false))
-        assertEquals("avc1.64001e", videoCodecString(EncoderCodec.H264, 480, false))
-        assertEquals("hvc1.2.4.L153.B0", videoCodecString(EncoderCodec.HEVC, 2160, true))
-        assertEquals("hvc1.2.4.L123.B0", videoCodecString(EncoderCodec.HEVC, 1080, true))
-        assertEquals("hvc1.1.6.L93.B0", videoCodecString(EncoderCodec.HEVC, 720, false))
+        fun rung(box: Int, codec: EncoderCodec = EncoderCodec.H264) = encoderRungs(codec, boxWidth(box), box, 100_000_000, null).first { it.boxHeight == box }
+        assertEquals("avc1.640029", videoCodecString(EncoderCodec.H264, rung(1080), 24.0, false))
+        assertEquals("avc1.64001f", videoCodecString(EncoderCodec.H264, rung(720), 24.0, false))
+        assertEquals("avc1.64001e", videoCodecString(EncoderCodec.H264, rung(480), 24.0, false))
+        assertEquals("hvc1.2.4.L153.B0", videoCodecString(EncoderCodec.HEVC, rung(2160, EncoderCodec.HEVC), 24.0, true))
+        assertEquals("hvc1.2.4.L123.B0", videoCodecString(EncoderCodec.HEVC, rung(1080, EncoderCodec.HEVC), 24.0, true))
+        assertEquals("hvc1.1.6.L93.B0", videoCodecString(EncoderCodec.HEVC, rung(720, EncoderCodec.HEVC), 24.0, false))
         assertEquals("ec-3", audioCodecString("eac3"))
         assertEquals("mp4a.40.2", audioCodecString("aac"))
+    }
+
+    // DEB-5988 (FR-313-28) — a rung's level holds its frame size, frame rate and bitrate.
+    private fun lvRung(w: Int, h: Int, box: Int, bps: Long = 1_000_000L) = EncoderRung(box, w, h, bps)
+
+    @Test fun `H264 levels hold the rung's frame rate — the 480p-box rung is refused at 30 fps under level 3_0`() {
+        // 854×444 → 54×28 = 1512 MB: 36 k MB/s at 23.976 (level 3.0's 40 500), 45 k at 29.97 (3.1).
+        assertEquals("3.0", levelOf(EncoderCodec.H264, lvRung(854, 444, 480, 1_500_000), 23.976))
+        assertEquals("3.1", levelOf(EncoderCodec.H264, lvRung(854, 444, 480, 1_500_000), 29.97))
+        assertEquals("3.0", levelOf(EncoderCodec.H264, lvRung(854, 480, 480), 25.0))   // 1620 MB × 25 = 40 500, exactly 3.0
+        assertEquals("4.1", levelOf(EncoderCodec.H264, lvRung(1920, 1080, 1080, 8_000_000), 25.0))
+        assertEquals("4.2", levelOf(EncoderCodec.H264, lvRung(1920, 1080, 1080, 8_000_000), 50.0))
+        assertEquals("3.2", levelOf(EncoderCodec.H264, lvRung(1280, 720, 720, 3_000_000), 60.0))
+        assertEquals("3.1", levelOf(EncoderCodec.H264, lvRung(640, 360, 360, 800_000), 60.0))
+        assertEquals("3.1", levelOf(EncoderCodec.H264, lvRung(1280, 720, 720, 3_000_000), 29.97))   // the box's own level stays
+    }
+
+    @Test fun `an unknown frame rate is chosen as for 60 fps`() {
+        assertEquals(levelOf(EncoderCodec.H264, lvRung(1920, 1080, 1080, 8_000_000), 60.0), levelOf(EncoderCodec.H264, lvRung(1920, 1080, 1080, 8_000_000), null))
+        assertEquals("4.2", levelOf(EncoderCodec.H264, lvRung(1920, 1080, 1080, 8_000_000), null))
+        assertEquals("3.1", levelOf(EncoderCodec.H264, lvRung(640, 360, 360, 800_000), null))
+        assertEquals("3.1", levelOf(EncoderCodec.H264, lvRung(640, 360, 360, 800_000), 0.0))
+    }
+
+    @Test fun `HEVC levels hold luma samples a second — 2160p stays 5_1`() {
+        assertEquals("4.0", levelOf(EncoderCodec.HEVC, lvRung(1280, 720, 720, 4_000_000), 60.0))
+        assertEquals("3.1", levelOf(EncoderCodec.HEVC, lvRung(1280, 720, 720, 4_000_000), 24.0))
+        assertEquals("5.1", levelOf(EncoderCodec.HEVC, lvRung(3840, 2160, 2160, 20_000_000), 24.0))
+        assertEquals("4.1", levelOf(EncoderCodec.HEVC, lvRung(1920, 1080, 1080, 8_000_000), 60.0))
+    }
+
+    @Test fun `each CODECS string matches its level`() {
+        assertEquals("avc1.64001f", videoCodecString(EncoderCodec.H264, lvRung(854, 444, 480, 1_500_000), 29.97, false))
+        assertEquals("avc1.64002a", videoCodecString(EncoderCodec.H264, lvRung(1920, 1080, 1080, 8_000_000), 50.0, false))
+        assertEquals("avc1.640020", videoCodecString(EncoderCodec.H264, lvRung(1280, 720, 720, 3_000_000), 60.0, false))
+        assertEquals("hvc1.1.6.L120.B0", videoCodecString(EncoderCodec.HEVC, lvRung(1280, 720, 720, 4_000_000), 60.0, false))
+    }
+
+    @Test fun `the command writes the level that holds a 29_97 fps source's 2026-11-27 rungs`() {
+        val rungs = listOf(EncoderRung(1080, 1920, 1000, 3_488_000), EncoderRung(480, 854, 444, 1_500_000), EncoderRung(360, 640, 360, 800_000), EncoderRung(240, 426, 240, 400_000))
+        val src = EncoderSource("/m/film.mkv", 7_200_000, "h264", 1920, 1080, 8_000_000, hdr = false, frameRate = 29.97)
+        val p = EncoderPlan(src, EncoderCodec.H264, EncoderMux.FMP4, rungs, 0, emptyList(), null, 0)
+        val c = encoderCommand(p, startSegment = 0, dir = "/w/x")
+        assertContains(c, "-level:v:0 4.1")
+        assertContains(c, "-level:v:1 3.1")
+        assertContains(c, "-level:v:2 3.0")   // 640×360 at 29.97 = 27.6 k MB/s: level 3.0 holds it
+        assertContains(c, "-level:v:3 3.0")
+    }
+
+    @Test fun `the plan's source carries Jellyfin's frame rate`() {
+        val tracks = listOf(Track(0, "v:0", TrackKind.VIDEO, "h264", null, null, true, false, width = 1920, height = 1080, videoBitrate = 8_000_000))
+        assertEquals(29.97, encoderSourceOf("/m/f.mkv", 1000, tracks, null, frameRate = 29.97)?.frameRate)
+        assertNull(encoderSourceOf("/m/f.mkv", 1000, tracks, null)?.frameRate)
     }
 
     private fun plan(codec: EncoderCodec = EncoderCodec.HEVC, mux: EncoderMux = EncoderMux.FMP4, start: Int = 1, gpu: Int? = 0, burn: Int? = null, src: EncoderSource = hdr4k) =
@@ -416,8 +470,9 @@ class EncoderPlanTest {
     }
 
     @Test fun `a 2160p HEVC rung is level 5_1 — its peak exceeds level 5_0's 25 Mbps`() {
-        assertEquals("5.1", levelOf(EncoderCodec.HEVC, 2160))
-        assertEquals("hvc1.2.4.L153.B0", videoCodecString(EncoderCodec.HEVC, 2160, tenBit = true))
+        val top = encoderRungs(EncoderCodec.HEVC, 3840, 2160, 50_000_000, null).first()
+        assertEquals("5.1", levelOf(EncoderCodec.HEVC, top, 23.976))
+        assertEquals("hvc1.2.4.L153.B0", videoCodecString(EncoderCodec.HEVC, top, 23.976, tenBit = true))
     }
 
     // ── 309 (FR-309-2) — where a play starts ──────────────────────────────────────────────────────────────────────

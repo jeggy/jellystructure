@@ -855,6 +855,8 @@ class PlaybackService(
         /** DEB-3338 (FR-313-18) — the source's picture size, for a source larger than the URL's size cap. */
         sourceWidth: Int? = null,
         sourceHeight: Int? = null,
+        /** DEB-5988 (FR-313-28) — the source's frames per second, for each rung's level. */
+        sourceFrameRate: Double? = null,
         /** Phase 313 — the device (`cast` gets MPEG-TS segments until fMP4 is verified on the receiver). */
         device: DeviceData? = null,
         /** 309 (FR-309-1) — what the device can take (null: no record). */
@@ -911,7 +913,7 @@ class PlaybackService(
                 burnSubtitleOrder = burnSubtitleOrder, burnRequested = burnRequested || (ticket.burnedSubtitleIndex != null && burnSubtitleOrder == null),
                 subtitles = encoderSubtitlesOf(ticket, jellyfinBase, jellyfinId, token), platform = device?.platform,
                 forDevice = device?.deviceId, forItem = jellyfinId,
-                belowBandwidthBps = belowBandwidthBps, audioBps = audioBps, stallCapped = stallCappedOf(device), boxLimit = boxLimit, stallHold = stallHold, emptyStreams = ghosts)
+                belowBandwidthBps = belowBandwidthBps, audioBps = audioBps, stallCapped = stallCappedOf(device), boxLimit = boxLimit, stallHold = stallHold, emptyStreams = ghosts, sourceFrameRate = sourceFrameRate)
             if (plan != null) {
                 val startSegment = (ticket.startPositionMs / ENCODER_SEGMENT_MS).toInt()
                 // 309 (FR-309-6, owner) — the early encode on the detail page becomes this play's own job when it matches.
@@ -1522,6 +1524,7 @@ class PlaybackService(
             sourceVideoRange = source?.mediaStreams?.firstOrNull { it.type.equals("Video", ignoreCase = true) }?.videoRangeType,
             sourceWidth = source?.mediaStreams?.firstOrNull { it.type.equals("Video", ignoreCase = true) }?.width,
             sourceHeight = source?.mediaStreams?.firstOrNull { it.type.equals("Video", ignoreCase = true) }?.height,
+            sourceFrameRate = source?.mediaStreams?.firstOrNull { it.type.equals("Video", ignoreCase = true) }?.frameRate,
             audioBps = audioBitratesOf(itemDetail, mediaSourceId))
     }
 
@@ -1593,8 +1596,9 @@ class PlaybackService(
         val file = localFileOf(jellyfinId) ?: return emptyList()
         val durationMs = file.encoderMs?.takeIf { it > 0 } ?: return emptyList()
         val ghosts = ghostFactsOf(jellyfinId)
-        val range = streamsOf(itemDetail, mediaSourceId).firstOrNull { it.type.equals("Video", ignoreCase = true) }?.videoRangeType
-        val source = encoderSourceOf(file.first, durationMs, file.tracks, range, ghosts.empty) ?: return emptyList()
+        val video = streamsOf(itemDetail, mediaSourceId).firstOrNull { it.type.equals("Video", ignoreCase = true) }
+        val range = video?.videoRangeType
+        val source = encoderSourceOf(file.first, durationMs, file.tracks, range, ghosts.empty, video?.frameRate) ?: return emptyList()
         if (encoder.reasonNotServed(source, device.kind) != null) return emptyList()
         // The one audio a copy carries: the file's default real track, in the family a play would give it.
         val real = buildAudioTracks(itemDetail, mediaSourceId).filter { it.index !in ghosts.empty }
@@ -1630,10 +1634,11 @@ class PlaybackService(
         }
         val ghosts = ghostFactsOf(jellyfinId)
         val asked = realAudioFor(jellyfinId, ghosts, wanted) { audio }
-        val range = streamsOf(itemDetail, mediaSourceId).firstOrNull { it.type.equals("Video", ignoreCase = true) }?.videoRangeType
+        val video = streamsOf(itemDetail, mediaSourceId).firstOrNull { it.type.equals("Video", ignoreCase = true) }
+        val range = video?.videoRangeType
         return encoder.planFor(downloadCaps(caps), device.kind, file.first, file.encoderMs, file.tracks, audio, asked,
             takeBps = null, noRecord = false, sourceVideoRange = range, platform = device.platform,
-            audioBps = audioBitratesOf(itemDetail, mediaSourceId), boxLimit = box, emptyStreams = ghosts.empty, cardsLastFirst = true)
+            audioBps = audioBitratesOf(itemDetail, mediaSourceId), boxLimit = box, emptyStreams = ghosts.empty, cardsLastFirst = true, sourceFrameRate = video?.frameRate)
     }
 
     /**
@@ -1713,7 +1718,7 @@ class PlaybackService(
             subtitles = encoderSubtitlesOf(ticketLike, jellyfinBase, jellyfinId, token), platform = target.platform,
             audioBps = audioBitratesOf(itemDetail, null), stallCapped = stallCappedOf(target), stallHold = stallHoldOf(target),
             boxLimit = sizeCapRungBox(master, video?.codec, video?.videoRangeType, video?.width, video?.height, caps.maxH264Width, caps.maxH264Height),
-            evict = false, forDevice = target.deviceId, forItem = jellyfinId)   // DEB-5685 (FR-313-23) — a prewarm stops nothing and is never trimmed
+            evict = false, forDevice = target.deviceId, forItem = jellyfinId, sourceFrameRate = video?.frameRate)   // DEB-5685 (FR-313-23) — a prewarm stops nothing and is never trimmed
         plan ?: return none(why)
         encoder.prewarm(plan, target.deviceId, jellyfinId, (startPositionMs / ENCODER_SEGMENT_MS).toInt(), nowMs() + PREWARM_TTL_MS)
         return dev.jellystructure.shared.tv.PrewarmResult("warm")
@@ -2735,6 +2740,7 @@ class PlaybackService(
             sourceVideoRange = source?.mediaStreams?.firstOrNull { it.type.equals("Video", ignoreCase = true) }?.videoRangeType,
             sourceWidth = source?.mediaStreams?.firstOrNull { it.type.equals("Video", ignoreCase = true) }?.width,
             sourceHeight = source?.mediaStreams?.firstOrNull { it.type.equals("Video", ignoreCase = true) }?.height,
+            sourceFrameRate = source?.mediaStreams?.firstOrNull { it.type.equals("Video", ignoreCase = true) }?.frameRate,
             notOurEncoder = notOurEncoder, belowBandwidthBps = belowBandwidthBps, handover = handoverAt != null,
             audioBps = audioBitratesOf(itemDetail, chosenSource)) }
     }

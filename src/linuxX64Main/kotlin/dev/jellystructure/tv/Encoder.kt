@@ -185,6 +185,8 @@ class Encoder(
         stallHold: Boolean = false,
         /** DEB-3642 (FR-2) — the file's streams that hold no packet (its current packet timeline): none of them is mapped, offered or carried. */
         emptyStreams: Set<Int> = emptySet(),
+        /** DEB-5988 (FR-313-28) — the picture's frames per second (Jellyfin's `RealFrameRate`): each rung's level holds it; null = chosen as for 60 fps. */
+        sourceFrameRate: Double? = null,
         /** DEB-4256 (DEB-3995 FR-6) — a download stream's plan: the cards are tried in the reverse of a play's order, so the card plays prefer keeps its room. */
         cardsLastFirst: Boolean = false,
         /** DEB-5685 (FR-313-23) — false for a prewarm: nothing running is stopped for it and it is never trimmed (answered "no encoder slot free" instead). */
@@ -192,7 +194,7 @@ class Encoder(
         /** …and the (device, item) the plan is for: the warm stream it may adopt is not counted against it. */
         forDevice: String? = null, forItem: String? = null,
     ): Pair<EncoderPlan?, String> {
-        val source = encoderSourceOf(path, durationMs, tracks, sourceVideoRange, emptyStreams)
+        val source = encoderSourceOf(path, durationMs, tracks, sourceVideoRange, emptyStreams, sourceFrameRate)
         val cards = if (cfg.enabled) cards() else emptyList()
         encoderDecision(cfg.enabled, ffmpegReady(), cards, source, isLiveOrAudio = false, deviceKind = deviceKind, castReceivers = cfg.castReceivers)?.let { return null to it }
         source!!
@@ -853,7 +855,7 @@ internal fun restartPlan(plan: EncoderPlan, placement: EncoderPlacement?): Encod
  * video stream that has any, else (every one empty, or no timeline) the first as before. `0:v:N` counts every video stream of the
  * input, empty ones included. Null when the file has no video stream.
  */
-internal fun encoderSourceOf(path: String, durationMs: Long?, tracks: List<Track>, sourceVideoRange: String?, emptyStreams: Set<Int> = emptySet()): EncoderSource? {
+internal fun encoderSourceOf(path: String, durationMs: Long?, tracks: List<Track>, sourceVideoRange: String?, emptyStreams: Set<Int> = emptySet(), frameRate: Double? = null): EncoderSource? {
     val videos = tracks.filter { it.kind == TrackKind.VIDEO }.sortedBy { it.streamIndex }
     val video = if (emptyStreams.isEmpty()) tracks.firstOrNull { it.kind == TrackKind.VIDEO } else videos.firstOrNull { it.streamIndex !in emptyStreams } ?: videos.firstOrNull()
     val videoOrder = if (emptyStreams.isEmpty()) 0 else videos.indexOf(video).coerceAtLeast(0)
@@ -864,7 +866,7 @@ internal fun encoderSourceOf(path: String, durationMs: Long?, tracks: List<Track
             videoBps = it.videoBitrate?.toLong(),
             hdr = it.videoRange.equals("HDR", true) || range.contains("HDR", true) || range.contains("HLG", true) || range.startsWith("DOVI", true),
             hlg = range.contains("HLG", true),
-            dolbyVisionProfile5 = range.equals("DOVI", true), videoOrder = videoOrder,
+            dolbyVisionProfile5 = range.equals("DOVI", true), videoOrder = videoOrder, frameRate = frameRate?.takeIf { it > 0 },
         )
     }
 }

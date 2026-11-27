@@ -249,6 +249,11 @@ data class EncoderSource(
     val videoBps: Long?, val hdr: Boolean, val hlg: Boolean = false, val dolbyVisionProfile5: Boolean = false,
     /** DEB-3642 (FR-2) — the picture's place among the file's video streams (`0:v:N`): 0 unless a stream before it holds no packet. */
     val videoOrder: Int = 0,
+    /**
+     * DEB-5988 (FR-313-28) — the picture's frames per second (Jellyfin's `RealFrameRate`), which the rungs' levels must hold. A plan is
+     * stored across deploys (DEB-3100), so an older one reads null = not known, and a level is then chosen as for 60 fps.
+     */
+    val frameRate: Double? = null,
 )
 
 /** Everything one job makes (fixed for its life: FR-313-1 — a running ffmpeg cannot gain an output). */
@@ -290,19 +295,65 @@ internal fun encoderSegmentCount(durationMs: Long): Int = ((durationMs + ENCODER
  */
 internal fun encoderSeekSegment(durationMs: Long, ms: Long): Int = (ms.coerceAtLeast(0) / ENCODER_SEGMENT_MS).toInt().coerceAtMost(encoderSegmentCount(durationMs) - 1)
 
-/** The H.264 / HEVC level for a rung's box (also its CODECS string, FR-313's dev review item 9). */
-internal fun levelOf(codec: EncoderCodec, boxHeight: Int): String = when (codec) {
+/** The level a rung's box has always had (also its CODECS string, FR-313's dev review item 9): [levelOf] never goes below it. */
+internal fun levelFloorOf(codec: EncoderCodec, boxHeight: Int): String = when (codec) {
     EncoderCodec.H264 -> when { boxHeight >= 1080 -> "4.1"; boxHeight >= 720 -> "3.1"; else -> "3.0" }
     // 2160p is 5.1: level 5.0 (Main tier) caps the peak at 25 Mbps, and a 20 Mbps top rung peaks at 30 (-maxrate 1.5×);
     // NVENC refuses the encode outright ("Invalid Level"), found casting to Stue TV 2026-10-09.
     EncoderCodec.HEVC -> when { boxHeight >= 2160 -> "5.1"; boxHeight >= 1440 -> "5.0"; boxHeight >= 1080 -> "4.1"; boxHeight >= 720 -> "3.1"; else -> "3.0" }
 }
 
+/** One level's limits: [tenths] = level × 10, the most [rate] (macroblocks / luma samples) a second, the biggest picture [size], [bps] and (H.264) [bufBits]. */
+private class LevelLimits(val tenths: Int, val rate: Long, val size: Long, val bps: Long, val bufBits: Long)
+
+// H.264 Table A-1, High profile (MaxBR and MaxCPB × 1250 bits).
+private val H264_LEVELS = listOf(
+    LevelLimits(30, 40_500, 1_620, 12_500_000, 12_500_000),
+    LevelLimits(31, 108_000, 3_600, 17_500_000, 17_500_000),
+    LevelLimits(32, 216_000, 5_120, 25_000_000, 25_000_000),
+    LevelLimits(40, 245_760, 8_192, 25_000_000, 31_250_000),
+    LevelLimits(41, 245_760, 8_192, 62_500_000, 78_125_000),
+    LevelLimits(42, 522_240, 8_704, 62_500_000, 78_125_000),
+    LevelLimits(50, 589_824, 22_080, 168_750_000, 168_750_000),
+    LevelLimits(51, 983_040, 36_864, 300_000_000, 300_000_000),
+    LevelLimits(52, 2_073_600, 36_864, 300_000_000, 300_000_000),
+)
+
+// H.265 Tables A-6 / A-7, Main tier.
+private val HEVC_LEVELS = listOf(
+    LevelLimits(30, 16_588_800, 552_960, 6_000_000, 0),
+    LevelLimits(31, 33_177_600, 983_040, 10_000_000, 0),
+    LevelLimits(40, 66_846_720, 2_228_224, 12_000_000, 0),
+    LevelLimits(41, 133_693_440, 2_228_224, 20_000_000, 0),
+    LevelLimits(50, 267_386_880, 8_912_896, 25_000_000, 0),
+    LevelLimits(51, 534_773_760, 8_912_896, 40_000_000, 0),
+    LevelLimits(52, 1_069_547_520, 8_912_896, 60_000_000, 0),
+)
+
+/**
+ * DEB-5988 (FR-313-28) — the level of [rung]: the lowest whose limits hold the rung's real output at [frameRate] and its
+ * `-maxrate`/`-bufsize` (1.5× and 2× its bitrate, as [encoderCommand] writes them), never below [levelFloorOf] for its box. NVENC refuses a
+ * job whose rung is over its level's rate ("Invalid Level"). A null or non-positive [frameRate] is chosen as for 60 fps.
+ */
+internal fun levelOf(codec: EncoderCodec, rung: EncoderRung, frameRate: Double?): String {
+    val fps = frameRate?.takeIf { it > 0 } ?: 60.0
+    val table = if (codec == EncoderCodec.H264) H264_LEVELS else HEVC_LEVELS
+    val units = if (codec == EncoderCodec.H264) ((rung.width + 15) / 16).toLong() * ((rung.height + 15) / 16) else rung.width.toLong() * rung.height
+    val maxrate = rung.videoBps * 3 / 2
+    val bufsize = rung.videoBps * 2
+    val floor = kotlin.math.round(levelFloorOf(codec, rung.boxHeight).toDouble() * 10).toInt()
+    val fits = table.firstOrNull { l ->
+        l.tenths >= floor && units <= l.size && units * fps <= l.rate && maxrate <= l.bps && (l.bufBits == 0L || bufsize <= l.bufBits)
+    } ?: table.last()
+    return "${fits.tenths / 10}.${fits.tenths % 10}"
+}
+
 /** The exact `CODECS` value of a rung's video (Media3 hides a variant whose codec string no decoder supports). */
-internal fun videoCodecString(codec: EncoderCodec, boxHeight: Int, tenBit: Boolean): String {
-    val level = levelOf(codec, boxHeight)
+internal fun videoCodecString(codec: EncoderCodec, rung: EncoderRung, frameRate: Double?, tenBit: Boolean): String {
+    val level = levelOf(codec, rung, frameRate)
     return when (codec) {
-        EncoderCodec.H264 -> "avc1.6400" + when (level) { "4.1" -> "29"; "3.1" -> "1f"; else -> "1e" }
+        // avc1.<profile_idc=64 High><constraints=00><level_idc = level × 10 in hex>
+        EncoderCodec.H264 -> "avc1.6400" + kotlin.math.round(level.toDouble() * 10).toInt().toString(16).padStart(2, '0')
         // hvc1.<profile>.<compat>.L<level×30>.B0 — Main 10 = 2.4, Main = 1.6.
         EncoderCodec.HEVC -> (if (tenBit) "hvc1.2.4" else "hvc1.1.6") + ".L" + kotlin.math.round(level.toDouble() * 30).toInt() + ".B0"
     }
@@ -387,7 +438,7 @@ internal fun encoderMaster(plan: EncoderPlan, startMs: Long = 0): String {
         val r = plan.rungs[i]
         val peak = rungBandwidth(r, audioPeak)
         val avg = r.videoBps + audioPeak
-        val codecs = listOfNotNull(videoCodecString(plan.codec, r.boxHeight, plan.keepsHdr || plan.codec == EncoderCodec.HEVC && plan.source.hdr), audioCodec).joinToString(",")
+        val codecs = listOfNotNull(videoCodecString(plan.codec, r, plan.source.frameRate, plan.keepsHdr || plan.codec == EncoderCodec.HEVC && plan.source.hdr), audioCodec).joinToString(",")
         out.append("#EXT-X-STREAM-INF:BANDWIDTH=").append(peak).append(",AVERAGE-BANDWIDTH=").append(avg)
             .append(",RESOLUTION=").append(r.width).append('x').append(r.height)
             .append(",CODECS=\"").append(codecs).append('"')
@@ -505,7 +556,7 @@ internal fun encoderCommand(plan: EncoderPlan, startSegment: Int, dir: String, f
     for ((i, r) in plan.rungs.withIndex()) {
         enc.append(" -b:v:$i ").append(r.videoBps).append(" -maxrate:v:$i ").append((r.videoBps * 1.5).roundToLong())
             .append(" -bufsize:v:$i ").append(r.videoBps * 2)
-        if (gpu != null) enc.append(" -level:v:$i ").append(levelOf(plan.codec, r.boxHeight))
+        if (gpu != null) enc.append(" -level:v:$i ").append(levelOf(plan.codec, r, plan.source.frameRate))
     }
     for ((j, a) in plan.audio.withIndex()) {
         // FR-313-5b — the file's own bytes. `-copypriorss 0`: after a seek the demuxer hands over audio from the start of the

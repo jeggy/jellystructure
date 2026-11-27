@@ -308,6 +308,9 @@ data class JellyfinMediaStream(
     // DEB-3338 (FR-313-18) — a video stream's picture size: a source larger than the URL's MaxWidth/MaxHeight is re-encoded.
     @SerialName("Width") val width: Int? = null,
     @SerialName("Height") val height: Int? = null,
+    // DEB-5988 (FR-313-28) — a video stream's frames per second: the level of each of our rungs holds it.
+    @SerialName("RealFrameRate") val realFrameRate: Float? = null,
+    @SerialName("AverageFrameRate") val averageFrameRate: Float? = null,
     @SerialName("IsForced") val isForced: Boolean = false,
     @SerialName("IsDefault") val isDefault: Boolean = false,
     @SerialName("IsExternal") val isExternal: Boolean = false,
@@ -318,7 +321,10 @@ data class JellyfinMediaStream(
     // R56: per-stream delivery negotiated by PlaybackInfo (Embed | External | Hls | Encode).
     @SerialName("DeliveryMethod") val deliveryMethod: String? = null,
     @SerialName("DeliveryUrl") val deliveryUrl: String? = null,
-)
+) {
+    /** DEB-5988 (FR-313-28) — a video stream's frames per second: Jellyfin's real rate, else its average; null = not given. */
+    val frameRate: Double? get() = (realFrameRate ?: averageFrameRate)?.toDouble()?.takeIf { it > 0 }
+}
 
 // R56: Jellyfin PlaybackInfo response (POST /Items/{id}/PlaybackInfo with a DeviceProfile).
 @Serializable
