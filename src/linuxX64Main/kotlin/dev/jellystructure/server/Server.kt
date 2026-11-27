@@ -110,6 +110,7 @@ import io.ktor.server.routing.route
 import io.ktor.server.routing.routing
 import io.ktor.server.websocket.WebSockets
 import io.ktor.server.websocket.webSocket
+import kotlinx.coroutines.launch
 import io.ktor.websocket.CloseReason
 import io.ktor.websocket.Frame
 import io.ktor.websocket.close
@@ -263,6 +264,19 @@ fun startServer(
         // — scoping would mean restructuring those three route blocks under a route(...) parent for no
         // behavioural gain, since "an API route now also answers HEAD, body-free" has no downside.
         install(AutoHeadResponse)
+        // FR-6 (DEB-5847): one INFO line for an /api request whose handler took over 1 s.
+        val slowStart = io.ktor.util.AttributeKey<kotlin.time.TimeSource.Monotonic.ValueTimeMark>("slowRequestStart")
+        monitor.subscribe(io.ktor.server.routing.RoutingRoot.RoutingCallStarted) { call ->
+            call.attributes.put(slowStart, kotlin.time.TimeSource.Monotonic.markNow())
+        }
+        monitor.subscribe(io.ktor.server.routing.RoutingRoot.RoutingCallFinished) { call ->
+            val mark = call.attributes.getOrNull(slowStart) ?: return@subscribe
+            val line = slowRequestLine(
+                call.request.local.method.value, routeTemplate(call.route.toString()),
+                call.response.status()?.value ?: 0, mark.elapsedNow().inWholeMilliseconds,
+            )
+            if (line != null) appScope.launch { Logger.info(line, "slow-request") }
+        }
         install(ContentNegotiation) { json(Json { ignoreUnknownKeys = true }) }
         install(WebSockets) {
             pingPeriodMillis = 30_000L
