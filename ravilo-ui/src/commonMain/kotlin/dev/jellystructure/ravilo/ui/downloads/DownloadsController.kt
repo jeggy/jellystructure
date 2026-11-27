@@ -71,6 +71,8 @@ fun isExpiredTicket(status: Int?): Boolean = status == 401 || status == 403 || s
  * asked for**, and a download takes its ticket only when its turn comes, because a phone has one download stream and a `start` from it
  * replaces the one it holds (FR-6, DEB-4256). Nothing here writes Jellyfin or invents catalog rows.
  */
+private val stillJson = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
+
 class DownloadsController(
     private val userId: () -> String?,
     private val api: DownloadApi,
@@ -260,6 +262,16 @@ class DownloadsController(
     fun savedArtwork(itemId: String, type: String): String? {
         val u = userId() ?: return null
         return media?.artwork(u, itemId, type)
+    }
+
+    /** FR-9 — an episode's own `still_url` from the series page saved beside its download; null for a film, no saved page or text that does not parse. */
+    fun serverStill(itemId: String): String? {
+        val u = userId() ?: return null
+        val text = media?.savedItem(u, itemId) ?: return null
+        return runCatching {
+            stillJson.decodeFromString(dev.jellystructure.shared.tv.SeriesDetail.serializer(), text)
+                .seasons.firstNotNullOfOrNull { s -> s.episodes.firstOrNull { it.id == itemId } }?.stillUrl
+        }.getOrNull()
     }
 
     /** FR-15 — what the server last said about this title, the base the outbox's conflict rule compares to. */

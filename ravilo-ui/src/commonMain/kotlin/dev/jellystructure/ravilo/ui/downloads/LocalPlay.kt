@@ -17,6 +17,8 @@ interface LocalMediaSource {
     fun read(userId: String, itemId: String): SavedDownload?
     /** FR-13, FR-16 — a saved picture of one title (`poster`, `backdrop` or `still`) as a URL the image loader reads, or null when none was saved. */
     fun artwork(userId: String, itemId: String, type: String): String? = null
+    /** FR-9 — the text of the series page saved beside a download (`item.json`), or null when none was saved. */
+    fun savedItem(userId: String, itemId: String): String? = null
 }
 
 /**

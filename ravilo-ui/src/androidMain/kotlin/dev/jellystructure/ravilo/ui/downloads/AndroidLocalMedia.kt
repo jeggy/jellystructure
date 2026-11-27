@@ -43,4 +43,7 @@ class AndroidLocalMedia : LocalMediaSource {
 
     override fun artwork(userId: String, itemId: String, type: String): String? =
         File(DownloadSidecars.dir(userId, itemId), type).takeIf { it.isFile && it.length() > 0 }?.toURI()?.toString()
+
+    override fun savedItem(userId: String, itemId: String): String? =
+        runCatching { File(DownloadSidecars.dir(userId, itemId), "item.json").takeIf { it.isFile }?.readText() }.getOrNull()
 }
