@@ -82,6 +82,17 @@ class HomeStore(
     }
     /** DEB-4273 — a press that opened nothing (Surprise me's `204`, or a failure) leaves no place to return to. */
     fun clearReturn() { focusRowKey = null; focusItemKey = null }
+    /**
+     * DEB-5891 (ravilo-can-be-the-tvs-home-screen.md FR-3) — Home pressed from a player or a page lands on the top of Home with
+     * focus on its first target. The store outlives its screen (R137, R139), so without this the Home built after the reset
+     * would restore the scroll and the tile the viewer left from.
+     */
+    suspend fun resetToTop() {
+        clearReturn()
+        focusRowIndex = 0
+        focusItemIndex = 0
+        listState.scrollToItem(0)
+    }
     // R49/Phase 136 — server-decided Request-segment gating (now: is Seerr connected/enabled).
     private val _discoverAvailable = MutableStateFlow(false)
     val discoverAvailable: StateFlow<Boolean> = _discoverAvailable.asStateFlow()

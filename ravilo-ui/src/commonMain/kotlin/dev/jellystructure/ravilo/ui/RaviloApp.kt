@@ -1867,7 +1867,12 @@ fun RaviloApp(
                 when (homeRequestAction(stack.size, top is Dest.Home || top is Dest.MusicListen, top is Dest.Login || top is Dest.ProfilePicker)) {
                     HomeRequestAction.Ignore -> {}
                     HomeRequestAction.ScrollToTop -> if (!backToTop.consumeBack()) reselectTick++
-                    HomeRequestAction.ResetToHome -> resetTo(homeDest(destDisplayName(top)))
+                    HomeRequestAction.ResetToHome -> {
+                        val home = homeDest(destDisplayName(top))
+                        // DEB-5891 — the kept Home store holds the scroll and the tile the viewer left from; Home comes up at the top.
+                        if (home is Dest.Home) (storeRegistry["home:${home.displayName}"] as? HomeStore)?.resetToTop()
+                        resetTo(home)
+                    }
                 }
             }
         }
