@@ -10,7 +10,7 @@ class AppsStringsTest {
     private val keys = listOf(
         "nav.apps", "apps.subtitle", "apps.tv_settings", "apps.see_all", "apps.all_title", "apps.all_subtitle", "apps.pinned_subtitle",
         "apps.order_recent", "apps.pin", "apps.unpin", "apps.move_left", "apps.move_right", "apps.pinned_mark",
-        "apps.nothing_else", "apps.back_to_signin",
+        "apps.nothing_else", "apps.back_to_signin", "apps.back_to_setup",
     )
 
     @Test fun everyAppsStringIsInAllThreeLanguagesAndNamesNoJellyfin() {

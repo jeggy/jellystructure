@@ -1451,6 +1451,7 @@
   "apps.pinned_mark": "Fastgjort",
   "apps.nothing_else": "Der er ikke installeret andet på dette tv.",
   "apps.back_to_signin": "Tilbage fører til login",
+  "apps.back_to_setup": "Tilbage fører til serveropsætning",
   "samsung_requests.title": "Samsung TV-anmodninger",
   "samsung_requests.refresh": "Opdater",
   "samsung_requests.intro": "Godkend et TV, tilføj derefter dets DUID til distributørcertifikatet, og udgiv en release. Klar vises automatisk, når den nyeste signerede pakke dækker det.",

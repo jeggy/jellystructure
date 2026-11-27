@@ -122,7 +122,13 @@ typealias AppsTopBar = @Composable (navFR: FocusRequester, onDown: () -> Unit) -
  * left to the host's own Back (the stack's pop) where it does not. The pin menu takes Back first: it is below this in the tree.
  */
 @Composable
-fun AppsFlow(model: TvAppsModel, onExit: (() -> Unit)?, topBar: AppsTopBar?, modifier: Modifier = Modifier) {
+fun AppsFlow(
+    model: TvAppsModel,
+    onExit: (() -> Unit)?,
+    topBar: AppsTopBar?,
+    modifier: Modifier = Modifier,
+    backHintKey: String = "apps.back_to_signin",
+) {
     var all by remember { mutableStateOf(false) }
     Box(
         modifier.fillMaxSize().onKeyEvent { ev ->
@@ -134,7 +140,7 @@ fun AppsFlow(model: TvAppsModel, onExit: (() -> Unit)?, topBar: AppsTopBar?, mod
             }
         },
     ) {
-        if (all) AllAppsScreen(model, topBar) else AppsScreen(model, onSeeAll = { all = true }, topBar = topBar)
+        if (all) AllAppsScreen(model, topBar, backHintKey = backHintKey) else AppsScreen(model, onSeeAll = { all = true }, topBar = topBar, backHintKey = backHintKey)
     }
 }
 
@@ -145,6 +151,7 @@ fun AppsScreen(
     onSeeAll: () -> Unit,
     topBar: AppsTopBar?,
     modifier: Modifier = Modifier,
+    backHintKey: String = "apps.back_to_signin",
 ) {
     val windowFocused = LocalWindowInfo.current.isWindowFocused
     // FR-11 — read from the TV each time Apps opens, and again when Ravilo comes back to the front (an app installed meanwhile).
@@ -171,6 +178,7 @@ fun AppsScreen(
             cells = cells,
             model = model,
             topBar = topBar,
+            backHintKey = backHintKey,
             pills = null,
             tag = AppsTags.SCREEN,
             menuOpen = openMenu != null,
@@ -193,6 +201,7 @@ fun AllAppsScreen(
     model: TvAppsModel,
     topBar: AppsTopBar?,
     modifier: Modifier = Modifier,
+    backHintKey: String = "apps.back_to_signin",
 ) {
     val windowFocused = LocalWindowInfo.current.isWindowFocused
     val order = model.order
@@ -215,6 +224,7 @@ fun AllAppsScreen(
             cells = cells,
             model = model,
             topBar = topBar,
+            backHintKey = backHintKey,
             pills = { toBar, toGrid ->
                 OrderPill(str("browse.sort.az"), order == AllAppsOrder.AZ, azFR, AppsTags.ORDER_AZ,
                     onRight = { recentFR.tryFocus() }, onUp = toBar, onDown = toGrid) { model.order = AllAppsOrder.AZ }
@@ -244,6 +254,7 @@ private fun AppsPage(
     cells: List<Cell>,
     model: TvAppsModel,
     topBar: AppsTopBar?,
+    backHintKey: String,
     pills: (@Composable (toBar: () -> Unit, toGrid: () -> Unit) -> Unit)?,
     tag: String,
     menuOpen: Boolean,
@@ -271,7 +282,7 @@ private fun AppsPage(
         }
     }
     Column(Modifier.fillMaxSize().background(colors.background).testTag(tag)) {
-        if (topBar != null) topBar(barFR, toGrid) else SignedOutHead()
+        if (topBar != null) topBar(barFR, toGrid) else SignedOutHead(backHintKey)
         Column(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 48.dp)) {
             Spacer(Modifier.height(18.dp))
             Text(title, color = colors.text, fontSize = 26.sp, fontWeight = FontWeight.Bold)
@@ -315,7 +326,7 @@ private fun AppsPage(
 
 /** FR-12 — with nobody signed in there is no bar: sign-in's own brand row, and Back says where it goes. */
 @Composable
-private fun SignedOutHead() {
+private fun SignedOutHead(backHintKey: String) {
     val colors = RaviloTheme.colors
     Row(
         Modifier.fillMaxWidth().padding(horizontal = 32.dp, vertical = 28.dp).height(46.dp),
@@ -325,7 +336,7 @@ private fun SignedOutHead() {
         BrandMark(size = 22.dp)
         Text("Ravilo", color = colors.text, fontSize = 16.sp, fontWeight = FontWeight.Bold)
         Spacer(Modifier.weight(1f))
-        Text(str("apps.back_to_signin"), color = colors.textDim, fontSize = NO_BAR_BACK_HINT_SIZE.sp)
+        Text(str(backHintKey), color = colors.textDim, fontSize = NO_BAR_BACK_HINT_SIZE.sp)
     }
 }
 

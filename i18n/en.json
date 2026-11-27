@@ -1541,6 +1541,7 @@
   "apps.pinned_mark": "Pinned",
   "apps.nothing_else": "Nothing else is installed on this TV.",
   "apps.back_to_signin": "Back returns to sign-in",
+  "apps.back_to_setup": "Back returns to server setup",
   "samsung_requests.title": "Samsung TV requests",
   "samsung_requests.refresh": "Refresh",
   "samsung_requests.intro": "Approve a TV, then add its DUID to the distributor certificate and publish a release. Ready appears automatically when the latest signed package covers it.",

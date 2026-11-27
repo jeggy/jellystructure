@@ -130,7 +130,7 @@ fun RaviloRoot() {
             dev.jellystructure.ravilo.ui.components.LocalOpenApps provides (if (reachable && !appsOpen) { { appsOpen = true } } else null),
         ) {
         androidx.compose.foundation.layout.Box {
-            if (appsOpen && appsModel != null) dev.jellystructure.ravilo.ui.apps.AppsFlow(appsModel, onExit = { appsOpen = false }, topBar = null)
+            if (appsOpen && appsModel != null) dev.jellystructure.ravilo.ui.apps.AppsFlow(appsModel, onExit = { appsOpen = false }, topBar = null, backHintKey = "apps.back_to_setup")
             else ServerSetupScreen(
                 notice = if (signedOutEveryone) str("toast.signed_out_all") else null,
                 initialAddress = lastAddress,

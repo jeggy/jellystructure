@@ -150,7 +150,7 @@ fun TvSignInScreen(
             if (signedIn == null) Row(
                 Modifier.height(84.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                horizontalArrangement = Arrangement.spacedBy(24.dp),
             ) {
                 if (unreachable) RaviloButton(
                     label = str("action.retry"), focusRequester = retryFR, style = ButtonStyle.PRIMARY,

@@ -116,6 +116,18 @@ class AppsScreensTest {
         assertEquals(1, seeAll)
     }
 
+    // FR-12 (DEB-4912 amendment, DEB-5063) — the hint names where Back goes: server setup from there, sign-in by default.
+    @Test fun `the no-bar Back hint names server setup when Apps was opened from it and sign-in otherwise`() = runComposeUiTest {
+        setContent { AppsFlow(model(Apps(TV)), onExit = {}, topBar = null, backHintKey = "apps.back_to_setup") }
+        onNodeWithText("Back returns to server setup").assertIsDisplayed()
+        onAllNodesWithText("Back returns to sign-in").assertCountEquals(0)
+    }
+
+    @Test fun `the no-bar Back hint defaults to sign-in`() = runComposeUiTest {
+        setContent { AppsFlow(model(Apps(TV)), onExit = null, topBar = null) }
+        onNodeWithText("Back returns to sign-in").assertIsDisplayed()
+    }
+
     // FR-11/FR-14 — the pinned apps sit between the stock home and See all apps, and opening one launches it.
     @Test fun `a pinned app is a tile on Apps and opens its app`() = runComposeUiTest {
         val platform = Apps(TV)
