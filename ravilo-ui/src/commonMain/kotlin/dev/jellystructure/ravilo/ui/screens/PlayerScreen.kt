@@ -477,6 +477,7 @@ fun PlayerScreen(
             .fillMaxSize()
             .background(playerBackdropColor)
             .wakeOnPointerMove { s.wake(); s.pointerActivityRevision++ }
+            .stillWatchingInput()   // DEB-5843 (FR-2) — observes; consumes nothing
             .playerBackGesture(onBack = { s.playerBack() })
             .dpadFocusable(
                 focusRequester = s.playerFR,
@@ -518,8 +519,11 @@ private fun PlayerScreenEffects(s: PlayerScreenState) {
     // R155 → R354 (FR-R354-3/-4) — remote commands (the Jellyfin dashboard via 299's bridge, Home Assistant, a phone remote)
     // drive this player as its own controls do, while it is composed — which is itself R155's "ignore when no player is open"
     // (with none, music takes the command). Set, not toggle, so a stale/duplicate command is idempotent.
+    val stillWatching = LocalStillWatching.current
+    s.stillWatching = stillWatching
     RemoteVideoCommands(
         player = s.player,
+        onInput = stillWatching::onInput,   // DEB-5843 (FR-2) — a person sent it
         isPlaying = { s.isPlaying },
         togglePlay = { s.togglePlay() },
         seekTo = { ms -> s.seekTo(ms) },
@@ -534,14 +538,14 @@ private fun PlayerScreenEffects(s: PlayerScreenState) {
     // bars' handler in RaviloApp has no bar to drive here. Nothing sends the command on the other platforms.
     LaunchedEffect(Unit) {
         dev.jellystructure.ravilo.ui.components.AppCommands.requests.collect {
-            if (it == dev.jellystructure.ravilo.ui.components.AppCommand.PLAY_PAUSE) s.onMediaKey(MediaKey.PLAY_PAUSE)
+            if (it == dev.jellystructure.ravilo.ui.components.AppCommand.PLAY_PAUSE) { stillWatching.onInput(); s.onMediaKey(MediaKey.PLAY_PAUSE) }
         }
     }
     // R380 (FR-R380-7) — a cast remote's view of this player (TV only).
     if (isTvPlatform) SideEffect { s.bindCastSource() }
     CastChannelVideoHost(itemId, s.castSource)
 
-    LaunchedEffect(itemId) { s.startItem() }
+    LaunchedEffect(itemId) { stillWatching.onPlayStarted(itemId); s.startItem() }   // DEB-5843 (FR-1) — a start the app did not advance to is a hand-start
     // R182 — resolve skip behaviour in parallel with session start (not blocking playback start on an extra round-trip).
     // Falls back to the current (previous episode's, or the DEFAULT_SKIP_SECS-seeded) values on failure — never blocks or
     // breaks playback.

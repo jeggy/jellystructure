@@ -465,6 +465,14 @@
   "player.now_showing": "Now showing",
   "player.last_used": "Last used",
   "player.back": "Back",
+  "player.still_watching": {
+    "text": "Are you still watching?",
+    "note": "DEB-5843 — the Are-you-still-watching card (FR-8)."
+  },
+  "player.continue_watching": {
+    "text": "Continue watching",
+    "note": "DEB-5843 — the Are-you-still-watching card (FR-8)."
+  },
   "player.variant_plain": "The full version of everything spoken.",
   "player.variant_sdh": "Adds speaker names and sound-effect notes.",
   "player.variant_forced": "Only the on-screen text and foreign lines.",
@@ -678,6 +686,10 @@
   "receiver.starts_in": {
     "text": "Starts in {n} s",
     "note": "R245 — the Chromecast/Tizen next-up countdown. {n} is whole seconds."
+  },
+  "receiver.still_watching_hint": {
+    "text": "Press play to keep watching",
+    "note": "DEB-5843 — the Are-you-still-watching card (FR-8)."
   },
   "receiver.setup_title": {
     "text": "Where is Ravilo?",

@@ -1174,6 +1174,7 @@ fun RaviloApp(
         // DEB-3984 (FR-12) — Surprise me. [shown] is the run so far (empty from the bar's pill); the server answers one title
         // outside it. [replace] is Another one: it swaps the page it was pressed on, so one Back still returns to where the
         // pill was pressed. A 204 says so and stays put; so does any failure, quietly. One ask at a time.
+        val stillWatchingTracker = remember { dev.jellystructure.ravilo.ui.screens.StillWatchingTracker(tvClass = isTvPlatform) }
         val surpriseNone = str("surprise.none")
         var surpriseAsking by remember { mutableStateOf(false) }
         // DEB-4280 — the page Another one just opened opens with focus on Another one (the detail screen spends the mark).
@@ -3130,7 +3131,8 @@ fun RaviloApp(
                     onDispose { dev.jellystructure.ravilo.ui.screens.SessionVideoTracks.place = null }
                 }
                 // R343 (FR-R343-5) — the next-up card says *UP NEXT · SHUFFLED* while a shuffle has a next entry.
-                CompositionLocalProvider(dev.jellystructure.ravilo.ui.screens.LocalShuffledNextUp provides (dest.shufflePlan != null || dest.shuffledNextUp),
+                CompositionLocalProvider(dev.jellystructure.ravilo.ui.screens.LocalStillWatching provides stillWatchingTracker,   // DEB-5843 (FR-3) — the app's, so a binge shares it across replaceTop
+                    dev.jellystructure.ravilo.ui.screens.LocalShuffledNextUp provides (dest.shufflePlan != null || dest.shuffledNextUp),
                     dev.jellystructure.ravilo.ui.screens.LocalNothingFollows provides dest.nothingFollows,
                     // DEB-4072 (FR-16) — casting needs the server; from a download the cast button is absent, never broken.
                     LocalCast provides (if (dest.fromDownload) null else LocalCast.current)) {

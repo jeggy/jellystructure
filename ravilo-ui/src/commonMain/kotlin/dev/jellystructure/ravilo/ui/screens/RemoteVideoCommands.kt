@@ -33,6 +33,7 @@ import kotlinx.coroutines.launch
 @Composable
 internal fun RemoteVideoCommands(
     player: RaviloPlayer,
+    onInput: () -> Unit,
     isPlaying: () -> Boolean,
     togglePlay: () -> Unit,
     seekTo: (Long) -> Unit,
@@ -41,6 +42,7 @@ internal fun RemoteVideoCommands(
     next: () -> Unit,
     previous: () -> Unit,
 ) {
+    val touched by rememberUpdatedState(onInput)
     val playing by rememberUpdatedState(isPlaying)
     val onToggle by rememberUpdatedState(togglePlay)
     val seek by rememberUpdatedState(seekTo)
@@ -66,7 +68,7 @@ internal fun RemoteVideoCommands(
             // DEB-2961 (one-remote FR-2, FR-14) — the S · M · L the cast road already applies (`bindCastSource.setSubSize`).
             override fun setSubtitleSize(size: String) { SessionVideoTracks.source?.setSubSize?.invoke(size.firstOrNull()?.takeIf { it in "SML" } ?: 'M') }
         }
-        val detach = RemoteControl.attachVideo(remote)
+        val detach = RemoteControl.attachVideo(inputCounting(remote) { touched() })
         onDispose { detach() }
     }
 }
@@ -232,4 +234,31 @@ internal fun CastChannelVideoHost(itemId: String, source: CastVideoSource) {
         val reporting = SessionVideoTracks.report(itemId, source)
         onDispose { detach(); reporting.cancel(); if (SessionVideoTracks.source === source) SessionVideoTracks.source = null }
     }
+}
+
+/**
+ * DEB-5843 (FR-2) — a remote command is input: a person sent it (a phone remote, the Jellyfin dashboard, Home Assistant),
+ * so every command the player obeys first calls [onInput]. A wrapper rather than a line in each method, so a command added
+ * to [RemotePlayer] later is counted without anyone remembering to.
+ */
+internal fun inputCounting(inner: RemotePlayer, onInput: () -> Unit): RemotePlayer = object : RemotePlayer by inner {
+    override fun play() { onInput(); inner.play() }
+    override fun pause() { onInput(); inner.pause() }
+    override fun toggle() { onInput(); inner.toggle() }
+    override fun stop() { onInput(); inner.stop() }
+    override fun seekTo(positionMs: Long) { onInput(); inner.seekTo(positionMs) }
+    override fun seekBy(deltaMs: Long) { onInput(); inner.seekBy(deltaMs) }
+    override fun next() { onInput(); inner.next() }
+    override fun previous() { onInput(); inner.previous() }
+    override fun setVolume(level: Float, muted: Boolean) { onInput(); inner.setVolume(level, muted) }
+    override fun jump(index: Int) { onInput(); inner.jump(index) }
+    override fun setShuffle(on: Boolean) { onInput(); inner.setShuffle(on) }
+    override fun setRepeat(mode: String) { onInput(); inner.setRepeat(mode) }
+    override fun selectAudio(index: Int) { onInput(); inner.selectAudio(index) }
+    override fun selectSubtitle(index: Int) { onInput(); inner.selectSubtitle(index) }
+    override fun setSubtitleSize(size: String) { onInput(); inner.setSubtitleSize(size) }
+    override fun queueAdd(trackId: String) { onInput(); inner.queueAdd(trackId) }
+    override fun queuePlayNext(trackId: String) { onInput(); inner.queuePlayNext(trackId) }
+    override fun queueMove(index: Int, to: Int) { onInput(); inner.queueMove(index, to) }
+    override fun queueRemove(index: Int) { onInput(); inner.queueRemove(index) }
 }

@@ -145,6 +145,9 @@ internal class PlayerScreenState(initial: PlayerScreenInputs) {
     val player = RaviloPlayer()
     val bk = PlayerBookkeeping(initial.castLink)
     val playerFR = FocusRequester()
+
+    /** DEB-5843 — the app-run "Are you still watching?" state, set by the screen's effects; plain, never read in composition. */
+    var stillWatching: StillWatchingTracker = StillWatchingTracker(tvClass = false)
     /** R380 (FR-R380-7) — a cast remote's view of this player (TV only): fields, not parameters (R258). */
     val castSource = CastVideoSource()
 
