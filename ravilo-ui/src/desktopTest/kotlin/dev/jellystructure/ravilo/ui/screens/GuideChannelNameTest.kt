@@ -34,6 +34,8 @@ class GuideChannelNameTest {
     @Test fun `a long radio name is one ellipsized line`() {
         val r = layout("Abcdefghij Klmnopqrst", isRadio = true)
         assertEquals(1, r.lineCount)
+        // Unfixed, Compose wraps at the space and the line ends at 10; fixed, the second word starts to show (12).
+        assertTrue(r.getLineEnd(0, true) > "Abcdefghij ".length, "the second word starts to show")
         assertTrue(r.getLineEnd(0, true) < "Abcdefghij Klmnopqrst".length, "the line is cut")
     }
 
