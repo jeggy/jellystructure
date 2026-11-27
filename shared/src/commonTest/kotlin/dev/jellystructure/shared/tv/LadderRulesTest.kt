@@ -190,7 +190,7 @@ class LadderRulesTest {
         assertEquals(700_000L, LadderRules.estimateStepDown(b1, 3_189_074L, 390_000L, 5, 400L))
     }
 
-    @Test fun `no estimate step down on a young estimate, a full buffer or a rung already under the line`() {
+    @Test fun `no estimate step down on a young estimate or a full buffer or a rung already under the line`() {
         assertNull(LadderRules.estimateStepDown(b1, 3_189_074L, 1_000_000L, 2, 400L))
         assertNull(LadderRules.estimateStepDown(b1, 3_189_074L, 1_000_000L, 5, 20_000L))
         assertNull(LadderRules.estimateStepDown(b1, 700_000L, 1_000_000L, 5, 400L))
@@ -203,7 +203,7 @@ class LadderRulesTest {
         assertEquals(700_000L, LadderRules.estimateStepDown(b1, 3_189_074L, 800_000L, 8, 400L))
     }
 
-    @Test fun `a stall caps one rung down, and nothing below the lowest`() {
+    @Test fun `a stall caps one rung down and nothing below the lowest`() {
         assertEquals(2_440_000L, LadderRules.stallCapBps(b1, 3_189_074L))
         assertEquals(700_000L, LadderRules.stallCapBps(b1, 1_160_000L))
         assertNull(LadderRules.stallCapBps(b1, 700_000L))
