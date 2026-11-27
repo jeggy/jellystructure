@@ -48,6 +48,36 @@ class CastRecoveryTest {
         assertEquals(CastFrozenAction.RECOVER_STUCK, action(30_000, 0))
     }
 
+    @Test fun `a stop with nothing to play is a delivery wait whatever buffered reads and a playable one is frozen`() {
+        fun action(readyState: Int, ahead: Long, ms: Long = 1_000L) =
+            castFrozenAction(12_000, 12_000, 1_000, 1_000 + ms, ahead, true, false, false, true, readyState)
+        assertEquals(CastFrozenAction.COUNT_FROZEN, action(4, 6_000))
+        assertEquals(CastFrozenAction.COUNT_DELIVERY, action(1, 6_000))
+        assertEquals(CastFrozenAction.COUNT_DELIVERY, action(2, 6_000))
+        assertEquals(CastFrozenAction.NONE, action(4, 1_000), "playable with little buffered is neither")
+        assertEquals(CastFrozenAction.NONE, action(2, 6_000, 999), "a delivery wait counts from one second")
+        assertEquals(CastFrozenAction.COUNT_DELIVERY, action(2, 6_000, 20_000), "no frozen recovery at five seconds for a delivery wait")
+        assertEquals(CastFrozenAction.RECOVER_STUCK, action(2, 6_000, 30_000), "the 30 s backstop is unchanged")
+        assertEquals(CastFrozenAction.COUNT_FROZEN, action(-1, 6_000), "an unreadable element is classed as before")
+    }
+
+    @Test fun `a freeze takes our encoder then Jellyfin then the error for any stream`() {
+        assertEquals(CastRecoveryStep.OURS_AGAIN, castFrozenRecoveryStep(askedOursAgain = false, askedJellyfin = false))
+        assertEquals(CastRecoveryStep.JELLYFIN, castFrozenRecoveryStep(askedOursAgain = true, askedJellyfin = false))
+        assertEquals(CastRecoveryStep.GIVE_UP, castFrozenRecoveryStep(askedOursAgain = true, askedJellyfin = true))
+        // An error after the first picture keeps its rule: a stream from Jellyfin that failed ends on the error.
+        assertEquals(CastRecoveryStep.GIVE_UP, castRecoveryStep(ours = false, askedOursAgain = false, askedJellyfin = false))
+    }
+
+    @Test fun `a delivery wait still open at four seconds asks on a rung with no lower choice`() {
+        fun open(ms: Long, rungs: List<Long> = listOf(2_000_000)) =
+            castShouldAskForLadder(rungs, 2_000_000, listOf(stall(20_000, ms)), false)
+        assertTrue(open(4_000))
+        assertFalse(open(3_900))
+        assertFalse(open(4_000, listOf(1_000_000, 2_000_000)), "a lower rung is listed")
+        assertFalse(castShouldAskForLadder(listOf(2_000_000), 2_000_000, listOf(stall(20_000, 4_000)), true), "once per item")
+    }
+
     @Test fun `a pause seek recovery first frame or moving clock suppresses the watch`() {
         val base = castFrozenAction(12_000, 12_000, 1_000, 31_000, 40_000, true, false, false, true)
         assertEquals(CastFrozenAction.RECOVER_STUCK, base)

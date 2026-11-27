@@ -36,6 +36,17 @@ internal object ReceiverAbr {
         return ((read() as? Number)?.toDouble() ?: -1.0).toLong()
     }
 
+    /** DEB-5928 — the same element's `readyState` (2 or less: nothing to play past the frame on screen); -1 = unreadable. */
+    fun readyState(): Int {
+        val read: dynamic = js("""(function () {
+          var p = document.querySelector('cast-media-player');
+          var v = (p && p.shadowRoot) ? p.shadowRoot.querySelector('video') : null;
+          v = v || document.querySelector('video');
+          return v ? v.readyState : -1;
+        })""")
+        return (read() as? Number)?.toInt() ?: -1
+    }
+
     /** Set from each ticket: on our own encoder every rung is running, so a climb needs only the stock buffer. */
     var oursEncoder: Boolean = false
 

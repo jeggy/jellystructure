@@ -66,16 +66,25 @@ fun castRecoveryRetryMs(failedCalls: Int): Long? = CastRecovery.RETRY_MS.getOrNu
 /** FR-5 — whether the receiver's buffering view should be on screen: only after the wait has lasted [CastRecovery.DRAW_AFTER_MS]. */
 fun castDrawsBuffering(bufferingForMs: Long): Boolean = bufferingForMs >= CastRecovery.DRAW_AFTER_MS
 
-/** DEB-4637 (DEB-2205 FR-5) — the receiver's frozen-picture watch, sampled once a second. */
-enum class CastFrozenAction { NONE, COUNT_FROZEN, RECOVER_FROZEN, RECOVER_STUCK }
+/**
+ * DEB-4637 (DEB-2205 FR-5) — the receiver's frozen-picture watch, sampled once a second. DEB-5928: [COUNT_DELIVERY] is a stop while the
+ * video element has nothing to play past the frame on screen, whatever `buffered` reads.
+ */
+enum class CastFrozenAction { NONE, COUNT_FROZEN, RECOVER_FROZEN, RECOVER_STUCK, COUNT_DELIVERY }
 
+/**
+ * [readyState] is the video element's (`HAVE_FUTURE_DATA` = 3, `HAVE_ENOUGH_DATA` = 4); a negative value means it could not be read
+ * and the stop is classed as before. CAF's `BUFFERING` is not used: it also covers DEB-4636's clock stopped with a full buffer.
+ */
 fun castFrozenAction(
     positionMs: Long, lastPositionMs: Long, lastMoveAtMs: Long, nowMs: Long, bufferedAheadMs: Long,
     wantsPlay: Boolean, seeking: Boolean, recovering: Boolean, firstFrameSeen: Boolean,
+    readyState: Int = 4,
 ): CastFrozenAction {
     if (!wantsPlay || seeking || recovering || !firstFrameSeen || positionMs != lastPositionMs) return CastFrozenAction.NONE
     val stillMs = (nowMs - lastMoveAtMs).coerceAtLeast(0)
     if (stillMs >= 30_000L) return CastFrozenAction.RECOVER_STUCK
+    if (readyState in 0..2) return if (stillMs >= 1_000L) CastFrozenAction.COUNT_DELIVERY else CastFrozenAction.NONE
     if (bufferedAheadMs < 3_000L) return CastFrozenAction.NONE
     return when {
         stillMs >= 5_000L -> CastFrozenAction.RECOVER_FROZEN
@@ -83,6 +92,13 @@ fun castFrozenAction(
         else -> CastFrozenAction.NONE
     }
 }
+
+/**
+ * DEB-5928 (DEB-2205 FR-5) — the steps of a `frozen` or `encoder_stuck` recovery are per item, whoever served the stream that froze:
+ * our encoder first, Jellyfin second, then the error. [castRecoveryStep] keeps deciding errors, where a stream from Jellyfin ends.
+ */
+fun castFrozenRecoveryStep(askedOursAgain: Boolean, askedJellyfin: Boolean): CastRecoveryStep =
+    castRecoveryStep(ours = true, askedOursAgain = askedOursAgain, askedJellyfin = askedJellyfin)
 
 /** Master BANDWIDTH includes audio and overhead; the restream cap is video bits/s. */
 fun castFrozenVideoCap(rungsBps: List<Long>, frozenBps: Long?, deviceMaxVideo: Int): Int {

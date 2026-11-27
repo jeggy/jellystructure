@@ -19,6 +19,7 @@ import dev.jellystructure.shared.tv.castShouldAskForLadder
 import dev.jellystructure.shared.tv.castStartFailureStatus
 import dev.jellystructure.shared.tv.CastFrozenAction
 import dev.jellystructure.shared.tv.castFrozenAction
+import dev.jellystructure.shared.tv.castFrozenRecoveryStep
 import dev.jellystructure.shared.tv.castFrozenVideoCap
 import dev.jellystructure.shared.tv.castDrawsBuffering
 import dev.jellystructure.shared.tv.castRecoveryRetryMs
@@ -162,6 +163,7 @@ private class Receiver {
     private var qoeSeeking = false
     private val qoeCounts = CastQoeCounters()
     private var qoeRebufferFrom = -1L
+    private var qoeRebufferByWatch = false  // DEB-5928 — the wait was opened by the frozen watch, not by CAF's BUFFERING
     private var qoeFrozenFrom = -1L
     private var qoeFrozenPosition = 0L
     private var qoeFrozenAhead = 0L
@@ -1662,12 +1664,25 @@ private class Receiver {
         val recovering = recoverJob?.isActive == true || recoveryFrom >= 0
         if (pos != frozenLastPosition || !wantsPlay || qoeSeeking || recovering || !qoePlayed) {
             finishFrozen(now)
+            if (qoeRebufferByWatch && (pos != frozenLastPosition || recovering)) endRebuffer(now)
             frozenLastPosition = pos; frozenLastMoveAt = now
             return
         }
         val ahead = ReceiverAbr.bufferedAheadMs()
-        val action = castFrozenAction(pos, frozenLastPosition, frozenLastMoveAt, now, ahead, wantsPlay, qoeSeeking, recovering, qoePlayed)
-        if (action == CastFrozenAction.NONE) { finishFrozen(now); return }
+        val readyState = ReceiverAbr.readyState()
+        val action = castFrozenAction(pos, frozenLastPosition, frozenLastMoveAt, now, ahead, wantsPlay, qoeSeeking, recovering, qoePlayed, readyState)
+        if (action == CastFrozenAction.NONE) { finishFrozen(now); if (qoeRebufferByWatch) endRebuffer(now); return }
+        if (action == CastFrozenAction.COUNT_DELIVERY) {
+            // DEB-5928 — nothing to play past this frame: a delivery wait, whatever `buffered` reads. One wait, never two.
+            finishFrozen(now)
+            if (qoeRebufferFrom < 0) {
+                openRebuffer(frozenLastMoveAt, byWatch = true)
+                note("DEB-5928: delivery wait at ${pos}ms, readyState $readyState, ${ahead}ms buffered ahead")
+            }
+            askLadderOnOpenWait(now)
+            return
+        }
+        if (qoeRebufferByWatch) endRebuffer(now)
         if (action == CastFrozenAction.COUNT_FROZEN || action == CastFrozenAction.RECOVER_FROZEN) {
             if (qoeFrozenFrom < 0) {
                 val stats: dynamic = runCatching { playerManager.getStats() }.getOrNull()
@@ -1680,6 +1695,7 @@ private class Receiver {
         }
         if (action == CastFrozenAction.RECOVER_FROZEN || action == CastFrozenAction.RECOVER_STUCK) {
             finishFrozen(now)
+            if (action == CastFrozenAction.RECOVER_STUCK) qoeRebufferFrom = -1L
             if (!recover(if (action == CastFrozenAction.RECOVER_FROZEN) "frozen" else "encoder_stuck")) {
                 stopSession(); failed()
             }
@@ -1716,8 +1732,13 @@ private class Receiver {
         val ours = t.encoder == "ours" && !t.directPlay
         // A delivery stall asks for a new ladder even when the failed path was Jellyfin's single stream.
         val toLadder = reason == "stall_to_ladder"
-        val step = if (toLadder) CastRecoveryStep.OURS_AGAIN
-            else castRecoveryStep(ours, oursAskedAgainFor == d.itemId, jellyfinAskedFor == d.itemId)
+        // DEB-5928 — a freeze takes the three steps per item on any stream; an error keeps castRecoveryStep (a Jellyfin stream ends).
+        val froze = reason == "frozen" || reason == "encoder_stuck"
+        val step = when {
+            toLadder -> CastRecoveryStep.OURS_AGAIN
+            froze -> castFrozenRecoveryStep(oursAskedAgainFor == d.itemId, jellyfinAskedFor == d.itemId)
+            else -> castRecoveryStep(ours, oursAskedAgainFor == d.itemId, jellyfinAskedFor == d.itemId)
+        }
         if (step == CastRecoveryStep.GIVE_UP) return false
         if (toLadder) ladderAskedFor = d.itemId
         else if (step == CastRecoveryStep.JELLYFIN) { jellyfinAskedFor = d.itemId; notOursFor = d.itemId }
@@ -1726,7 +1747,7 @@ private class Receiver {
         val stats: dynamic = runCatching { playerManager.getStats() }.getOrNull()
         recoveryFrom = nowMs(); recoveryReason = reason
         recoveryRung = ((stats?.height as? Number)?.toInt()?.takeIf { it > 0 }) to qoeVariantBps
-        if (reason == "frozen" || reason == "encoder_stuck") {
+        if (froze) {
             val cap = castFrozenVideoCap(frozenMasterRungs, recoveryRung.second ?: t.startVariantBps, capabilities().maxVideoBitrate)
             frozenCapVideo = frozenCapVideo?.let { minOf(it, cap) } ?: cap
         }
@@ -1783,43 +1804,72 @@ private class Receiver {
         postQoe()
     }
 
+    /** 308 (FR-308-5) — a delivery wait opens at [from]; [byWatch] = DEB-5928's frozen watch saw it before CAF said `BUFFERING`. */
+    private fun openRebuffer(from: Long, byWatch: Boolean) {
+        qoeRebufferFrom = from
+        qoeRebufferByWatch = byWatch
+        qoeRebufferPosition = positionMs
+        qoeRebufferAhead = ReceiverAbr.bufferedAheadMs()
+        val stats: dynamic = runCatching { playerManager.getStats() }.getOrNull()
+        qoeRebufferRung = ((stats?.height as? Number)?.toInt()?.takeIf { it > 0 }) to
+            (qoeVariantBps ?: (stats?.streamBandwidth as? Number)?.toLong())
+    }
+
+    /** The delivery wait open since [qoeRebufferFrom], closed at [now], as the stall it is. */
+    private fun rebufferStall(now: Long): QoeStall {
+        val after = (qoeRebufferFrom - qoeLoadAt - (qoeFirstFrameMs ?: 0L)).coerceAtLeast(0)
+        return QoeStall(
+            afterFirstFrameMs = after, positionMs = qoeRebufferPosition, bufferedMs = qoeRebufferAhead,
+            durationMs = (now - qoeRebufferFrom).coerceAtLeast(0), phase = if (after < 10_000L) "start" else "mid",
+            cause = QoeStallCause.BUFFER_EMPTY, bufferAheadMs = qoeRebufferAhead,
+            variantBps = qoeRebufferRung.second, rungHeight = qoeRebufferRung.first, rungBps = qoeRebufferRung.second,
+        )
+    }
+
+    private fun rebufferPlayingBps(): Long? = qoeRebufferRung.second ?: ticket?.startVariantBps ?: frozenMasterRungs.singleOrNull()
+
+    /** 308 (FR-308-5) — the delivery wait, if one is open, ends at [now]: counted, recorded as a stall of a second or more, and asked about (DEB-4541 FR-4). */
+    private fun endRebuffer(now: Long) {
+        if (qoeRebufferFrom < 0) return
+        val duration = (now - qoeRebufferFrom).coerceAtLeast(0)
+        if (qoeFrozenFrom < 0) {
+            qoeCounts.rebuffers++; qoeCounts.rebufferMs += duration
+        }
+        if (duration >= 1_000L && qoeFrozenFrom < 0) {
+            qoeCounts.stalls += rebufferStall(now)
+            val playingBps = rebufferPlayingBps()
+            val ask = castShouldAskForLadder(frozenMasterRungs, playingBps, qoeCounts.stalls, ladderAskedFor == qoeItem)
+            // The existing handover fact is written synchronously by the QoE route, including for a video copy.
+            if (ask) qoeStalledBps = playingBps?.takeIf { it > 0 }
+            // DEB-5927 (FR-7) — a delivery stall caps the play one rung down at once, when the master has a rung below.
+            ReceiverAbr.onStall()
+            qoeRebufferFrom = -1L; qoeRebufferByWatch = false
+            postQoe()
+            if (ask) recover("stall_to_ladder")
+        }
+        qoeRebufferFrom = -1L; qoeRebufferByWatch = false
+    }
+
+    /**
+     * DEB-5928 (DEB-4541 FR-4) — a delivery wait still open at 4 s on a rung with no lower choice asks for a ladder now, as a stall of
+     * the length it has reached; the rest of the wait is the recovery's own entry. Returns true when it asked.
+     */
+    private fun askLadderOnOpenWait(now: Long): Boolean {
+        if (qoeRebufferFrom < 0 || qoeFrozenFrom >= 0) return false
+        val open = rebufferStall(now)
+        if (open.durationMs < 4_000L) return false
+        if (!castShouldAskForLadder(frozenMasterRungs, rebufferPlayingBps(), qoeCounts.stalls + open, ladderAskedFor == qoeItem)) return false
+        endRebuffer(now)
+        return true
+    }
+
     /** 308 (FR-308-5) — a stall after the first frame, not one a seek asked for, counts as a rebuffer. */
     private fun qoeState(st: String) {
         if (qoeItem == null || music) return
         when (st) {
-            "BUFFERING" -> if (qoePlayed && !qoeSeeking && qoeRebufferFrom < 0 && qoeFrozenFrom < 0) {
-                qoeRebufferFrom = nowMs()
-                qoeRebufferPosition = positionMs
-                qoeRebufferAhead = ReceiverAbr.bufferedAheadMs()
-                val stats: dynamic = runCatching { playerManager.getStats() }.getOrNull()
-                qoeRebufferRung = ((stats?.height as? Number)?.toInt()?.takeIf { it > 0 }) to
-                    (qoeVariantBps ?: (stats?.streamBandwidth as? Number)?.toLong())
-            }
+            "BUFFERING" -> if (qoePlayed && !qoeSeeking && qoeRebufferFrom < 0 && qoeFrozenFrom < 0) openRebuffer(nowMs(), byWatch = false)
             "PLAYING" -> {
-                if (qoeRebufferFrom >= 0) {
-                    val duration = (nowMs() - qoeRebufferFrom).coerceAtLeast(0)
-                    if (qoeFrozenFrom < 0) {
-                        qoeCounts.rebuffers++; qoeCounts.rebufferMs += duration
-                    }
-                    if (duration >= 1_000L && qoeFrozenFrom < 0) {
-                        val after = (qoeRebufferFrom - qoeLoadAt - (qoeFirstFrameMs ?: 0L)).coerceAtLeast(0)
-                        qoeCounts.stalls += QoeStall(
-                            afterFirstFrameMs = after, positionMs = qoeRebufferPosition, bufferedMs = qoeRebufferAhead,
-                            durationMs = duration, phase = if (after < 10_000L) "start" else "mid",
-                            cause = QoeStallCause.BUFFER_EMPTY, bufferAheadMs = qoeRebufferAhead,
-                            variantBps = qoeRebufferRung.second, rungHeight = qoeRebufferRung.first, rungBps = qoeRebufferRung.second,
-                        )
-                        val playingBps = qoeRebufferRung.second ?: ticket?.startVariantBps ?: frozenMasterRungs.singleOrNull()
-                        val ask = castShouldAskForLadder(frozenMasterRungs, playingBps, qoeCounts.stalls, ladderAskedFor == qoeItem)
-                        // The existing handover fact is written synchronously by the QoE route, including for a video copy.
-                        if (ask) qoeStalledBps = playingBps?.takeIf { it > 0 }
-                        // DEB-5927 (FR-7) — a delivery stall caps the play one rung down at once, when the master has a rung below.
-                        ReceiverAbr.onStall()
-                        postQoe()
-                        if (ask) recover("stall_to_ladder")
-                    }
-                    qoeRebufferFrom = -1L
-                }
+                endRebuffer(nowMs())
                 if (!qoePlayed && qoeFirstFrameMs == null && qoeLoadAt > 0) qoeFirstFrameMs = (nowMs() - qoeLoadAt).coerceAtLeast(0)   // 309a0
                 qoePlayed = true; qoeEverPlayed = true; qoeSeeking = false
                 finishRecovery()
