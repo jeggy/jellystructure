@@ -123,3 +123,69 @@ Rejected:
 5. **Watched, not assumed.** After it lands, the CI watch records each `ci / e2e` or `publish` failure whose
    cause is an upstream 5xx on this row. If a sighting comes back (an outage longer than FR-1's bound), this
    spec gets a dated amendment with the measured outage length. The bound is not silently widened.
+
+## Amendment, 2026-11-27 — a plugin that will not resolve (DEB-5946)
+
+> CI watch (DEB-5945 → DEB-5946): Publish `45514238176` (`ee9b43002`), `45603662095` (`432f7923d`) and
+> `45985231412` (`106f57b9c`) each failed `ci / e2e` in the app `Dockerfile`'s fetch step, with
+> `Plugin [id: 'app.cash.sqldelight', version: '2.0.2'] was not found … could not resolve plugin artifact`.
+> No `retry-transient:` line appears in any of the three logs. Later runs passed with no change.
+
+**What the three logs show (read 2026-11-27).**
+
+- **Gradle's own retry ran, and the outer retry never did.** In each log the build reaches its first
+  plugin resolution about 20 s in, prints nothing more for 249–250 s, and then fails. That is two repositories ×
+  this spec's raised Gradle retry: 6 attempts with the pause doubling from 4 s is about 124 s each. Google is
+  content-filtered out for this group, so the two are the Plugin Portal and Maven Central, and the Portal answers
+  this marker with a `303` to `repo.maven.apache.org`, so both are the same host. A missing artifact answers
+  `404` at once and Gradle does not retry it. A four-minute silence therefore means the requests kept failing
+  in a way Gradle counts as retryable, for longer than about four minutes, on three separate days.
+- **The cause never reaches the log, so FR-3 does not hold here.** Gradle's plugin resolver reports a failed
+  marker as `could not resolve plugin artifact` and drops the underlying error. The 5xx, the timeout or the
+  `429` it retried does not appear in the output. `retry-transient.sh` (FR-1) and the init script's rethrow both
+  match on that underlying error, so they see nothing transient and exit on the first attempt. FR-3 promised
+  that when downloads fail, the log shows the upstream error the last attempt saw. For a plugin, it shows none.
+- **Why it is always `app.cash.sqldelight` is not known.** It is the third entry in the root `plugins {}` block,
+  after two Kotlin plugins on the same host that resolved. The logs cannot tell a short outage from per-client
+  throttling. This amendment's FR-6 is what makes the fourth sighting answer that.
+
+**The trade-off the CI watch asked about.** One option is to count the bare `could not resolve plugin artifact`
+as transient. That breaks FR-2: a mistyped plugin id or version prints exactly that message. It would fail
+after about 20 s, then be re-run twice behind 30 s and 90 s pauses, and go red after roughly three minutes
+instead of twenty seconds, looking like flake. **Rejected.** A broken build script must still fail on its first
+attempt. The fix has to show the cause, not loosen the match.
+
+**FR-1, amended.** The transient errors are an HTTP 5xx, an HTTP `429 Too Many Requests`, a connect or read
+timeout, and a reset connection. A `429` asks the client to try again later by definition, and a mistyped
+coordinate never produces one. The bound and the pauses are unchanged.
+
+**FR-6 — A plugin is a download like any other.** The plugins the builds apply through `plugins {}` blocks are
+resolved in the fetch step, the plugin markers and the artifacts behind them (`libs.versions.toml`'s `[plugins]`,
+and the settings plugin). FR-1 to FR-4 apply to them as to any other download:
+- a transient upstream error while resolving one is retried under FR-1's bound, and each retry prints the FR-4 line;
+- a plugin id or version that does not exist fails on the first attempt, as FR-2 requires, in about the time it
+  takes today;
+- when the retries run out, the log shows the upstream error the last attempt saw (FR-3), not only
+  `could not resolve plugin artifact`.
+
+**Recommended approach (the build's call).** Check first whether the cause survives in Gradle 9.2.1's
+`--stacktrace` output for a plugin-resolution failure. If it does, running the fetch step with `--stacktrace`
+is the whole fix, and the existing pattern then matches. If it does not, which is the expected answer because the
+resolver turns the failure into a "not found" result, the init script resolves the markers itself before the
+root `plugins {}` block does. In `settingsEvaluated`, it resolves each `[plugins]` entry's
+`<id>:<id>.gradle.plugin:<version>` through a detached configuration over `pluginManagement`'s repositories, and
+calls `rethrowFailure()` so the real error reaches the log. The markers are then in the cache when the plugins
+block runs. Add `429` to both patterns (`retry-transient.sh` and `fetch-dependencies.init.gradle`), and add it to
+Acceptance 1's local test. Rejected: running the fetch step with `--info`. It would put the cause in the log, but
+it adds thousands of lines to every build log, including the green ones.
+
+**Acceptance, added.**
+6. **A mistyped plugin fails once.** A local `./scripts/fetch-dependencies.sh` with a plugin version in
+   `libs.versions.toml` changed to one that does not exist fails on its first attempt, prints no
+   `retry-transient:` line, and names the missing coordinate.
+7. **A plugin behind a transient error is retried, and the error is shown.** The fetch script, run with
+   `pluginManagement` pointed at a local server that answers every request `503` (or `429`), prints FR-4's
+   lines and exits non-zero after the last attempt. The last attempt's `503`/`429` is in the log.
+8. **Watched.** The next sighting on the CI watch quotes the upstream error the log now shows. If it is
+   throttling (`429`), not an outage, that sighting is this spec's next amendment, with the measured length.
+   The bound is not widened silently.
