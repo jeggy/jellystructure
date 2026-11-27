@@ -88,6 +88,27 @@ class MusicStore(private val db: JellystructureDb) {
             }
             out.mapValues { it.value.toList() }
         }
+        /** Each artist's folded song count and own-album count, in one pass over the live tracks and albums (DEB-5847, FR-1). */
+        private val artistCounts: Pair<Map<String, Int>, Map<String, Int>> by lazy {
+            val songSets = HashMap<String, HashSet<String>>()
+            for (t in tracks.values) {
+                if (t.missingSince != null) continue
+                val song = songs.songOf(t)
+                val ids = HashSet<String>()
+                t.artists.forEach { ids.add(it.artistId) }
+                t.albumId?.let { albums[it] }?.albumArtists?.forEach { ids.add(it.artistId) }
+                for (id in ids) songSets.getOrPut(id) { HashSet() }.add(song)
+            }
+            val own = HashMap<String, Int>()
+            for (a in albums.values) {
+                if (a.missingSince != null) continue
+                a.albumArtists.map { it.artistId }.toSet().forEach { own[it] = (own[it] ?: 0) + 1 }
+            }
+            songSets.mapValues { it.value.size } to own
+        }
+        /** Songs an artist is credited on, or that sit on an album they are the album artist of — folded (305 dev review 9). */
+        val songCountByArtist: Map<String, Int> get() = artistCounts.first
+        val ownAlbumCountByArtist: Map<String, Int> get() = artistCounts.second
     }
 
     fun snapshot(): Snapshot = cache.value ?: load().also { cache.value = it }

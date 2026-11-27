@@ -92,6 +92,13 @@ object MusicBrowse {
                  /** Phase 278 (FR-278-14) — the Songs window served, echoed back. Null = the whole list. */
                  val page: Int? = null, val pageSize: Int? = null)
 
+    /** The Albums rows for [ids] only, sorted as `browse(ALBUMS, sort = "year")` sorts them (DEB-5847, FR-2). */
+    fun albumRows(snap: MusicStore.Snapshot, roots: Set<String>, ids: Set<String>): List<MusicAlbumRow> {
+        val ctx = Ctx(snap, roots)
+        return ctx.albums.filter { it.id in ids }
+            .sortedWith(compareByDescending<MusicAlbum> { it.originalYear() ?: 0 }.thenBy { it.title.lowercase() }).map { ctx.albumRow(it) }
+    }
+
     /**
      * One view. [selected] maps a facet key to the values ticked (OR within a facet, AND across facets); [query]
      * matches titles and names, case-insensitively; [sort] applies to albums (`added` · `title` · `year` · `artist`).
@@ -317,19 +324,10 @@ object MusicBrowse {
         )
         }
 
-        fun artistRow(r: MusicArtist): MusicArtistRow {
-            val own = albums.count { a -> a.albumArtists.any { it.artistId == r.id } }
-            return MusicArtistRow(
-                id = r.id, name = r.name, albums = own, songs = songsBy(r.id), match = artistMatch(r),
-                picture = r.imageState != MusicArt.NONE, folder = r.path != null, v = r.updatedAt,
-            )
-        }
-
-        /** Songs an artist is credited on, or that sit on an album they are the album artist of — folded (305 dev
-         *  review 9): a song on the album, a single and a best-of counts once. */
-        fun songsBy(artistId: String): Int = tracks.filter { t ->
-            t.artists.any { it.artistId == artistId } || (t.albumId?.let { snap.albums[it] }?.albumArtists?.any { it.artistId == artistId } == true)
-        }.mapTo(HashSet()) { snap.songs.songOf(it) }.size
+        fun artistRow(r: MusicArtist): MusicArtistRow = MusicArtistRow(
+            id = r.id, name = r.name, albums = snap.ownAlbumCountByArtist[r.id] ?: 0, songs = snap.songCountByArtist[r.id] ?: 0, match = artistMatch(r),
+            picture = r.imageState != MusicArt.NONE, folder = r.path != null, v = r.updatedAt,
+        )
 
         fun songRow(t: MusicTrack, every: Boolean = false): MusicSongRow {
             val album = t.albumId?.let { snap.albums[it] }

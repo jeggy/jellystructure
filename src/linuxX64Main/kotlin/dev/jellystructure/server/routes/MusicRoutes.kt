@@ -419,13 +419,13 @@ fun Route.musicRoutes(configStore: ConfigStore, music: MusicPipeline, appScope: 
             val cfg = configStore.current
             val snap = music.store.snapshot()
             val r = snap.artists[call.parameters["id"]!!] ?: return@get call.respond(HttpStatusCode.NotFound)
-            val browse = MusicBrowse.browse(snap, MusicBrowse.ALBUMS, emptyMap(), null, emptyMap(), "year", dev.jellystructure.music.MusicFlags.roots(cfg))
             val mine = snap.albumsByArtist[r.id].orEmpty().filter { it.missingSince == null }
+            val browse = MusicBrowse.albumRows(snap, dev.jellystructure.music.MusicFlags.roots(cfg), mine.map { it.id }.toSet())
             val own = mine.filter { a -> a.albumArtists.any { it.artistId == r.id } }.map { it.id }.toSet()
             val credited = mine.map { it.id }.toSet() - own
             // Phase 305 (FR-305-15, dev review 2e) — a single or EP living under an album leaves whichever group held it.
             val homed = snap.editions.homes.filterValues { it.albumId != null }.keys
-            val rows = browse.albums.filter { it.id !in homed }
+            val rows = browse.filter { it.id !in homed }
             val genres = r.mbGenres.ifEmpty {
                 mine.filter { it.id in own }.flatMap { it.mbGenres }.groupBy { it.name }
                     .map { (n, v) -> dev.jellystructure.model.MusicGenreVote(n, v.sumOf { it.count }) }.sortedByDescending { it.count }
@@ -433,8 +433,7 @@ fun Route.musicRoutes(configStore: ConfigStore, music: MusicPipeline, appScope: 
             val videos = dev.jellystructure.music.MusicVideoLinks.forArtist(r, videos())
             call.respond(MusicArtistPageDto(
                 artist = r, albums = rows.filter { it.id in own }.sortedBy { it.year ?: 0 },
-                creditedOn = rows.filter { it.id in credited }, songs = MusicBrowse.browse(snap, MusicBrowse.ARTISTS, emptyMap(), null, emptyMap())
-                    .artists.firstOrNull { it.id == r.id }?.songs ?: 0,
+                creditedOn = rows.filter { it.id in credited }, songs = snap.songCountByArtist[r.id] ?: 0,
                 pictureUrl = if (r.imageState != dev.jellystructure.model.MusicArt.NONE) "/api/music/image/artist/${r.id}/thumb?v=${r.updatedAt}" else null,
                 videos = videos.map { MusicVideoRow(it.id, it.title, it.year, it.runtime?.let { m -> m * 60 }) },
                 genres = genres, jellyfinUrl = jellyfinWebUrl(cfg, r.id),
