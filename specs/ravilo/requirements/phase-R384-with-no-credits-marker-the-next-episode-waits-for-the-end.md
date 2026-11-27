@@ -174,3 +174,11 @@ exists, and it is the automated test for this phase:
   `:ravilo-ui:compileKotlinDesktop`. The device acceptance is walked on the QA rows FR-R384-5's 2026-10-16 amendment
   names. The screen app's check waits for Tizen work to resume. The Cast receiver ships with the backend image; the app
   with a release.
+
+## Amendment 2026-11-27 (DEB-5687/DEB-5843) — the receiver's countdown may ask instead of loading the next
+
+FR-R384-3's countdown, run before or after the end, no longer always ends in `loadNext()`. On what would be the 3rd
+next episode started with no sender command or remote press, and at least 90 minutes since the last one, the receiver
+pauses and the card says *Are you still watching?* and *Press play to keep watching*; a play continues. Unanswered for
+30 minutes, the receiver goes idle. The app (FR-R384-2) and the Samsung app (FR-R384-4) follow the same rule. See
+[`are-you-still-watching.md`](are-you-still-watching.md) FR-1, FR-3, FR-4 and FR-6.

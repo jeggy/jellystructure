@@ -3,8 +3,7 @@
 > Live report, 2026-09-06: *"I tried to play some media on soveværelse TV this morning, but it didn't
 > start fast enough, so I stopped."*
 
-## Status
-`✓ Built` 2026-09-06 — all six FRs. Design-authored the same day, not dev-reviewed, not device-tested.
+## Scope
 Client half of the 2026-09-06 playback incident; the server-side cause is **Phase 194**, built
 alongside it.
 
@@ -190,6 +189,11 @@ Each terminal class gets its own heading and, where one exists, its own next ste
 | `403` forbidden | **Not available on this profile** | *This title isn't part of what this profile can watch.* |
 | `404` gone | **This title isn't available any more** | — |
 | retries exhausted | **Couldn't reach the server** | *Check the connection and try again.* |
+
+> **Amendment, 2026-11-27 (DEB-5687 / DEB-5836).** The `409` row's words above are the TV's. A phone, a
+> Mac, a Linux desktop and Ravilo Web said *This TV* too. Each now names its own device, and Ravilo Web
+> names none: see FR-2 of [`the-words-on-screen-are-right.md`](the-words-on-screen-are-right.md). The
+> actions in FR-R237-3 do not change.
 
 Three new strings per row × en/da/fo, alongside the existing `error.generic`
 (`i18n/Strings.kt:278` / `:554` / `:830`), which stays as the fallback for an unclassified failure.

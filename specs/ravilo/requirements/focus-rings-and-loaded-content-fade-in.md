@@ -97,6 +97,10 @@ and glow springs are unchanged, and its ring and fill swap follow FR-1.
   read directly.
 - **Out of scope:** animations this spec doesn't add (screen transitions, the hero, row-open) are unchanged. Row-open
   keeps its own downgrade (R240).
+- *Amendment, 2026-11-27 (DEB-5687/DEB-5838).* The hero is no longer out of scope. Under `LocalReducedMotion` it does
+  not auto-advance, does not drift, and changes slide as a cut
+  ([`readable-touchable-and-speakable.md`](readable-touchable-and-speakable.md), FR-7). Linux now reports the setting
+  too, through the desktop portal. Screen transitions and row-open stay as this FR left them.
 
 **FR-5 — Loaded content fades in.**
 - **When:** a screen's content region replaces its loading view, which may be a shimmer skeleton, a spinner, a

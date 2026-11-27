@@ -2192,3 +2192,10 @@ user, fresh for 7 days, 2 MB at most; `HomeStore`'s `seedFeed`). FR-14's cold st
 **Build order.** FR-58, FR-62 and FR-63 stand alone. FR-60 follows FR-59 (both change `ScreenRouter.loadFeed` and
 `Screen.eventLoop`), and FR-61 follows FR-60 (the same `loadFeed`). FR-64 follows FR-59 (`stateChanged`) and FR-55
 (`ScreenBrowse.render`).
+
+## Amendment 2026-11-27 (DEB-5687/DEB-5843) — FR-48's countdown may ask instead of playing the next episode
+
+FR-48's *Next Episode* countdown no longer always ends in the next episode. On what would be the 3rd next episode
+started with no key or phone command, and at least 90 minutes since the last one, the stream pauses and the card asks
+*Are you still watching?* (*Continue watching* / *Back*). Unanswered for 30 minutes, the player leaves as Back does.
+The rule is [`are-you-still-watching.md`](are-you-still-watching.md) FR-1, FR-2, FR-4 and FR-5.

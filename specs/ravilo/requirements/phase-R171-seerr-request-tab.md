@@ -7,7 +7,9 @@
 > [Phase 137](../../requirements/phase-137-ravilo-config-request-builder.md)), a **Seerr-scoped search**, and
 > a request action that hands off to Seerr → Radarr/Sonarr. Replaces the retired Top 10 charts.
 
-**Status:** Planned — **design built**, Compose app integration unbuilt.
+## Scope
+The Request tab inside Discover, its Seerr-scoped search and the request action, on the Compose clients.
+The design lives in `design/ravilo/`; the dev-review addenda below record how it maps onto the backend.
 
 ## Problem
 Requesting missing titles from the sofa used to ride on third-party **Top 10 charts** (Netflix/JustWatch/etc.)
@@ -53,6 +55,11 @@ a request intent; it does not talk to Seerr directly, and does not compute avail
 3. A **Search Seerr** affordance on the Request tab opens the keyboard search **scoped to the Seerr catalogue
    only** (never the local library). Results are request tiles that open the request detail. Back returns to
    the Request tab.
+
+   > **Amendment, 2026-11-27 (DEB-5687 / DEB-5836).** The viewer never reads the word Seerr. The affordance's
+   > label (`search_seerr`) is *Search to request*, and the empty tab (`request.empty`) no longer points at the
+   > admin's config editor. See FR-3 of
+   > [`the-words-on-screen-are-right.md`](the-words-on-screen-are-right.md). The search's scope is unchanged.
 
 ### D. Request detail
 4. The request detail shows hero art, title, meta (cert/year/genre), synopsis and **request actions** only —

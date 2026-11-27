@@ -247,3 +247,20 @@ episode* off is **not** nothing follows: its card waiting at the end is an offer
 5. An episode with a next one and autoplay off, played to the end: the *Up next* card waits. One Back returns to the
    series page.
 6. An episode with a next one and autoplay on: the countdown and the advance are unchanged.
+
+### Amendment (2026-11-27, DEB-5687/DEB-5841) — a finished film opens something to watch
+
+DEB-3950's FR-1 above is narrowed for a **film** only. When a film reaches its end (or *Skip credits* is pressed),
+the player does everything FR-1 says (mark watched, R372's stop, release) and then opens the after-film page of
+[`something-to-watch-when-a-film-ends.md`](something-to-watch-when-a-film-ends.md) instead of the page it was opened
+from. When that page has nothing to offer, the player closes exactly as FR-1 says. FR-3 holds: one Back from the
+after-film page returns to the page the film was opened from. A series' last episode, a newest-first episode, Skip
+Credits Off for an episode, the Cast receiver and `ravilo-screen` are unchanged.
+
+## Amendment 2026-11-27 (DEB-5687/DEB-5843) — the countdown may ask instead of advancing
+
+FR-RV-SKIP1-2's *"auto-advances if untouched"* now has one exception. When the countdown runs out on what would be the
+3rd next episode started with no viewer input (on a TV, also 90 minutes since the last input), the next episode does
+not start: the player pauses and the card asks *Are you still watching?* with *Continue watching* and *Back*. Never
+more than two buttons still holds. Unanswered for 30 minutes, the player closes as Back would. The rule and its
+inputs are [`are-you-still-watching.md`](are-you-still-watching.md) FR-1 to FR-4.

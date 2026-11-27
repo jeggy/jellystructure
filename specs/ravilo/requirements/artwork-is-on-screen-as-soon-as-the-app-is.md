@@ -59,6 +59,14 @@ or error text, because a viewer never needs to know. A load cancelled because th
 screen is not a failure and is not retried. This applies to every client that uses `RemoteImage`,
 not only Android TV.
 
+- *Amendment 2026-11-27 (DEB-5687, DEB-5837).* "The tile looks the same while it waits" now means: the
+  same as a tile that has no artwork at all. A poster, landscape tile or channel card whose load has
+  failed draws the title fallback of
+  [`one-look-for-waiting-and-for-nothing-here.md`](one-look-for-waiting-and-for-nothing-here.md) FR-6
+  while it waits for the retry, never the bare placeholder colour. Still no broken-image icon and no
+  error text. The retry schedule above is unchanged, and a retry that succeeds crossfades over the
+  fallback.
+
 ### FR-2 — Artwork has its own lane
 
 Coil's network fetcher on Android uses its own OkHttp client, derived from `RaviloAppContext.okHttp`

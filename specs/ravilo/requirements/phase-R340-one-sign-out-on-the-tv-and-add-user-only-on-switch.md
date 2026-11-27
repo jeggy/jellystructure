@@ -155,3 +155,12 @@ of the one-profile confirm.
 exit, `focusProperties { onExit = { cancelFocusChange() } }` followed by `focusGroup()` (both are in Compose 1.9.3),
 shared by the two overlays. That is better than a no-op callback on every free edge, which the next control added
 would forget.
+
+## Amendment 2026-11-27 — Home's can't-reach Sign out asks too (DEB-5687/DEB-5835)
+
+FR-R340-2 says there is one way out and it always asks. One Sign out never asked: the second button on Home's
+can't-reach page (`HomeErrorState`, R280), which ran `unpairAllSessions` at once and signed out every profile on any
+client. Under [`a-failure-says-what-happened-and-offers-a-way-out.md`](a-failure-says-what-happened-and-offers-a-way-out.md)
+FR-2, it opens this dialog in the TV layout, and the one-profile `ConfirmOverlay` on a phone, narrow web and the
+desktop, as their own menus do. Nothing is signed out before the viewer confirms. FR-R340-3 and FR-R340-5 apply
+unchanged.

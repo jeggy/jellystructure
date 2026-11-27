@@ -72,6 +72,10 @@ One new string, `br_seerr_more` = `More with {name} · request on Seerr` (da: `M
 anmod på Seerr`; fo: `Meira við {name} · bið á Seerr`), in `Strings.kt` and
 `design/ravilo/ravilo-i18n.js`. The role/department line reuses the existing credit label.
 
+> **Amendment, 2026-11-27 (DEB-5687 / DEB-5836).** The row's label (now the key `browse.seerr_more`) reads
+> *More with {name} you can request*, in en, da and fo: a viewer never reads the word Seerr. See FR-3 of
+> [`the-words-on-screen-are-right.md`](the-words-on-screen-are-right.md). The row itself is unchanged.
+
 ## Reuse (don't rebuild)
 The whole R187 browse engine (facet bar, sort, popover, `buildGridRows`); `rankTile`,
 `seerrCatalog`, `seerrEnabled`, and the `discoverDetail` request flow; the `.cast` component.
@@ -97,11 +101,9 @@ The whole R187 browse engine (facet bar, sort, popover, `buildGridRows`); `rankT
 - The admin filter workbench offers a **Cast or crew** facet under a **People** group with counted
   values, composable in AND/OR/NOT blocks like any other facet. *(Verified in the design build.)*
 
-## Status
-**`Implemented`** (2026-08-02). §A, §B, §C, §D, and the i18n string all built and compile-checked
-end to end (backend, admin Kotlin/WASM workbench, ravilo-ui/Compose, ravilo-tizen); **not yet
-live-tested on real hardware/browser** — see the closing dev-review addendum for exact scope, the
-one deliberate Tizen omission, and what a live pass should check first. Design lives in
+## Scope
+§A–§D and the i18n string span the backend, the admin Kotlin/WASM workbench, `ravilo-ui` and
+`ravilo-tizen`; the closing dev-review addendum records the one deliberate Tizen omission. Design lives in
 `design/ravilo/ravilo-browse.js` (person seed + Seerr row), `design/ravilo/ravilo-app.js` (cast face
 → person browse, `discoverDetail` origin fix), `design/ravilo/ravilo.css` (face affordance + Seerr
 row), `design/ravilo/ravilo-i18n.js`, and `design/app/ravilo-builders.js` (the admin workbench

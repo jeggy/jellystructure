@@ -379,7 +379,7 @@ row shows a channel-filtered set, See-all shows everything. This requirement clo
 - **Manual "remove from Continue Watching".** Deliberately deferred (owner's call, 2026-08-30) to keep
   this phase to the list model. The membership rules above remove most of what would motivate it. If
   it is built later it becomes a *filter stage over the canonical list*, which this design already
-  leaves room for — no re-architecture needed.
+  leaves room for — no re-architecture needed. *Built by DEB-5840 — see the amendment of 2026-11-27 below.*
 - **Persisting the merged list.** See FR-R219-1's rationale.
 - **Any client visual/UI change.** Card layout, badges and the "→ See all" tile itself are unchanged.
   (FR-R219-6's plumbing — passing an already-in-scope channel id one hop further — is the one exception,
@@ -435,3 +435,12 @@ Recorded so future changes can be judged against real numbers rather than re-gue
 3. **Does `/Shows/NextUp` ever include a genuinely never-touched series?** It does not today (all 73
    have history), so rule (c)'s "never touched" branch is currently unreachable. Worth re-checking if
    Jellyfin's next-up behaviour changes across a version upgrade.
+
+## Amendment 2026-11-27 — a viewer can remove a title (DEB-5687/DEB-5840)
+
+The owner picked the deferred manual remove on 2026-11-26. It is built as R219 foresaw: a view-stage filter over the
+canonical list, beside DEB-1264's tag filter and before the cap. The list itself (§1–§4), its cache and its rebuild are
+unchanged. The removed set is stored per Jellyfin user in `continue_hidden`; it is a viewer's choice, not a copy of
+playstate, so FR-R219-1's "no persisted copy" and the "Jellyfin owns playstate" invariant still hold. A removed title
+returns when its `lastActivityAt` moves past the moment it was removed. The rules are in
+[`remove-a-title-from-continue-watching.md`](remove-a-title-from-continue-watching.md).

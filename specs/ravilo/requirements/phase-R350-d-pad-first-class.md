@@ -496,3 +496,10 @@ there is a press (R354 FR-R354-4).
 
 This holds on the phone's episode sheet too. Jellyfin's season name still does not reach the header for a numbered
 season, so an unnamed season keeps reading in the viewer's language.
+
+## Amendment (2026-11-27, DEB-5687/DEB-5839) — Back from a cast face or a related title
+
+The non-goal above ("Back from a related title or a cast face on the series page … still lands on Play") is lifted by
+[Ravilo feels fast](it-feels-fast.md) FR-1. Back from a cast face, a related title or a genre chip now lands on
+that control, at the page's scroll as it was, on the series page and the film page alike. FR-R350-2's rule is
+unchanged: the target is read once, and a control the page no longer holds falls back to Play.

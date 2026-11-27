@@ -266,3 +266,10 @@ Five things the round did not draw and the build had to decide. None changes a d
 - **After a Save.** The layout Save and the collection editor's Save each read the saved scope back, and a Continue row's
   list is redrawn from that read, so what the server tidied (trimmed, de-duplicated) is what the editor shows. If the read
   fails the editor keeps what it sent. The editor never shows a list as saved before the Save succeeds.
+
+## Amendment 2026-11-27 — single-card hiding is built separately (DEB-5687/DEB-5840)
+
+"Hiding a single card" is no longer deferred. It is a viewer control on the detail page, specified in
+[`remove-a-title-from-continue-watching.md`](remove-a-title-from-continue-watching.md). It runs beside the tag filter
+at the same view stage and changes nothing above: the admin's `hide_tags`, its matching, its scoping and its editor
+are as written. "A viewer-side control" in *Not in scope* means a viewer control over tags; that stays out.
