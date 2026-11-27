@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>The invite sheet, the landing page and setup from an invite &mdash; frames</title>
+<!--
+  frames.html — every frame this round renders, built from invite-data.js through invite-kit.js.
+
+  One document, parameterised, rather than one document per picture:
+      ?set=admin | join | setup-tv | setup-phone | setup-desk | canvas
+      &lang=en|da|fo
+      &skin=aurora|midnight|noir|graphite|daylight     (the setup sets)
+      &theme=dark|light                                (the admin set — the shipped [data-theme])
+
+  EXACTLY ONE SURFACE'S STYLESHEET IS IN A DOCUMENT. wf.css, ravilo.css, ravilo-phone.css and
+  desktop-directions.css are each a whole application's stylesheet with bare selectors — .card,
+  .btn, .row, .field — so loading two of them together is a class collision, which is the cost
+  round 9 paid for linking production CSS instead of copying it. Selecting by ?set keeps the trade
+  (every token, radius, weight and font in these pictures is the production one) without the cost.
+
+      ?set=admin         design/app/wf.css                      tokens, .card, .btn, both themes
+      ?set=setup-tv      design/ravilo/ravilo.css               the 1920x1080 stage and the TV skins
+      ?set=setup-phone   design/ravilo/mobile/ravilo-phone.css  the Pixel 9 bezel and the phone themes
+      ?set=setup-desk    design/ravilo/desktop-directions.css   the .win chrome and its token sets
+      ?set=join          NONE                                   see below
+      ?set=canvas        NONE                                   the round's own comparison blocks
+
+  THE LANDING PAGE LOADS NO SHIPPED STYLESHEET, AND THAT IS THE DRAWING. FR-3 says `/join` is
+  rendered by the backend as one self-contained document with inline CSS and SVG, in the same shape
+  as SingleSignOnPages — no token file, no second stylesheet, no image, no hosted font. So the page
+  frames declare their own values, and every one of those values was read out of
+  src/linuxX64Main/kotlin/dev/jellystructure/tv/SingleSignOnPages.kt and written into
+  invite-data.js SSO with the file named. A value in a frame that disagrees with that Kotlin is a
+  defect in invite-data.js.
+
+  NO CSP <meta> AND NO NETWORK REFERENCE. The three faces resolve to design/app/fonts/ — wf.css
+  carries its own self-hosted @font-face set and invite.css re-declares the same three families for
+  the sets whose stylesheet does not, and render-design.sh answers ravilo.css's Google Fonts
+  @import from the same directory (DEB-2922).
+
+  The round's own stylesheet always comes LAST, so it extends the shipped system and never precedes
+  it. Opened by hand in a browser this page works exactly as the renderer sees it.
+-->
+<script>
+  (function () {
+    var q = new URLSearchParams(location.search);
+    var set = q.get('set') || 'admin';
+    var lang = q.get('lang') || 'en';
+    var skin = q.get('skin') || 'aurora';
+    var theme = q.get('theme') || 'dark';
+    document.documentElement.lang = lang;
+    document.documentElement.dataset.skin = skin;
+    /* the shipped admin theme switch, which is an attribute on the root and nothing else */
+    document.documentElement.dataset.theme = theme;
+    var css = function (h) { document.write('<link rel="stylesheet" href="' + h + '">'); };
+    if (set === 'admin') css('../../app/wf.css');
+    else if (set === 'setup-tv') css('../../ravilo/ravilo.css');
+    else if (set === 'setup-phone') css('../../ravilo/mobile/ravilo-phone.css');
+    else if (set === 'setup-desk') css('../../ravilo/desktop-directions.css');
+    /* join and canvas load none */
+  })();
+</script>
+<link rel="stylesheet" href="invite.css">
+</head>
+<body>
+<div class="iv-sheetwrap" id="frames"></div>
+
+<script src="invite-data.js"></script>
+<script src="iv-qr.js"></script>
+<script src="invite-kit.js"></script>
+</body>
+</html>

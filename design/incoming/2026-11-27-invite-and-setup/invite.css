@@ -1,0 +1,481 @@
+/* invite.css — the round's own CSS. It EXTENDS the shipped stylesheet frames.html loaded for the
+   set (wf.css for the admin, ravilo.css / ravilo-phone.css / desktop-directions.css for the setup
+   screen, none for the landing page) and never precedes it.
+
+   Class prefix iv- (invite). Nothing here is production CSS: no Gradle task consumes
+   design/ravilo/, the admin's new classes are promoted into design/app/wf.css by hand through
+   PROCESS.md's gate, and this directory is pruned at adoption.
+
+   THE SETUP BLOCK IS A CARRIED COPY. Every rule under "SURFACE 3" below comes from round
+   2026-11-19-setup-hidden-characters' setup-marks.css, with its sh- prefix changed to iv- and its
+   numbers unchanged, so the two rounds' pictures of the same component are diffable and the second
+   round cannot quietly redraw the first one's geometry. What is NEW in this round is marked NEW and
+   is only the from-invite line, the not-found line, the placeholder and the trying button.
+*/
+
+/* ---- the three faces, from the repo's own woff2 ----
+   wf.css carries its own self-hosted @font-face set (relative `fonts/…`, which resolves to
+   design/app/fonts/ from wherever the stylesheet is linked), and ravilo.css @imports Google Fonts
+   which render-design.sh answers from the same directory (DEB-2922). ravilo-phone.css,
+   desktop-directions.css and the landing page's set carry NO font declaration of their own, so the
+   three families are re-declared here against the same local files. No network reference, in the
+   renderer or in a browser opened by hand. */
+@font-face { font-family: 'Sora'; src: url('../../app/fonts/sora.woff2') format('woff2');
+  font-weight: 100 900; font-display: block; }
+@font-face { font-family: 'Space Grotesk'; src: url('../../app/fonts/space-grotesk.woff2') format('woff2');
+  font-weight: 100 900; font-display: block; }
+@font-face { font-family: 'JetBrains Mono'; src: url('../../app/fonts/jetbrains-mono.woff2') format('woff2');
+  font-weight: 100 900; font-display: block; }
+
+/* ---- the canvas the frames sit on ----
+   SKILL-house: a direction canvas is light-gray with DARK ink on it; light text only inside the
+   dark frames and cards. No content-visibility, no backdrop-filter, no large blur, no infinite
+   animation — all four break the screenshot render. */
+/* `* { box-sizing: border-box }` is the first rule of the SHIPPED page's own CSS
+   (SingleSignOnPages.kt:102) and of wf.css, and the landing-page and canvas sets load NEITHER —
+   they are the sets with no shipped stylesheet at all. Without it the page's own `padding: 40px
+   24px` was added OUTSIDE its `inset: 0` box and every button on the phone frames ran 48 px past
+   the right edge of the screen. The rule belongs here, not only in the sets that inherit it. */
+* { box-sizing: border-box; }
+html, body { height: auto; overflow: visible; background: #eceef3; }
+body { margin: 0; font-family: 'Sora', sans-serif; color: #12141b; font-size: 16px; }
+.iv-sheetwrap { display: flex; flex-direction: column; gap: 30px; padding: 26px; background: #eceef3; }
+/* A grid one column wide, sized to the FRAME, with the caption forced to that same column:
+   `width: 0; min-width: 100%` makes the caption fill the column without contributing to how wide
+   the column is, so a long caption WRAPS over the picture instead of widening the PNG. The first
+   render of the phone frames was 1148 px of image around a 393 px phone for exactly that reason. */
+.iv-hold { background: #eceef3; display: grid; grid-template-columns: max-content;
+  width: max-content; max-width: 100%; }
+.iv-cap { width: 0; min-width: 100%; display: flex; align-items: baseline; gap: 12px;
+  margin-bottom: 13px; flex-wrap: wrap; }
+.iv-cap b { font-family: 'JetBrains Mono', monospace; font-size: 12px; font-weight: 700;
+  letter-spacing: .06em; text-transform: uppercase; color: #12141b; background: #d8dbe4;
+  padding: 3px 9px; border-radius: 6px; flex: none; }
+.iv-cap h3 { margin: 0; font-family: 'Space Grotesk', sans-serif; font-size: 19px; font-weight: 700;
+  letter-spacing: -.01em; color: #12141b; }
+.iv-cap span { font-size: 13px; color: #262a35; }
+.iv-cap em { font-style: normal; font-weight: 700; color: #7a2430; }
+.iv-cap i { font-style: normal; color: #262a35; }
+
+/* =================================================================================================
+   SURFACE 1 — THE ADMIN INVITE SHEET, on wf.css, in BOTH themes
+
+   `--blur: none` and `--ambient: 0` on the frame: backdrop-filter IS production CSS on every admin
+   card and on `.pair-back` itself, and it breaks the screenshot render. The live admin keeps its
+   glass; these frames approximate it with a flat fill, and REPORT.md says so.
+   ================================================================================================= */
+.iv-adminframe { position: relative; overflow: hidden; --blur: none; --ambient: 0;
+  background: var(--bg); color: var(--ink); font-family: 'Sora', sans-serif;
+  box-shadow: 0 0 0 1px rgba(20,22,32,.18); }
+/* the aurora wash the shipped body.wf-body::before draws, flat */
+.iv-adminframe::before { content: ''; position: absolute; inset: 0; pointer-events: none; z-index: 0;
+  background:
+    radial-gradient(48% 40% at 16% 6%, rgba(177, 92, 208, .16), transparent 66%),
+    radial-gradient(44% 38% at 88% 96%, rgba(0, 164, 220, .13), transparent 70%); }
+[data-theme="light"] .iv-adminframe::before {
+  background:
+    radial-gradient(48% 40% at 16% 6%, rgba(177, 92, 208, .10), transparent 66%),
+    radial-gradient(44% 38% at 88% 96%, rgba(0, 164, 220, .09), transparent 70%); }
+
+/* the shipped shell: `248px minmax(0, 1fr)`. The minmax is not decorative — a bare 1fr lets one
+   unwrapped filename widen the viewport, and a sync has reverted it four times. */
+.iv-shell { position: relative; z-index: 1; display: grid;
+  grid-template-columns: 248px minmax(0, 1fr); height: 100%; }
+.iv-rail { border-right: 1px solid var(--line); padding: 20px 14px; display: flex;
+  flex-direction: column; gap: 3px; min-width: 0; }
+.iv-brand { display: flex; align-items: center; gap: 11px; padding: 4px 8px 22px; }
+.iv-brand strong { font-family: 'Space Grotesk', sans-serif; font-size: 1.16rem; font-weight: 700;
+  letter-spacing: -.01em; }
+.iv-nav { display: flex; align-items: center; gap: 10px; padding: 9px 11px; border-radius: 10px;
+  font-size: .88rem; color: var(--ink-soft); }
+.iv-nav.on { background: var(--hi-soft); color: var(--acc-ink); font-weight: 600; }
+.iv-nav i { width: 7px; height: 7px; border-radius: 50%; background: currentColor; flex: none;
+  opacity: .6; }
+.iv-navgroup { font-size: .62rem; font-weight: 700; letter-spacing: .11em; text-transform: uppercase;
+  color: var(--ink-dim); padding: 16px 11px 7px; }
+.iv-main { padding: 26px 30px; min-width: 0; }
+.iv-pagebar { display: flex; align-items: center; gap: 13px; margin-bottom: 8px; flex-wrap: wrap; }
+.iv-pagebar h1 { font-size: 2rem; margin: 0; font-family: 'Space Grotesk', sans-serif;
+  font-weight: 700; letter-spacing: -.02em; }
+.iv-pagebar .spacer { flex: 1; }
+.iv-pagesub { color: var(--ink-soft); max-width: 78ch; margin: 2px 0 22px; font-size: .95rem; }
+/* two user rows, so the sheet is drawn in its page and not on a plate. Stand-in: the brief's one
+   admin and one invited viewer, with no name beyond those. */
+.iv-urow { display: flex; align-items: center; gap: 13px; padding: 13px 16px; }
+.iv-urow + .iv-urow { border-top: 1px solid var(--line); }
+.iv-uav { width: 40px; height: 40px; border-radius: 50%; flex: none; display: inline-flex;
+  align-items: center; justify-content: center; font-family: 'Space Grotesk', sans-serif;
+  font-weight: 700; font-size: .86rem; color: #fff;
+  background: linear-gradient(120deg, #7b6ef0, #3fb6f5); }
+.iv-umain { flex: 1; min-width: 0; }
+.iv-umain b { font-size: .92rem; }
+.iv-umain div { font-size: .76rem; color: var(--ink-soft); margin-top: 1px; }
+
+/* the scrim. The shipped `.pair-back` is rgba(7,9,14,.66) + blur(5px); the blur is dropped here
+   for the render and the fill is kept exactly. */
+.iv-back { position: absolute; inset: 0; z-index: 40; display: flex; align-items: center;
+  justify-content: center; padding: 30px; background: rgba(7, 9, 14, .66); }
+
+/* ---- the sheet itself. `.card .pair-modal` is the shipped modal and its width is unchanged at
+   440 px, so this is the size the admin already knows. ---- */
+/* The sheet is OPAQUE on this canvas, and that is a render decision rather than a design one.
+   Production stacks three translucent layers — `.pair-back` rgba(7,9,14,.66) with blur(5px) over
+   the page, then `.card`'s --card-bg rgba(46,51,66,.74) with --blur — and the blur is what stops
+   the page's own words showing through the card. backdrop-filter breaks the screenshot render, so
+   without it the FIRST render of this sheet had "…on 2 devices" and "other viewers yet" legible
+   straight through the modal's heading: a canvas artefact that reads as a design defect.
+   The values below are that three-layer stack COMPOSITED by hand, so the colour is the shipped
+   one and only the transparency is gone. The live admin keeps its glass. REPORT.md says so. */
+.iv-sheet { width: 440px; max-width: 100%; padding: 22px; position: relative;
+  background: #252936; }
+[data-theme="light"] .iv-sheet { background: #d7d9df; }
+.iv-sheethead { display: flex; align-items: flex-start; gap: 13px; margin-bottom: 18px; }
+.iv-sheetic { width: 38px; height: 38px; flex: none; border-radius: 10px; display: flex;
+  align-items: center; justify-content: center; background: var(--hi-soft); color: var(--acc-ink); }
+.iv-sheetic svg { width: 20px; height: 20px; }
+.iv-sheethead .t { flex: 1; min-width: 0; }
+.iv-sheethead h2 { margin: 0; font-size: 1.12rem; font-family: 'Space Grotesk', sans-serif;
+  font-weight: 700; letter-spacing: -.01em; }
+.iv-sheethead p { margin: 2px 0 0; font-size: .82rem; color: var(--ink-soft); }
+.iv-x { cursor: pointer; color: var(--ink-dim); font-size: 1rem; flex: none; line-height: 1; }
+
+/* NEW — the link row. The link is our code-and-ID face by mandate and it is SELECTABLE text in a
+   box, not a disabled input: an admin who cannot use Copy (an old browser, a denied clipboard
+   permission) must still be able to drag-select it. `overflow-wrap: anywhere` is what keeps a long
+   host inside the 440 px modal instead of widening it. */
+.iv-linkrow { display: flex; gap: 9px; align-items: stretch; }
+.iv-linkbox { flex: 1; min-width: 0; background: var(--bg-2); border: 1px solid var(--line-2);
+  border-radius: var(--radius-s); padding: 9px 12px; font-family: 'JetBrains Mono', monospace;
+  font-size: .8rem; line-height: 1.45; color: var(--ink); overflow-wrap: anywhere;
+  display: flex; align-items: center; }
+/* `min-width` is what makes the sentence below TRUE. Without it "Copied" is 16 px wider than
+   "Copy" and the link box beside it shrinks the moment the admin presses the button — visible in
+   the first render, invisible in the markup. The width is the wider of the two labels. */
+.iv-copy { flex: none; align-self: stretch; min-width: 112px; justify-content: center; }
+/* The copied state. The label swaps and the fill becomes --ok-soft; the button does not change
+   width, because a control that resizes under the cursor moves the next one. */
+.iv-copy.done { background: var(--ok-soft); border-color: var(--ok); color: var(--ok); }
+/* --ok is #2dd49a, which is 1.9 : 1 on the light theme's --ok-soft and was legible in the dark
+   render and washed out in the light one. wf.css already solves this exact problem one line at a
+   time — `[data-theme="light"] .badge.ok { color: #128a5f }` — so the promotion takes ITS value
+   rather than inventing a second light green. */
+[data-theme="light"] .iv-copy.done { color: #128a5f; border-color: #128a5f; }
+.iv-copy svg { width: 14px; height: 14px; }
+
+/* NEW — the QR plate. A QR needs a LIGHT quiet zone to scan, so the plate is white in both themes:
+   it is not a surface, it is part of the code. 4 modules of quiet zone are mandatory and are drawn
+   by iv-qr.js inside the SVG; the plate's own 8 px of padding is extra margin for a camera. */
+.iv-qrwrap { display: flex; flex-direction: column; align-items: center; gap: 9px;
+  margin: 18px 0 4px; }
+.iv-qrplate { width: 164px; height: 164px; border-radius: 12px; background: #fff; padding: 8px;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 0 0 1px rgba(20,22,32,.14), var(--shadow-s); }
+.iv-qrplate svg { display: block; }
+.iv-qrcap { font-size: .72rem; color: var(--ink-soft); letter-spacing: .02em; }
+
+/* NEW — the two sentences. The TV line is an instruction with a value in it, so the value takes the
+   mono face and the --ink colour while the sentence stays --ink-soft; the account line is prose and
+   stays one colour. Neither is a .callout: a card for a sentence inside a 440 px modal is a second
+   surface for no reason. */
+.iv-lines { display: flex; flex-direction: column; gap: 11px; margin-top: 16px;
+  padding-top: 15px; border-top: 1px solid var(--line); }
+.iv-line { font-size: .82rem; line-height: 1.55; color: var(--ink-soft); }
+.iv-line .mono { font-family: 'JetBrains Mono', monospace; color: var(--ink); font-size: .8rem;
+  overflow-wrap: anywhere; }
+.iv-line.tv { display: flex; gap: 8px; align-items: flex-start; }
+.iv-line.tv .ic { flex: none; width: 15px; height: 15px; color: var(--ink-dim); margin-top: 3px; }
+.iv-line.tv .ic svg { width: 15px; height: 15px; display: block; }
+
+/* the unset state (FR-2). An empty state is an invitation to act, never an apology: the sheet says
+   the one thing to do and carries the link to where it is done. */
+.iv-unset { display: flex; flex-direction: column; align-items: center; text-align: center;
+  gap: 10px; padding: 8px 4px 2px; }
+.iv-unsetic { width: 46px; height: 46px; border-radius: 12px; display: flex; align-items: center;
+  justify-content: center; background: var(--warn-soft); color: var(--warn); }
+.iv-unsetic svg { width: 24px; height: 24px; }
+.iv-unset h3 { margin: 4px 0 0; font-size: 1rem; font-family: 'Space Grotesk', sans-serif;
+  font-weight: 700; }
+.iv-unset p { margin: 0; font-size: .84rem; line-height: 1.55; color: var(--ink-soft); }
+.iv-unset .btn { margin-top: 8px; }
+
+/* direction A2 — the QR first, at half the width, with the link beside it. Drawn because the 440 px
+   modal can hold either and the question "is the code or the link the primary?" is a picture. */
+.iv-sheet.a2 .iv-qrwrap { margin: 0; }
+.iv-split { display: flex; gap: 16px; align-items: flex-start; }
+.iv-split .iv-qrplate { width: 148px; height: 148px; }
+.iv-split .right { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 9px; }
+.iv-split .right .iv-linkrow { flex-direction: column; }
+.iv-split .right .iv-copy { align-self: flex-start; }
+.iv-flabel { font-size: .72rem; font-weight: 600; letter-spacing: .04em; text-transform: uppercase;
+  color: var(--ink-soft); }
+
+/* =================================================================================================
+   SURFACE 2 — THE LANDING PAGE `/join`
+
+   It ships as ONE self-contained document: inline CSS, inline SVG, no token file, no second
+   stylesheet, no image, no hosted font (FR-3, as SingleSignOnPages already does). So this block
+   declares its OWN colours from invite-data.js SSO — which were read out of SingleSignOnPages.kt —
+   and a system fallback stack after the three families, which is the honest drawing of what the
+   page can carry. The @font-face above makes the FRAMES show the real faces; the shipped page will
+   fall back to the system UI face exactly as the sign-in pages do today, and REPORT.md says so.
+   ================================================================================================= */
+.iv-pageframe { position: relative; overflow: hidden; }
+.iv-page { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  padding: 40px 24px; background: #0a0c13; color: #f3f4fb; overflow: hidden;
+  font-family: 'Sora', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  background-image:
+    radial-gradient(60% 46% at 20% 4%, rgba(123, 110, 240, .20), transparent 68%),
+    radial-gradient(52% 44% at 86% 98%, rgba(63, 182, 245, .13), transparent 70%); }
+/* a page longer than the viewport is pinned to the top, because that is what a browser does */
+.iv-page.tall { align-items: flex-start; }
+.iv-pinner { width: 100%; max-width: 420px; text-align: center; }
+.iv-page.wide .iv-pinner { max-width: 560px; }
+.iv-phead { display: inline-flex; align-items: center; gap: 12px; margin-bottom: 26px; }
+.iv-phead b { font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 30px;
+  letter-spacing: -.02em; }
+.iv-page.wide .iv-phead b { font-size: 36px; }
+.iv-phead svg { display: block; }
+
+/* the invited-to block. The host is the one piece of data on the page and it is in the code face,
+   one step down from the heading: it is a value to read and check, not a title. */
+.iv-plead { font-size: 15px; line-height: 1.6; color: #aeb4cb; margin: 0 0 6px; }
+.iv-phost { font-family: 'JetBrains Mono', monospace; font-weight: 600; font-size: 21px;
+  letter-spacing: -.01em; color: #f3f4fb; margin: 0 0 4px; overflow-wrap: anywhere; }
+.iv-page.wide .iv-phost { font-size: 25px; }
+
+/* a part of the page. The label is what makes three stacked groups read as three answers to
+   "how do I watch this?" rather than as one list of six buttons. */
+.iv-part { margin-top: 30px; }
+.iv-part:first-of-type { margin-top: 26px; }
+.iv-plabel { font-size: 11.5px; font-weight: 700; letter-spacing: .13em; text-transform: uppercase;
+  color: #7a8099; margin-bottom: 11px; }
+/* the primary action, the shipped `.btn` from SingleSignOnPages: 50 px, radius 14, the 120deg
+   gradient, white ink. The white is the SHIPPED value and its contrast is low at the blue end;
+   that is the product's and not this round's, and REPORT.md notes it once. */
+.iv-pbtn { display: flex; align-items: center; justify-content: center; gap: 9px; width: 100%;
+  min-height: 50px; padding: 0 22px; border-radius: 14px; border: 0;
+  background: linear-gradient(120deg, #7b6ef0, #3fb6f5); color: #fff;
+  font: 600 15.5px 'Sora', sans-serif; text-decoration: none; }
+/* An inline <svg> with only a viewBox fills its flex line: the first render drew a 250 px play
+   triangle across the whole primary button and pushed its label onto two lines. So EVERY glyph in
+   this round is sized by its wrapper and never by the SVG, and the rule is written once, here,
+   rather than per button where the next one added would miss it. */
+.iv-sheetwrap .ic { width: 17px; height: 17px; flex: none; display: inline-block;
+  vertical-align: -3px; }
+.iv-sheetwrap .ic svg { width: 100%; height: 100%; display: block; }
+.iv-pnote .ic { width: 14px; height: 14px; vertical-align: -2px; opacity: .8; }
+/* a secondary action: the same geometry, an outline instead of a fill. One primary per page. */
+.iv-sbtn { display: flex; align-items: center; justify-content: center; gap: 9px; width: 100%;
+  min-height: 50px; padding: 0 22px; border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, .17); background: rgba(255, 255, 255, .045);
+  color: #f3f4fb; font: 600 15.5px 'Sora', sans-serif; text-decoration: none; }
+.iv-sbtn.half { min-height: 46px; font-size: 14.5px; }
+.iv-sbtn .ic { width: 17px; height: 17px; flex: none; opacity: .85; }
+.iv-sbtn .ic svg { width: 17px; height: 17px; display: block; }
+.iv-btnrow { display: flex; flex-direction: column; gap: 10px; }
+/* the download group's own two-up row: macOS and Linux side by side, Samsung TV under them. Three
+   full-width rows of the same shape read as three equal choices; this says "desktop, then the TV". */
+.iv-two { display: flex; gap: 10px; }
+.iv-two > * { flex: 1; min-width: 0; }
+/* the "open this link again" line belongs to the DOWNLOAD group, not to the section: the owner's
+   2026-11-27 change is exactly that the Android button has no such line. */
+.iv-pnote { font-size: 12.5px; line-height: 1.5; color: #7a8099; margin: 9px 0 0; }
+.iv-pagain { font-size: 13px; line-height: 1.55; color: #aeb4cb; margin: 11px 0 0; }
+/* the TV line, last on every direction. It is not a button: a TV cannot open a link, which is the
+   whole sentence. */
+.iv-ptv { margin-top: 30px; padding-top: 18px; border-top: 1px solid rgba(255, 255, 255, .09);
+  font-size: 13.5px; line-height: 1.6; color: #aeb4cb; }
+.iv-ptv .mono { font-family: 'JetBrains Mono', monospace; color: #f3f4fb; font-size: 13px;
+  overflow-wrap: anywhere; }
+/* the 404. One line in the same shape, as FR-3 says. */
+.iv-pglyph { display: flex; justify-content: center; margin: 0 auto 22px; }
+.iv-pglyph svg { width: 54px; height: 54px; }
+.iv-page h1 { font-family: 'Space Grotesk', sans-serif; font-weight: 700; letter-spacing: -.025em;
+  font-size: 27px; line-height: 1.25; margin: 0 0 12px; text-wrap: balance; }
+.iv-page.wide h1 { font-size: 34px; }
+.iv-page p.body { font-size: 15px; line-height: 1.6; color: #aeb4cb; margin: 0 0 8px; }
+/* the browser bar, so a frame of a web page looks like a web page and the address is visible —
+   which matters here, because the address IS the thing the page is about. */
+.iv-chrome { position: absolute; left: 0; right: 0; top: 0; height: 46px; z-index: 5;
+  background: #1c1e26; border-bottom: 1px solid rgba(255,255,255,.08); display: flex;
+  align-items: center; gap: 10px; padding: 0 13px; }
+.iv-chrome .u { flex: 1; min-width: 0; background: #0f1117; border-radius: 9px; padding: 6px 11px;
+  font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: #aeb4cb;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.iv-chrome .d { width: 9px; height: 9px; border-radius: 50%; background: #3a3d48; flex: none; }
+.iv-pageframe.chromed .iv-page { top: 46px; }
+
+/* the phone and desktop bezels these pages are shown in */
+.iv-bez { border-radius: 46px; background: #05060a; position: relative;
+  box-shadow: 0 0 0 11px #15171d, 0 0 0 13px #2a2d36, 0 26px 70px rgba(0,0,0,.45); }
+.iv-bez .inner { position: absolute; inset: 0; border-radius: 46px; overflow: hidden; }
+.iv-bez .punch { position: absolute; top: 13px; left: 50%; transform: translateX(-50%);
+  width: 11px; height: 11px; border-radius: 50%; background: #000; z-index: 60; }
+.iv-statusbar { position: absolute; left: 0; right: 0; top: 0; height: 34px; z-index: 55;
+  display: flex; align-items: center; justify-content: space-between; padding: 0 24px 0 26px;
+  font-size: 13px; font-weight: 600; color: #f3f4fb; }
+.iv-bez .iv-pageframe { position: absolute; inset: 0; }
+.iv-bez .iv-page { top: 34px; }
+.iv-bez.chromed .iv-page { top: 80px; }
+.iv-bez .iv-chrome { top: 34px; }
+
+/* =================================================================================================
+   SURFACE 3 — THE SERVER-SETUP SCREEN
+   Carried from round 2026-11-19-setup-hidden-characters (setup-marks.css), sh- -> iv-, numbers
+   unchanged. --u is px per dp and is the only thing that differs between the surfaces: the TV sets
+   2 (a 1920 px stage that is 960 dp), the phone and the desktop set 1.
+   ================================================================================================= */
+.iv-app {
+  --u: 1px;
+  /* The from-invite line's colour is DERIVED from whichever skin is in frame, never fixed: the
+     accent lifted towards white by the same amount as the focus ring, so the line belongs to the
+     same family as the wordmark and Connect on every skin. Daylight is the one override
+     (invite-data.js TONE), because there the accent has to be darkened, not lightened. */
+  --tone-info: color-mix(in srgb, var(--accent) 82%, #ffffff);
+  --tone-bad: #ff6f61;
+  --warn-ink: #f5b542;
+  --warn-rail: #f5b542;
+  /* RaviloColors.accentDim and .focusRing have no token in any of the three CSS files — they are
+     Kotlin-side only. Derived here from the ones that DO exist, so a skin change moves them too. */
+  --accent-dim: color-mix(in srgb, var(--accent) 45%, var(--bg));
+  --ring: color-mix(in srgb, var(--accent) 76%, #ffffff);
+  font-family: 'Sora', sans-serif;
+}
+.iv-col { width: 50%; margin: 0 auto; display: flex; flex-direction: column; align-items: stretch;
+  gap: calc(20 * var(--u)); padding: calc(32 * var(--u)) 0; }
+.iv-wordmark { text-align: center; font-family: 'Space Grotesk', sans-serif; font-weight: 700;
+  font-size: calc(32 * var(--u)); letter-spacing: calc(3 * var(--u)); color: var(--accent); }
+.iv-prompt { text-align: center; font-size: calc(15 * var(--u)); color: var(--ink-soft); }
+
+/* the address field — Material's filled TextField, which is what the screen uses */
+.iv-field { background: var(--card-2);
+  border-radius: calc(6 * var(--u)) calc(6 * var(--u)) calc(2 * var(--u)) calc(2 * var(--u));
+  padding: calc(8 * var(--u)) calc(16 * var(--u)) calc(7 * var(--u)); position: relative;
+  border-bottom: calc(2 * var(--u)) solid var(--accent-dim); }
+.iv-field.focus { border-bottom-color: var(--accent); }
+.iv-field label { display: block; font-size: calc(12 * var(--u)); color: var(--ink-soft);
+  margin-bottom: calc(2 * var(--u)); }
+.iv-field.focus label { color: var(--accent); }
+.iv-field .val { font-size: calc(16 * var(--u)); color: var(--ink); white-space: pre;
+  overflow: hidden; text-overflow: clip; }
+/* NEW — the example. A placeholder is NOT disabled text: it sits on the value's own line at the
+   value's own size, dimmed, so what replaces it lands in exactly the same place. */
+.iv-field .ph { font-size: calc(16 * var(--u)); color: var(--ink-dim); white-space: pre; }
+.iv-field .caret { display: inline-block; width: calc(1.5 * var(--u)); height: calc(18 * var(--u));
+  background: var(--accent); vertical-align: calc(-3 * var(--u)); margin-left: calc(1 * var(--u)); }
+/* the caret at offset 0 sits to the LEFT of the placeholder and takes no leading gap */
+.iv-field .caret.lead { margin-left: 0; margin-right: calc(1 * var(--u)); }
+.iv-ring { box-shadow: 0 0 0 calc(3 * var(--u)) var(--ring); border-radius: calc(8 * var(--u)); }
+
+/* NEW — the from-invite line (FR-6: "one line above the field").
+   It takes the shipped rail idiom (a 3 dp bar in the gutter, no card) that .dplaynote and
+   .ep-playnote already use for "something about this needs saying", in the ACCENT's ink rather than
+   --warn: this line is information and the one warn colour on the screen has to keep meaning that
+   something is wrong. It sits ABOVE the field and the hidden-character warning sits BELOW it, so
+   the two can both be present — which is a thing only the picture shows. */
+.iv-invite { display: flex; flex-direction: column; gap: 0;
+  border-left: calc(3 * var(--u)) solid var(--tone-info);
+  padding-left: calc(11 * var(--u)); margin-left: calc(-14 * var(--u));
+  margin-bottom: calc(-10 * var(--u)); }
+.iv-invite .t { font-size: calc(13.5 * var(--u)); font-weight: 600; color: var(--tone-info);
+  line-height: 1.35; }
+
+/* NEW — the not-found line (FR-7), under the field, in --bad. Same geometry as the warning above
+   it: same rail width, same gap, same size. Two lines that sit in one column and differ only in
+   colour read as one component with two tones, which is what they are. */
+.iv-notfound { display: flex; flex-direction: column;
+  border-left: calc(3 * var(--u)) solid var(--tone-bad);
+  padding-left: calc(11 * var(--u)); margin-left: calc(-14 * var(--u));
+  margin-top: calc(-10 * var(--u)); }
+.iv-notfound .t { font-size: calc(13.5 * var(--u)); font-weight: 600; color: var(--tone-bad);
+  line-height: 1.35; }
+
+/* the hidden-character warning, carried unchanged from the earlier round */
+.iv-warn { display: flex; flex-direction: column; gap: 0;
+  border-left: calc(3 * var(--u)) solid var(--warn-rail);
+  padding-left: calc(11 * var(--u)); margin-left: calc(-14 * var(--u));
+  margin-top: calc(-10 * var(--u)); }
+.iv-warn .sentence { font-size: calc(13.5 * var(--u)); font-weight: 600; color: var(--warn-ink);
+  line-height: 1.35; }
+.iv-marks { font-family: 'JetBrains Mono', monospace; font-weight: 500;
+  font-size: calc(14 * var(--u)); letter-spacing: calc(.2 * var(--u)); color: var(--ink-soft);
+  line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; margin-top: calc(6 * var(--u)); }
+.iv-marks i { font-style: normal; color: var(--warn-ink); font-weight: 700;
+  background: color-mix(in srgb, var(--warn-ink) 18%, transparent);
+  border-radius: calc(3 * var(--u)); padding: 0 calc(2 * var(--u)); }
+.iv-fix { appearance: none; border: calc(1 * var(--u)) solid var(--warn-ink); background: none;
+  color: var(--ink); font-family: 'Sora', sans-serif; font-weight: 600;
+  font-size: calc(14 * var(--u)); border-radius: calc(8 * var(--u));
+  min-height: calc(42 * var(--u)); padding: calc(9 * var(--u)) calc(16 * var(--u));
+  text-align: center; display: block; width: 100%; overflow-wrap: anywhere; line-height: 1.25;
+  margin-top: calc(12 * var(--u)); }
+.iv-fix .addr { font-family: 'JetBrains Mono', monospace; font-weight: 600; }
+.iv-fix.focused { box-shadow: 0 0 0 calc(2 * var(--u)) var(--ring); border-color: var(--ring); }
+
+/* ---- Connect, as the screen already draws it ---- */
+.iv-connect { border-radius: calc(8 * var(--u)); min-height: calc(52 * var(--u));
+  display: flex; align-items: center; justify-content: center; gap: calc(10 * var(--u));
+  font-size: calc(16 * var(--u)); font-weight: 600; }
+.iv-connect.ready { background: var(--accent-dim); color: var(--ink); }
+.iv-connect.focused { background: var(--accent); color: #fff;
+  box-shadow: 0 0 0 calc(2 * var(--u)) var(--ring); }
+.iv-connect.off { background: var(--card-2); color: var(--ink-dim); }
+/* NEW — FR-7's waiting button. It keeps the focused treatment, because focus does NOT move while
+   the probe is out and a second press does nothing, and it carries no spinner and no dot mark:
+   `receiver.setup_trying` already ends in an ellipsis, and the dimmed fill is the second signal.
+   QoE first (owner, on this ask) — the whole waiting state costs one opacity value and no frame
+   of animation. If the Compose side wants motion here it is a slow opacity pulse on the LABEL,
+   not a spinner, and REPORT.md says so rather than a canvas pretending to show it. */
+.iv-connect.trying { background: var(--accent); color: #fff;
+  box-shadow: 0 0 0 calc(2 * var(--u)) var(--ring); opacity: .82; }
+
+/* ---- TV: the fixed 1920×1080 stage, 960 dp at density 2 ---- */
+.iv-tv { width: 1920px; height: 1080px; position: relative; overflow: hidden;
+  background: var(--bg); color: var(--ink); --u: 2px; }
+.iv-tv .iv-col { padding: 0; position: absolute; top: 50%; left: 50%;
+  transform: translate(-50%, -50%); width: 960px; }
+
+/* ---- phone: the Pixel 9 bezel the mockups already use, 412×915 ---- */
+.iv-phone { width: 412px; height: 915px; border-radius: 46px; background: #05060a;
+  box-shadow: 0 0 0 11px #15171d, 0 0 0 13px #2a2d36, 0 26px 70px rgba(0,0,0,.45);
+  position: relative; --u: 1px; }
+.iv-phone .screen { position: absolute; inset: 0; border-radius: 46px; overflow: hidden;
+  background: var(--bg); color: var(--ink); display: flex; flex-direction: column; }
+.iv-phone .punch { position: absolute; top: 13px; left: 50%; transform: translateX(-50%);
+  width: 11px; height: 11px; border-radius: 50%; background: #000; z-index: 60; }
+.iv-sbar { height: 34px; flex: none; display: flex; align-items: center;
+  justify-content: space-between; padding: 0 24px 0 26px; font-size: 13px; font-weight: 600;
+  color: var(--ink); }
+.iv-phone .iv-col { width: 100%; padding: 0 28px; flex: 1; justify-content: center; }
+
+/* ---- desktop: the maintained .win chrome, mac, no sidebar (there is no library yet) ---- */
+.iv-desk { width: 1200px; height: 760px; border-radius: 16px; overflow: hidden; position: relative;
+  background: var(--bg); color: var(--ink); --u: 1px;
+  box-shadow: 0 24px 60px rgba(0,0,0,.45), 0 0 0 1px rgba(255,255,255,.12); }
+.iv-desk .lights { position: absolute; left: 18px; top: 19px; display: flex; gap: 8px; z-index: 6; }
+.iv-desk .lights i { width: 12px; height: 12px; border-radius: 50%; background: #ff5f57; }
+.iv-desk .lights i:nth-child(2) { background: #febc2e; }
+.iv-desk .lights i:nth-child(3) { background: #28c840; }
+.iv-desk .iv-col { width: 440px; height: 100%; justify-content: center; padding: 0; }
+
+/* =================================================================================================
+   CANVAS BLOCKS — comparison tables and the measured anatomy. Dark ink on the light backdrop.
+   ================================================================================================= */
+.iv-note { max-width: 1000px; font-size: 13.5px; line-height: 1.6; color: #262a35; margin-top: 12px; }
+.iv-note em { font-style: normal; font-weight: 600; color: #12141b; }
+.iv-tbl { border-collapse: collapse; background: #fff; border-radius: 10px; overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0,0,0,.1); max-width: 1180px; }
+.iv-tbl th, .iv-tbl td { padding: 9px 13px; text-align: left; border-bottom: 1px solid #dfe2ea;
+  font-size: 13px; color: #12141b; vertical-align: top; }
+.iv-tbl th { background: #f6f7fa; font-size: 10.5px; text-transform: uppercase;
+  letter-spacing: .07em; color: #262a35; font-weight: 600; }
+.iv-tbl tr:last-child td { border-bottom: 0; }
+.iv-tbl .mono { font-family: 'JetBrains Mono', monospace; font-size: 12px; }
+.iv-pick { display: inline-block; font-family: 'JetBrains Mono', monospace; font-size: 11px;
+  font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: #0a0c13;
+  background: #a9e3c4; padding: 2px 7px; border-radius: 5px; margin-left: 7px; }
+.iv-against { background: #f3bfc7; }
+.iv-row3 { display: flex; gap: 26px; align-items: flex-start; flex-wrap: wrap; }
+.iv-row3 > div { display: flex; flex-direction: column; gap: 9px; }
+.iv-row3 h4 { margin: 0; font-family: 'Space Grotesk', sans-serif; font-size: 15px; color: #12141b; }
+.iv-row3 .sub { font-size: 12.5px; color: #262a35; max-width: 400px; line-height: 1.5; }

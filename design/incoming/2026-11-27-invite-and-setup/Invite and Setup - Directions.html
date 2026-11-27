@@ -1,0 +1,347 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>The invite sheet, the landing page and setup from an invite &mdash; directions</title>
+<!--
+  Self-contained, as PROCESS.md's "what a round must come home with" requires: what is fixed, the
+  named directions, how they compare, every state the recommended direction holds, the decided
+  rows, and the new strings. The pictures are <img> references into png/ beside this file, so this
+  document is read in the repository rather than carried anywhere.
+
+  No network reference of any kind. The three faces are the repo's own woff2, by relative path.
+-->
+<style>
+@font-face { font-family: 'Sora'; src: url('../../app/fonts/sora.woff2') format('woff2');
+  font-weight: 100 900; font-display: block; }
+@font-face { font-family: 'Space Grotesk'; src: url('../../app/fonts/space-grotesk.woff2') format('woff2');
+  font-weight: 100 900; font-display: block; }
+@font-face { font-family: 'JetBrains Mono'; src: url('../../app/fonts/jetbrains-mono.woff2') format('woff2');
+  font-weight: 100 900; font-display: block; }
+
+* { box-sizing: border-box; }
+body { margin: 0; background: #eceef3; color: #12141b; font-family: 'Sora', sans-serif;
+  font-size: 15px; line-height: 1.6; }
+main { max-width: 1180px; margin: 0 auto; padding: 48px 28px 90px; }
+h1 { font-family: 'Space Grotesk', sans-serif; font-size: 34px; letter-spacing: -.02em;
+  margin: 0 0 6px; }
+h2 { font-family: 'Space Grotesk', sans-serif; font-size: 23px; letter-spacing: -.015em;
+  margin: 54px 0 10px; padding-top: 22px; border-top: 1px solid #d5d8e1; }
+h3 { font-family: 'Space Grotesk', sans-serif; font-size: 17px; margin: 30px 0 8px; }
+p, li { color: #262a35; }
+.lede { font-size: 16.5px; color: #262a35; max-width: 78ch; }
+code, .mono { font-family: 'JetBrains Mono', monospace; font-size: .86em; }
+table { border-collapse: collapse; width: 100%; background: #fff; border-radius: 10px;
+  overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,.1); margin: 14px 0 6px; }
+th, td { padding: 10px 13px; text-align: left; border-bottom: 1px solid #dfe2ea; font-size: 13.5px;
+  vertical-align: top; color: #12141b; }
+th { background: #f6f7fa; font-size: 10.5px; text-transform: uppercase; letter-spacing: .07em;
+  color: #262a35; font-weight: 600; }
+tr:last-child td { border-bottom: 0; }
+.pick { display: inline-block; font-family: 'JetBrains Mono', monospace; font-size: 10.5px;
+  font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: #0a0c13;
+  background: #a9e3c4; padding: 2px 7px; border-radius: 5px; margin-left: 6px; }
+.pick.no { background: #f3bfc7; }
+.pick.ask { background: #ffe0a3; }
+figure { margin: 18px 0 0; }
+figure img { display: block; max-width: 100%; border-radius: 10px; background: #fff;
+  box-shadow: 0 2px 10px rgba(20,22,32,.14); }
+figcaption { font-size: 12.5px; color: #262a35; margin-top: 7px; }
+.strip { display: flex; gap: 18px; flex-wrap: wrap; align-items: flex-start; }
+.strip figure { flex: 0 0 auto; margin: 0; }
+.strip img { max-height: 430px; width: auto; }
+.wide img { max-height: 320px; width: auto; }
+.note { background: #fff; border-left: 3px solid #7b6ef0; padding: 12px 16px; border-radius: 0 8px 8px 0;
+  margin: 16px 0; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+.note.warn { border-left-color: #c98a12; }
+.note.bad { border-left-color: #c0392b; }
+.note b { color: #12141b; }
+ul { padding-left: 20px; }
+li { margin: 4px 0; }
+</style>
+</head>
+<body>
+<main>
+
+<h1>The invite sheet, the landing page, and setup from an invite</h1>
+<p class="lede">Round <span class="mono">2026-11-27-invite-and-setup</span>. Three surfaces in one
+round: the admin&rsquo;s <b>Invite a viewer</b> sheet, the public <span class="mono">/join</span>
+landing page, and the server-setup screen when it arrives pre-filled from an invite. 74 pictures.
+The round&rsquo;s question &mdash; what comes first on the landing page &mdash; is answered in
+&sect;2 with three drawn orders.</p>
+
+<h2>1 &middot; What is fixed before anything is drawn</h2>
+<ul>
+  <li><b>The link carries no credential.</b> It is the server&rsquo;s address and nothing else, and
+    it never sets that address on its own: the app shows it and the viewer presses Connect.</li>
+  <li><b>A TV cannot be invited.</b> No camera, no browser. Every surface therefore ends with the
+    same sentence &mdash; <i>on a TV, open Ravilo and type &lt;host&gt;</i> &mdash; and the typed
+    setup gets better instead.</li>
+  <li><b>The landing page is one self-contained document.</b> Inline CSS and SVG, no token file, no
+    second stylesheet, no image, no hosted font &mdash; the shape
+    <span class="mono">SingleSignOnPages</span> already ships. Every colour and size in the page
+    frames was read out of that Kotlin and written into <span class="mono">invite-data.js</span>.</li>
+  <li><b>The admin sheet is <span class="mono">wf.css</span>.</b> It reuses the shipped
+    <span class="mono">.pair-back</span> / <span class="mono">.pair-modal</span> modal at its
+    shipped 440&nbsp;px, and both themes are drawn.</li>
+  <li><b>The setup screen already exists</b>, and this round carries its geometry unchanged from
+    round <span class="mono">2026-11-19-setup-hidden-characters</span> so the two rounds&rsquo;
+    pictures of one component can be diffed. What is new is four things: the from-invite line, the
+    not-found line, the waiting button, and the example in an empty field.</li>
+  <li><b>Exactly one visible focus target per frame</b>, and no new animation anywhere. QoE first.</li>
+</ul>
+
+<h2>2 &middot; The question: what comes first on <span class="mono">/join</span>?</h2>
+<p>Three orders, drawn at iPhone&nbsp;16 width with the browser bar, so the comparison is of pages
+and not of descriptions. Every one of them keeps the host block first and the TV line last; what
+moves is the three actions between them.</p>
+
+<table>
+<tr><th>Order</th><th>Top to bottom</th><th>Gives</th><th>Costs</th></tr>
+<tr>
+  <td><b>L1</b> &mdash; Open in Ravilo first<span class="pick">recommended</span></td>
+  <td class="mono">open &middot; get-app &middot; browser &middot; tv</td>
+  <td>A viewer who has the app is one press from done. A viewer who does not sees it fail softly,
+      and the next thing on the page is the fix.</td>
+  <td>The page&rsquo;s first button is the one that does nothing on a phone with no app &mdash; and
+      it is also the only button whose failure is silent.</td>
+</tr>
+<tr>
+  <td><b>L2</b> &mdash; Get the app first</td>
+  <td class="mono">get-app &middot; open &middot; browser &middot; tv</td>
+  <td>The page leads with what always works.</td>
+  <td>Four buttons before the one press most invited viewers need, and the page&rsquo;s single
+      primary then sits in its <i>second</i> group, under a list.</td>
+</tr>
+<tr>
+  <td><b>L3</b> &mdash; Browser first<span class="pick no">the spec as written</span></td>
+  <td class="mono">browser &middot; open &middot; get-app &middot; tv</td>
+  <td>The one route that needs nothing installed and no second step.</td>
+  <td>It sends the viewer to the browser client when the app is the better player &mdash; and it is
+      the order FR-3 <i>already</i> states, so choosing L1 or L2 needs a dated amendment.</td>
+</tr>
+</table>
+
+<div class="strip">
+  <figure><img src="png/invite-join-l1-phone.png" alt="L1 on a phone">
+    <figcaption><b>L1</b> &mdash; recommended</figcaption></figure>
+  <figure><img src="png/invite-join-l2-phone.png" alt="L2 on a phone">
+    <figcaption><b>L2</b> &mdash; Get the app first</figcaption></figure>
+  <figure><img src="png/invite-join-l3-phone.png" alt="L3 on a phone">
+    <figcaption><b>L3</b> &mdash; the spec&rsquo;s own order</figcaption></figure>
+</div>
+
+<div class="note"><b>The answer, as a recommendation: L1.</b> Not because of the lean in the brief,
+but because of something the pictures settled that prose could not: <b>the whole page fits an
+iPhone&nbsp;16 viewport with 23&nbsp;px to spare.</b> Every frame carries its own measured overflow
+in the caption. Nothing on this page is below the fold on any phone drawn, so "first" is not about
+what a viewer sees &mdash; they see all of it &mdash; it is only about which button is the primary
+and which is an outline. On that question L1 is right: the primary should be the action most
+invited viewers will take, and that is opening an app they already have.</div>
+
+<div class="note warn"><b>L3 is what the spec says today.</b> FR-3 lists the parts as
+<i>Watch in your browser &rarr; Open the Ravilo app &rarr; Get the app &rarr; TV</i>. An engineer
+builds FR-3, not the brief. If Bárður adopts L1, FR-3 needs a dated amendment in its own file, and
+it is a one-line one.</div>
+
+<h2>3 &middot; The Android button, after the owner&rsquo;s 2026-11-27 change</h2>
+<p><b>Android is one button, labelled like the others, and it carries no &ldquo;open this link
+again&rdquo; line</b>, because it never needs an install: it links to the Ravilo Web address, which
+opens the installed app through its App Link filter and Ravilo Web on any other phone. macOS, Linux
+and Samsung TV stay downloads and keep that line.</p>
+<p>So the line belongs to the <b>download group</b> and not to the section &mdash; that is what the
+change actually moves, and it is why the group is drawn as one web button, then macOS and Linux
+two-up, then Samsung TV, with the sentence under those three alone.</p>
+<p><b>There is no iPhone button</b>, and that is deliberate rather than an omission. The brief&rsquo;s
+section head reads <i>Android, iPhone/web, desktop</i>, but iOS is in the spec&rsquo;s Out list and
+FR-3 names exactly Android, macOS, Linux and Samsung TV. An iPhone&rsquo;s route is the browser
+part, which is its own section with its own label.</p>
+
+<div class="strip">
+  <figure><img src="png/invite-join-l1-noweb.png" alt="L1 with no Ravilo Web address">
+    <figcaption>With <span class="mono">webBase()</span> null: <b>both</b> the Android button and
+      the browser part are gone &mdash; one configuration value feeds both. The page is downloads
+      and the TV line.</figcaption></figure>
+  <figure><img src="png/invite-join-l1-spec.png" alt="L1 with the spec's wording">
+    <figcaption>L1 with FR-3&rsquo;s own strings, so the wording question can be looked at rather
+      than argued.</figcaption></figure>
+</div>
+
+<h2>4 &middot; Every state L1 holds</h2>
+<div class="strip wide">
+  <figure><img src="png/invite-join-l1-wide.png" alt="L1 over 900px">
+    <figcaption>Over the page&rsquo;s own 900&nbsp;px breakpoint: the column goes 420&nbsp;&rarr;&nbsp;560
+      and the heading 27&nbsp;&rarr;&nbsp;34&nbsp;px, both shipped values.</figcaption></figure>
+</div>
+<div class="strip">
+  <figure><img src="png/invite-join-l1-pixel.png" alt="L1 on a Pixel 9">
+    <figcaption>Pixel&nbsp;9, 412&times;915.</figcaption></figure>
+  <figure><img src="png/invite-join-404.png" alt="The 404">
+    <figcaption>The 404, with <span class="mono">public_url</span> unset.</figcaption></figure>
+</div>
+
+<h2>5 &middot; The admin invite sheet</h2>
+<p>Two directions in the shipped 440&nbsp;px modal. Both carry the link with Copy, a real scannable
+QR, the TV line and the account line; they differ in which of the link and the code is the
+primary.</p>
+
+<table>
+<tr><th>Direction</th><th>Gives</th><th>Costs</th></tr>
+<tr><td><b>A1</b> &mdash; link first<span class="pick">recommended</span></td>
+  <td>The link is one unbroken line at 440&nbsp;px, Copy is full height beside it, and the code is
+      148&nbsp;px and centred under its own caption. Copy is what an admin uses most &mdash; a link
+      pasted into a chat &mdash; and it is at the top.</td>
+  <td>About 150&nbsp;px taller.</td></tr>
+<tr><td><b>A2</b> &mdash; code first</td>
+  <td>Shorter, and the code reads as the point of the sheet.</td>
+  <td>The link wraps to two lines and Copy drops below it, which is three objects where A1 has
+      two. The code is the same 4&nbsp;px module but visually smaller beside text.</td></tr>
+</table>
+
+<div class="strip">
+  <figure><img src="png/invite-admin-a1.png" alt="A1 dark"><figcaption>A1, dark</figcaption></figure>
+  <figure><img src="png/invite-admin-a2.png" alt="A2 dark"><figcaption>A2, dark</figcaption></figure>
+</div>
+<div class="strip">
+  <figure><img src="png/invite-admin-a1-light.png" alt="A1 light"><figcaption>A1, light</figcaption></figure>
+  <figure><img src="png/invite-admin-unset.png" alt="unset">
+    <figcaption>No public address: no link, no code, no Copy &mdash; and the one thing to do.</figcaption></figure>
+</div>
+<div class="strip">
+  <figure><img src="png/invite-admin-a1-copied.png" alt="copied">
+    <figcaption>Copy pressed. The button keeps its width.</figcaption></figure>
+  <figure><img src="png/invite-admin-a1-long.png" alt="long host">
+    <figcaption>The longest host the code can carry &mdash; see the QR ceiling below.</figcaption></figure>
+</div>
+
+<div class="note bad"><b>A requirement the drawing found, not the brief: the QR&rsquo;s version has
+to be chosen from the link&rsquo;s length.</b> A QR at version&nbsp;3-M holds 42 bytes.
+<span class="mono">https://</span> + host + <span class="mono">/join</span> is 13 bytes of fixed
+text, so a host over <b>29 characters</b> does not fit and the encoder must move to version&nbsp;4.
+This is not theoretical: the first render of this round <i>failed</i> on a 37-character host.
+FR-2&rsquo;s shipped <span class="mono">QrEncoder.encode</span> must not be fixed at one version.</div>
+
+<h2>6 &middot; The setup screen</h2>
+<p>Four new things in a column this round does not otherwise touch. The <b>from-invite line sits
+above the field</b> and the <b>hidden-character warning below it</b> &mdash; which is the one thing
+the brief asked to see together, and the one thing only a picture can settle.</p>
+
+<div class="strip">
+  <figure><img src="png/invite-setup-tv-invite.png" alt="TV from an invite">
+    <figcaption>TV 1920&times;1080, from an invite. Focus is on <b>Connect</b>: the address is
+      already there, so the invite path is one press, and reaching the field to edit it is one
+      D-pad up.</figcaption></figure>
+</div>
+<div class="strip">
+  <figure><img src="png/invite-setup-tv-hidden.png" alt="TV both lines">
+    <figcaption>Both lines at once. They do not collide and they do not compete: information in the
+      accent above, warning in amber below.</figcaption></figure>
+</div>
+<div class="strip">
+  <figure><img src="png/invite-setup-tv-trying.png" alt="TV trying">
+    <figcaption>While the probe is out. No spinner, no dots: the string already ends in an ellipsis
+      and the fill is dimmed. The whole state costs one opacity value.</figcaption></figure>
+  <figure><img src="png/invite-setup-tv-notfound.png" alt="TV not found">
+    <figcaption>The probe failed. Text stays, line shows, focus has not moved &mdash; trying again
+      is one press.</figcaption></figure>
+</div>
+<div class="strip">
+  <figure><img src="png/invite-setup-tv-example.png" alt="TV example">
+    <figcaption>The new example, on an empty field. The caret is at offset 0, in front of the
+      placeholder.</figcaption></figure>
+  <figure><img src="png/invite-setup-tv-invite-noir.png" alt="Noir">
+    <figcaption>Noir. The invite line is the <i>skin&rsquo;s</i> accent, derived, not a fixed
+      violet.</figcaption></figure>
+</div>
+<div class="strip">
+  <figure><img src="png/invite-setup-phone-hidden.png" alt="phone both lines">
+    <figcaption>The same pair on a phone, 412&nbsp;dp.</figcaption></figure>
+  <figure><img src="png/invite-setup-phone-notfound-daylight.png" alt="phone daylight">
+    <figcaption>Daylight. Both line colours are darkened for contrast; the values and their
+      ratios are in <span class="mono">invite-data.js</span>.</figcaption></figure>
+  <figure><img src="png/invite-setup-phone-invite-fo.png" alt="phone Faroese">
+    <figcaption>Faroese, the longest of the three, on the narrowest surface: one line, just.</figcaption></figure>
+</div>
+
+<h2>7 &middot; Decided rows</h2>
+<table>
+<tr><th>Row</th><th>Decided</th><th>Because</th></tr>
+<tr><td>Where focus starts when the field is pre-filled</td><td><b>Connect</b></td>
+  <td>FR-6 is <i>&ldquo;the viewer sees the host and presses Connect&rdquo;</i>. One press.</td></tr>
+<tr><td>The invite line&rsquo;s colour</td><td>the skin&rsquo;s accent, derived</td>
+  <td>It is information, not a warning. The one warn colour on this screen has to keep meaning that
+      something is wrong.</td></tr>
+<tr><td>The waiting button</td><td>label + dimmed fill, nothing else</td>
+  <td>QoE first. If Compose wants motion it is a slow opacity pulse on the label, never a spinner.</td></tr>
+<tr><td>The account line</td><td><i>&ldquo;must exist <b>on this server</b> first&rdquo;</i></td>
+  <td>An admin reads this sentence out to a viewer, and a viewer never reads the other word.
+      <span class="pick ask">Bárður confirms</span></td></tr>
+<tr><td>The QR plate</td><td>white in both themes</td>
+  <td>The quiet zone is part of the code, not a surface. A dark-themed QR plate does not scan.</td></tr>
+<tr><td>The &ldquo;open this link again&rdquo; line</td><td>under the download group only</td>
+  <td>The owner&rsquo;s 2026-11-27 change, drawn exactly: Android never needs an install.</td></tr>
+</table>
+
+<h2>8 &middot; New strings</h2>
+<p>Danish and Faroese are <b>drafts</b>, under the DEB-2078 note <i>draft, review before release</i>.
+The landing page is drawn in English only, on the brief&rsquo;s instruction; its three-language
+table is here and in <span class="mono">invite-data.js</span> so slice 3 has it.</p>
+
+<table>
+<tr><th>Key / place</th><th>English</th><th>Danish (draft)</th><th>Faroese (draft)</th></tr>
+<tr><td class="mono">setup.from_invite</td><td>From your invite. Check the address, then connect.</td>
+  <td>Fra din invitation. Tjek adressen, og forbind s&aring;.</td>
+  <td>&Uacute;r t&iacute;ni innbj&oacute;&eth;ing. Kanna adressuna, og bind so &iacute;.</td></tr>
+<tr><td class="mono">setup.server_example</td><td class="mono">ravilo.example.com</td>
+  <td class="mono">ravilo.example.com</td><td class="mono">ravilo.example.com</td></tr>
+<tr><td class="mono">setup.server_prompt</td><td>Enter your Ravilo server address</td>
+  <td>Skriv adressen p&aring; jeres Ravilo-server</td>
+  <td>Skriva adressuna &aacute; Ravilo-amb&aelig;taranum t&iacute;num</td></tr>
+<tr><td><span class="mono">/join</span> &mdash; invited to</td><td>You&rsquo;ve been invited to</td>
+  <td>Du er inviteret til</td><td>T&uacute; ert innbo&eth;in til</td></tr>
+<tr><td><span class="mono">/join</span> &mdash; open</td><td>Open in Ravilo</td>
+  <td>&Aring;bn i Ravilo</td><td>Lat upp &iacute; Ravilo</td></tr>
+<tr><td><span class="mono">/join</span> &mdash; get the app</td><td>Get the app</td>
+  <td>Hent appen</td><td>Tak appina</td></tr>
+<tr><td><span class="mono">/join</span> &mdash; browser</td><td>Use Ravilo in the browser</td>
+  <td>Brug Ravilo i browseren</td><td>Br&uacute;ka Ravilo &iacute; kagaranum</td></tr>
+<tr><td><span class="mono">/join</span> &mdash; already installed</td>
+  <td>Installed the app? Open this link again.</td><td>Har du appen? &Aring;bn linket igen.</td>
+  <td>Hevur t&uacute; appina? Lat leinkjuna upp aftur.</td></tr>
+<tr><td><span class="mono">/join</span> &mdash; after a download</td>
+  <td>After installing, open this link again.</td>
+  <td>&Aring;bn linket igen, n&aring;r appen er installeret.</td>
+  <td>Lat leinkjuna upp aftur, t&aacute; appin er innl&ouml;gd.</td></tr>
+<tr><td><span class="mono">/join</span> &mdash; TV line</td><td>On a TV, open Ravilo and type &hellip;</td>
+  <td>P&aring; et tv: &aring;bn Ravilo og skriv &hellip;</td>
+  <td>&Aacute; einum TV: lat Ravilo upp og skriva &hellip;</td></tr>
+<tr><td><span class="mono">/join</span> &mdash; 404</td><td>This invite link isn&rsquo;t set up &middot;
+  Ask whoever sent it to try again.</td>
+  <td>Dette invitationslink er ikke sat op &middot; Bed afsenderen pr&oslash;ve igen.</td>
+  <td>Henda innbj&oacute;&eth;ingarleinkja er ikki sett upp &middot; Bi&eth; tann, sum sendi hana,
+      royna aftur.</td></tr>
+<tr><td>Admin sheet (English only, in Kotlin)</td>
+  <td>Invite a viewer &middot; Send this link, or let them scan it. &middot; Invite link &middot;
+      Copy / Copied &middot; Scan to open &middot; TVs can&rsquo;t open links. On a TV, open Ravilo
+      and type &hellip; &middot; The link holds no password&hellip; &middot; No public address yet
+      &middot; Set the Public address in Settings &rarr; Connections first&hellip;</td>
+  <td>&mdash;</td><td>&mdash;</td></tr>
+</table>
+
+<h2>9 &middot; What is not drawn, and why</h2>
+<ul>
+  <li><b>Offline / lost connection.</b> Deliberately absent: FR-7 and R280 say the not-found line
+    must <i>not</i> tell a typo from a device that is offline, and the setup screen holds no socket
+    yet. Drawing a separate offline state would draw a distinction the spec forbids.</li>
+  <li><b>The slow loading case</b> is the same frame as <i>Trying&hellip;</i> &mdash; the probe has
+    one 8&nbsp;s timeout and no intermediate state.</li>
+  <li><b>Danish and Faroese for the landing page</b>, on the brief&rsquo;s instruction. The drafts
+    are in &sect;8.</li>
+  <li><b>Tizen and the Chromecast receiver.</b> Out of the spec&rsquo;s scope, and a TV cannot take
+    an invite at all.</li>
+  <li><b>An iPhone download button.</b> &sect;3.</li>
+</ul>
+
+</main>
+</body>
+</html>
