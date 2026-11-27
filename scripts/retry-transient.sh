@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# DEB-4106 FR-1, FR-2, FR-4 — run a command; if it fails with a TRANSIENT upstream error (HTTP 5xx, a connect or
-# read timeout, a reset connection), pause and run it again, up to a bound. Any other failure (a compile error, a
-# failing test, a broken build script) exits on the first attempt, so a real red is never retried.
+# DEB-4106 FR-1, FR-2, FR-4 — run a command; if it fails with a TRANSIENT upstream error (HTTP 5xx or 429, a
+# connect or read timeout, a reset connection; 429 since DEB-5946), pause and run it again, up to a bound. Any
+# other failure (a compile error, a failing test, a broken build script) exits on the first attempt, so a real
+# red is never retried.
 #
 #   retry-transient.sh -- <command> [args...]
 #
@@ -18,7 +19,7 @@ attempts=$(( ${#pauses[@]} + 1 ))
 log=$(mktemp)
 trap 'rm -f "$log"' EXIT
 
-transient='status code 5[0-9][0-9]|Request failed "5[0-9][0-9]|(^|[^0-9])5[0-9][0-9] (Internal Server Error|Bad Gateway|Service Unavailable|Gateway Time-?out|Gateway Timeout)|Read timed out|Connect timed out|connect timed out|Connection reset|Connection timed out|Remote host terminated the handshake|Premature end of Content-Length|Unexpected end of file from server|ETIMEDOUT|ECONNRESET|EAI_AGAIN|Temporary failure in name resolution|socket hang up'
+transient='status code (5[0-9][0-9]|429)|Request failed "(5[0-9][0-9]|429)|(^|[^0-9])(5[0-9][0-9]|429) (Internal Server Error|Too Many Requests|Bad Gateway|Service Unavailable|Gateway Time-?out|Gateway Timeout)|Read timed out|Connect timed out|connect timed out|Connection reset|Connection timed out|Remote host terminated the handshake|Premature end of Content-Length|Unexpected end of file from server|ETIMEDOUT|ECONNRESET|EAI_AGAIN|Temporary failure in name resolution|socket hang up'
 
 n=1
 while :; do

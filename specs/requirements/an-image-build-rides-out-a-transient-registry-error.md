@@ -189,3 +189,10 @@ it adds thousands of lines to every build log, including the green ones.
 8. **Watched.** The next sighting on the CI watch quotes the upstream error the log now shows. If it is
    throttling (`429`), not an outage, that sighting is this spec's next amendment, with the measured length.
    The bound is not widened silently.
+
+*Built 2026-11-27 (DEB-5946), measured on Gradle 9.2.1 against a local server answering `503`/`429`:* `--stacktrace`
+prints no cause for a failed plugin marker, only the `UnknownPluginException` text, so the init script resolves the
+`[plugins]` markers (and the plugin artifacts behind them) in `settingsEvaluated`. A `503` and a `429` reach the log as
+`Received status code 5xx/429`, and `retry-transient.sh` retries both. A version that does not exist fails on the first
+attempt with `Could not find <coordinate>`. The settings plugin (`org.meshtastic.flatpak.sources.settings`) is resolved
+before `settingsEvaluated` fires, so the init script cannot pre-resolve it; it stays covered by Gradle's own retry only.

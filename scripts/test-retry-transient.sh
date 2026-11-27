@@ -26,6 +26,16 @@ check "gives up with the command's exit code" '[ "$rc" -eq 7 ]'
 check "3 attempts: 2 retry lines + the final line" '[ "$(grep -c "^retry-transient:" <<<"$out")" = 3 ]'
 check "the upstream error is still in the log" 'grep -q "status code 503" <<<"$out"'
 
+# DEB-5946 FR-1: a 429 is transient too, in Gradle's wording and in npm's.
+for msg in 'Could not GET x. Received status code 429 from server: Too Many Requests' 'ResponseError: Request failed "429 Too Many Requests"'; do
+  out=$(scripts/retry-transient.sh -- bash -c "echo '$msg'; exit 5" 2>&1); rc=$?
+  check "a 429 is retried: $msg" '[ "$rc" -eq 5 ] && [ "$(grep -c "^retry-transient:" <<<"$out")" = 3 ]'
+done
+
+# DEB-5946 FR-6 / FR-2: Gradle's bare plugin failure is NOT transient, so a mistyped plugin fails on attempt 1.
+out=$(scripts/retry-transient.sh -- bash -c "echo \"Plugin [id: 'x', version: '1'] was not found (could not resolve plugin artifact 'x:x.gradle.plugin:1')\"; exit 1" 2>&1); rc=$?
+check "a bare unresolvable plugin fails at once" '[ "$rc" -eq 1 ] && ! grep -q "^retry-transient:" <<<"$out"'
+
 # A compile error is not transient: one attempt, no retry line.
 out=$(scripts/retry-transient.sh -- bash -c 'echo "e: file.kt:3:1 Unresolved reference: foo"; exit 1' 2>&1); rc=$?
 check "a real failure fails at once" '[ "$rc" -eq 1 ] && ! grep -q "^retry-transient:" <<<"$out"'

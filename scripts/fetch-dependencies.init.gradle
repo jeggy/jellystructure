@@ -4,10 +4,16 @@
 // A configuration that cannot resolve for a reason that is not the network (no matching variant, a project
 // artifact that is not built yet) is reported and skipped: the compile would not have resolved it either. A
 // transient upstream error is rethrown, so scripts/retry-transient.sh sees it and retries.
+//
+// DEB-5946 FR-6 — the plugins the builds apply through `plugins {}` blocks are resolved here too, in settingsEvaluated,
+// before the root plugins block does. Gradle's own plugin resolver turns a failed marker into "could not resolve
+// plugin artifact" and drops the 5xx/timeout/429 it retried, so the outer retry would see nothing to match. Resolving
+// the marker ourselves keeps the real error: a transient one is rethrown (retried), a coordinate that does not
+// exist is rethrown at once (FR-2), anything else is reported and left to the plugins block.
 allprojects {
     tasks.register('fetchDependencies') {
         doLast {
-            def transientError = ~/(?s).*(status code 5\d\d|Read timed out|Connect timed out|connect timed out|Connection reset|Connection timed out|Remote host terminated|Premature end of Content-Length|Unexpected end of file).*/
+            def transientError = ~/(?s).*(status code (5\d\d|429)|Read timed out|Connect timed out|connect timed out|Connection reset|Connection timed out|Remote host terminated|Premature end of Content-Length|Unexpected end of file).*/
             configurations.findAll { it.canBeResolved }.each { c ->
                 try {
                     c.incoming.files.files.size()
@@ -18,6 +24,50 @@ allprojects {
                     logger.lifecycle("fetchDependencies: skipped ${project.path}:${c.name} (${messages.first().readLines().first()})")
                 }
             }
+        }
+    }
+}
+
+settingsEvaluated { settings ->
+    def transientError = ~/(?s).*(status code (5\d\d|429)|Read timed out|Connect timed out|connect timed out|Connection reset|Connection timed out|Remote host terminated|Premature end of Content-Length|Unexpected end of file).*/
+    def catalog = new File(settings.settingsDir, 'gradle/libs.versions.toml')
+    if (!catalog.file) { return }
+    def versions = [:]
+    def plugins = []
+    def table = null
+    catalog.eachLine { raw ->
+        def line = raw.replaceFirst(/\s+#.*$/, '').trim()
+        def header = (line =~ /^\[(.+)]$/)
+        if (header) { table = header[0][1]; return }
+        def entry = (line =~ /^([\w.-]+)\s*=\s*(.*)$/)
+        if (!entry) { return }
+        if (table == 'versions') {
+            def v = (entry[0][2] =~ /^"([^"]*)"/)
+            if (v) { versions[entry[0][1]] = v[0][1] }
+        } else if (table == 'plugins') {
+            def id = (entry[0][2] =~ /\bid\s*=\s*"([^"]+)"/)
+            def literal = (entry[0][2] =~ /\bversion\s*=\s*"([^"]+)"/)
+            def ref = (entry[0][2] =~ /\bversion\.ref\s*=\s*"([^"]+)"/)
+            def version = literal ? literal[0][1] : (ref ? versions[ref[0][1]] : null)
+            if (id && version) { plugins << [id[0][1], version] }
+        }
+    }
+    // The settings' own repositories for plugin resolution, content filters and all, on a detached configuration.
+    def scriptRepos = settings.buildscript.repositories
+    scriptRepos.clear()
+    scriptRepos.addAll(settings.pluginManagement.repositories)
+    plugins.each { pair ->
+        def id = pair[0]
+        def version = pair[1]
+        def coordinate = "${id}:${id}.gradle.plugin:${version}".toString()
+        def c = settings.buildscript.configurations.detachedConfiguration(settings.buildscript.dependencies.create(coordinate))
+        try {
+            c.incoming.files.files.size()
+        } catch (Throwable t) {
+            def messages = []
+            for (Throwable e = t; e != null; e = e.cause) { messages << String.valueOf(e.message) }
+            if (messages.any { it ==~ transientError || it.startsWith('Could not find ') }) { throw t }
+            println("fetchDependencies: skipped plugin ${coordinate} (${messages.first().readLines().first()})")
         }
     }
 }
