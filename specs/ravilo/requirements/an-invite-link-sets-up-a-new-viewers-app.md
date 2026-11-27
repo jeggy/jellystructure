@@ -52,6 +52,7 @@ credential, no account, no code (option S1 of the DEB-5687 research `research-in
 
 ### FR-2 — The invite sheet (admin frontend)
 
+- Layout: option A1 from design round DEB-5861 (owner, 2026-11-27): the link and Copy first, the QR below it.
 - *Users & devices* gains an **Invite a viewer** button on its page bar (`RaviloUsers.kt:42`, beside *Refresh*).
 - It opens a sheet that shows, from FR-1's answer only (no link is assembled in the frontend):
   - the link, with **Copy**;
@@ -77,16 +78,17 @@ credential, no account, no code (option S1 of the DEB-5687 research `research-in
   `Referrer-Policy: no-referrer` and `Cache-Control: no-store`.
 - It shows the word Ravilo and the server's host, and never the server software's name, a version or a status code
   (Key Invariant 12; DEB-2233 FR-15). Its query string is ignored.
-- Four parts, in this order (the order is the owner's pick after the design round; see DEB-5861):
+- Four parts, in this order (owner, 2026-11-27, design round DEB-5861: option L1, *Open in Ravilo* first):
   There is no iPhone button: iOS is out of scope, and the browser part is the iPhone route.
-  1. **Use Ravilo in the browser**: the Ravilo Web address (`SingleSignOnService.webBase()`). Absent when that is null.
-  2. **Open in Ravilo**: `dev.jellystructure.ravilo:/join?s=<public_url>`, the value written from configuration.
-  3. **Get the app**: one button per platform. **Android** links to `<webBase>/join?s=<public_url>` on the Ravilo
+  1. **Open in Ravilo**: `dev.jellystructure.ravilo:/join?s=<public_url>`, the value written from configuration.
+     This is the page's one primary button.
+  2. **Get the app**: one button per platform. **Android** links to `<webBase>/join?s=<public_url>` on the Ravilo
      Web address (FR-5a): a phone with Ravilo installed opens the app with the invite, and any other phone opens
      Ravilo Web (owner, 2026-11-27: *"link to [the Ravilo Web address] which in it self would link to the already
      installed android app, but if not, then just use ravilo web"*). With `webBase()` null the Android button is
      absent. macOS, Linux and Samsung TV each link to the newest release file, with one line: *After installing,
      open this link again.* (No install referrer exists, so a link never survives an install.)
+  3. **Use Ravilo in the browser**: the Ravilo Web address (`SingleSignOnService.webBase()`). Absent when that is null.
   4. *On a TV, open Ravilo and type* followed by the host.
 - With `public_url` unset, `/join` answers 404 with a one-line page in the same shape: *This invite link isn't set up.*
 - Generated per request from configuration. It reveals nothing the open code mint (`linkUrl`) does not already reveal,

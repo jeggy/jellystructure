@@ -109,49 +109,61 @@ affected. Their Home rows obey the hide as soon as the backend ships, and they r
 the route without that signal, because an absent `/api` route answers `200 text/html`. The wire baseline records both
 fields (`WireCompatTest`).
 
-### FR-6 — The action on the detail page (Android TV, phone, Ravilo Web, desktop)
+### FR-6 — The action, behind a More control on the detail page (Android TV, phone, Ravilo Web, desktop)
 
-The movie and series detail pages show one action when the playstate says so:
+Owner, 2026-11-27, on the design round's card: **option C, in the row's overflow.** The action row's own controls do not
+change.
+
+- **The More control.** When the playstate gives an action (`in_continue` or `continue_hidden`), the movie and series
+  detail pages show one `⋯` control as the **last** control of the action row: a 44 dp square on the phone, a square
+  `.bt` on desktop and Ravilo Web, a row button on TV. With neither state it is absent. It is never the first focus
+  target: Play stays first on TV, and nothing before it moves.
+- **What it opens.**
+  - Phone: a bottom sheet in the shipped phone sheet's shape, over a scrim.
+  - Desktop and Ravilo Web: a pointer menu anchored to the `⋯`, declaring its own ink and surface (it must not
+    inherit the hero's white-on-artwork ink; round report, defect e).
+  - Android TV: a panel anchored to the action row's upper edge that never covers the row, the `⋯` or the title
+    (round report, defect d). Focus moves into it; D-pad up and down move between items; Back or a press outside
+    closes it and returns focus to the `⋯`.
+- **The item.** One item, labelled by state:
 
 | State | Label key | English |
 |---|---|---|
 | `in_continue` | `action.continue_remove` | Remove from Continue Watching |
 | `continue_hidden` | `action.continue_restore` | Show in Continue Watching |
-| neither | — | no action |
 
-Pressing it calls FR-4 through `DetailStore`, the way `setPlayed` and `setFavorite` do. It behaves like Mark watched
-under DEB-5835 FR-6 (owner, 2026-11-27: *"At once, undone with a note if the save fails"*): the label flips at once on
-this page, a second press is ignored until the server answers, the answer replaces the local state, and Home's row
-changes only after a success. A failed call puts the label back and shows DEB-5835 FR-5's toast.
-The restore label is the undo: a viewer who removes by mistake presses the same place again.
-
-It is never the first focus target. Play stays first on TV, and the action never moves Play or the buttons before it.
-Nothing is added to Home, a row or a tile, so TV focus motion is unchanged. Nothing touches the play start path.
+- **Pressing it** closes the surface and calls FR-4 through `DetailStore`, the way `setPlayed` and `setFavorite` do. It
+  behaves like Mark watched under DEB-5835 FR-6 (owner, 2026-11-27: *"At once, undone with a note if the save
+  fails"*): the state changes at once on this page, a second press is ignored until the server answers, the answer
+  replaces the local state, and Home's row changes only after a success. A failed call puts the state back and shows
+  DEB-5835 FR-5's toast.
+- **It says what happened.** The label is no longer under the finger once the surface closes, so a success shows one
+  short toast in the existing toast component: `toast.continue_removed` or `toast.continue_restored`. The undo is the
+  same `⋯`, now offering the other item.
+- Nothing is added to Home, a row or a tile, so TV focus motion on Home is unchanged. The surfaces open only on a press.
+  Nothing touches the play start path.
 
 ### FR-7 — Strings
 
-`action.continue_remove` and `action.continue_restore` are added to `i18n/en.json`, `da.json` and `fo.json`. The
+`action.continue_remove`, `action.continue_restore`, `toast.continue_removed` (*Removed from Continue Watching*),
+`toast.continue_restored` (*Back in Continue Watching*) and `action.more` (*More*, the `⋯` control's spoken name) are added to `i18n/en.json`, `da.json` and `fo.json`. The
 Danish and Faroese texts follow each file's own `row.continue` wording (`Fortsæt med at se`, `Halt fram at síggja`)
 and carry a `note` marking them as drafts for review. `scripts/check-i18n-spelling.sh` passes.
 
 ## Design
 
-One small round. It reuses `RaviloButton` (ghost) and adds no component, but the action rows are already full and the
-phone row has fixed widths per language (DEB-4070). The designer draws:
-
-1. **Android TV movie and series detail**: where the action sits in the action row, at the longest language (Faroese),
-   in both states.
-2. **Phone movie and series detail**: where it sits when the Play · Download · My List row is full, in both states.
-3. **Desktop and Ravilo Web wide**: the same row at desktop width.
-
-No new colour, icon or animation.
+Drawn in round `design/incoming/2026-11-27-continue-remove-placement/` (DEB-5859). The owner picked **option C** on
+2026-11-27. Port from that round's `frames.html` and `continue-remove-placement.css` (`.crp-of`, `.crp-sheet`, the
+desktop `⋯` `.bt`, the TV panel), with its two fixes kept: each surface is anchored to the row, and the menu declares
+its own ink. These are three new surfaces the detail page does not have today. Each later secondary action on the
+detail page joins this `⋯`. No new colour, icon or animation beyond the round.
 
 ## What this does not do yet
 
 - **Samsung.** No button. Its Home row obeys the hide.
 - **A menu on the tile** (long press on the phone, hold OK on TV, right-click on desktop). Out, because Ravilo tiles
   have no menu today and TV focus cost comes first (open question 1).
-- **An Undo toast.** The restore label on the detail page is the undo.
+- **An Undo button in the toast.** The `⋯` offering the other item is the undo.
 - **A list of hidden titles** for the viewer or the admin.
 - **Expiry of old rows.** They cost one row each.
 
@@ -171,7 +183,7 @@ On a backend with this change and a test user with at least three Continue entri
    position. No Jellyfin playstate changed.
 2. **Series.** Removing a series hides its card whether it shows resume or next-up. Its page still resumes the
    R306 episode.
-3. **Restore.** The page now offers "Show in Continue Watching". Pressing it brings the title back at its true place.
+3. **Restore.** The page's `⋯` now offers "Show in Continue Watching". Pressing it shows *Back in Continue Watching* and brings the title back at its true place.
 4. **Comes back by playing.** Remove a series, then play any of its episodes for a minute on the phone. After the
    next rebuild it is back in the row, and its `continue_hidden` row is gone.
 5. **No early return.** Removing a title within seconds of stopping it does not bring it back.
@@ -184,7 +196,7 @@ On a backend with this change and a test user with at least three Continue entri
 
 ## Build order
 
-One engineer. Slices in order. Slices 1–3 need no design. Slice 4 waits for the round.
+One engineer. Slices in order. Slices 1–4 need no design. Slices 5–7 port the round's option C (owner, 2026-11-27).
 
 1. **Store (FR-1).** `src/commonMain/sqldelight/dev/jellystructure/db/103.sqm`, `ContinueHidden.sq`, a
    `tv/ContinueHiddenStore.kt` (in-memory, write-through), the delete in `tv/GoneUserRemoval.kt` and
@@ -203,8 +215,14 @@ One engineer. Slices in order. Slices 1–3 need no design. Slice 4 waits for th
 4. **Strings (FR-7). Junior-ready.** `i18n/en.json`, `da.json`, `fo.json`. Proof:
    `JAVA_HOME=~/.jdks/jbr-21.0.11 ./gradlew :ravilo-i18n:generateRaviloStrings :ravilo-i18n:checkRaviloStrings --console=plain`
    and `scripts/check-i18n-spelling.sh`.
-5. **The action (FR-6).** After the round. `ravilo-ui/.../screens/MovieDetailScreen.kt`, `SeriesDetailScreen.kt`,
-   `DetailStore.kt` (`setContinueHidden`, read-after-write like `setFavorite`). Proof:
+5. **The `⋯` and the desktop/web menu (FR-6).** After slice 3. `ravilo-ui/.../screens/MovieDetailScreen.kt`,
+   `SeriesDetailScreen.kt`, `DetailStore.kt` (`setContinueHidden`, read-after-write like `setFavorite`), a
+   `DetailMoreMenu` composable. Proof:
    `JAVA_HOME=~/.jdks/jbr-21.0.11 ./gradlew :ravilo-ui:desktopTest --tests '*ContinueRemoveActionTest*' --console=plain`
-   (label per state, no action when neither, the label flips at once and goes back on a failure, Play keeps first focus), then the
-   Android TV and phone compiles.
+   (the `⋯` per state and absent with neither, the item per state, the state flips at once and goes back on a failure,
+   the success toast, Play keeps first focus, the menu never covers the row).
+6. **The phone sheet (FR-6).** After slice 5. The sheet over a scrim on the phone detail pages. Proof: the same test
+   class's phone cases, then the Android compile.
+7. **The TV panel (FR-6).** After slice 5. The anchored panel, D-pad inside, Back returns focus to the `⋯`. Proof: the
+   test class's TV cases (focus in, Back out, row never covered), the Android TV compile, and a QA row on an Android
+   TV for focus feel.

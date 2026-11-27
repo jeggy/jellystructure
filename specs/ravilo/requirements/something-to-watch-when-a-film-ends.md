@@ -116,8 +116,9 @@ the designer draws only the layout:
 4. Desktop layout (sidebar rail), and Ravilo Web at a narrow width.
 5. Light theme and one dark theme for 1 and 3.
 
-Whether the film's own title or logo is shown, and whether a visible back control is needed on pointer clients, is
-the designer's call. Any new text goes through FR-5's string rule.
+Drawn in round `design/incoming/2026-11-27-after-film-page/` (DEB-5860). The owner picked on 2026-11-27: **the film's
+logo when it has one, its title as text when not** (as the title page does), and **Back is the shipped window header**
+on desktop and Ravilo Web, with no floating button. The phone keeps a visible back circle; the TV draws none. Any new text goes through FR-5's string rule.
 
 ## Acceptance
 
