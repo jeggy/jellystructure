@@ -66,13 +66,13 @@ private const val RESUME_MARGIN_SEGMENTS = 5
 /** The ticket answers that mean "this URL is no good any more" (expired, or re-minted): ask `start` again (FR-4). */
 fun isExpiredTicket(status: Int?): Boolean = status == 401 || status == 403 || status == 410
 
+private val stillJson = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
+
 /**
  * DEB-4070 (DEB-3995 FR-2, FR-3, FR-5, FR-7) — what the pages talk to. It owns the queue: downloads run **one at a time in the order
  * asked for**, and a download takes its ticket only when its turn comes, because a phone has one download stream and a `start` from it
  * replaces the one it holds (FR-6, DEB-4256). Nothing here writes Jellyfin or invents catalog rows.
  */
-private val stillJson = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
-
 class DownloadsController(
     private val userId: () -> String?,
     private val api: DownloadApi,

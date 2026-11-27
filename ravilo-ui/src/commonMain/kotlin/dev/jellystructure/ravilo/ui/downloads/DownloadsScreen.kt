@@ -89,9 +89,10 @@ private val RevealWidth = 88.dp
  * [offline] draws FR-9's quiet line at the top (FR-11: set by the launch path, and while the server is out of reach); false says nothing. [onPlay] opens a downloaded entry in the player (FR-16).
  */
 /** DEB-4072 (FR-13, FR-16) — the saved picture of a title (`poster`, `still`) while the server is out of reach; null says nothing is saved, or the server is there. */
+private val LocalSavedArtwork = androidx.compose.runtime.staticCompositionLocalOf<(String, String) -> String?> { { _, _ -> null } }
+
 /** FR-9 — an episode's `still_url` from the saved series page, drawn while online. */
 private val LocalServerStill = androidx.compose.runtime.staticCompositionLocalOf<(String) -> String?> { { null } }
-private val LocalSavedArtwork = androidx.compose.runtime.staticCompositionLocalOf<(String, String) -> String?> { { _, _ -> null } }
 
 @Composable
 fun DownloadsScreen(controller: DownloadsController, onBack: () -> Unit, offline: Boolean = false, onPlay: (DownloadRecord) -> Unit = {}) {
