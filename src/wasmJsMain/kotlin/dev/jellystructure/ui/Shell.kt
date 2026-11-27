@@ -466,6 +466,11 @@ private fun connectDockSocket() {
                 is JobEvent.SupportTicketChanged -> SupportLive.event(event)
                 // DEB-2051 (FR-9) — a conversion job's progress is the push Activity ▸ Jobs uses; the media page asks the server again.
                 is JobEvent.MediaJobUpdate -> ContainerConversionUi.onJob(event.job)
+                // DEB-2498 (FR-285-18) — a Dashboard build landed: the sidebar count, and the list if the Dashboard is open, follow the push.
+                is JobEvent.DashboardUpdated -> MainScope().launch {
+                    val d = dev.jellystructure.api.DashboardApi.get()
+                    if (d != null && d.built) { updateSidebarStatus(d.headline.rows); dashboardPushed(d, this) }
+                }
                 else -> {}
             }
         }

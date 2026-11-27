@@ -370,8 +370,21 @@ private suspend fun loadOverview(scope: CoroutineScope) {
         (document.getElementById("ov-body") as? HTMLElement)?.innerHTML = """<div class="note warn" style="margin-top:14px"><span class="tiny">Couldn’t load the overview.</span></div>"""
         return
     }
+    // DEB-2498 (FR-285-17) — the server has not finished its first build since boot: this is not "nothing needs you". Keep Loading…;
+    // the `dashboard_updated` push brings the overview, and a slow retry covers a push this page was not yet listening for.
+    if (!d.built) {
+        scope.launch { kotlinx.coroutines.delay(3_000); if (document.getElementById("ov-body") != null) loadOverview(scope) }
+        return
+    }
     renderOverview(scope)
     dev.jellystructure.api.DashboardApi.seen()
+}
+
+/** DEB-2498 (FR-285-18) — a build landed on the server and the Shell fetched it: show it if the Dashboard is open. Does not mark the visit — that is the admin leaving, not the server building. */
+internal fun dashboardPushed(d: dev.jellystructure.model.DashboardDto, scope: CoroutineScope) {
+    if (document.getElementById("ov-body") == null) return
+    ovDto = d
+    renderOverview(scope)
 }
 
 private fun ovFmt(n: Int): String = if (n >= 1000) n.toString().reversed().chunked(3).joinToString(" ").reversed() else n.toString()

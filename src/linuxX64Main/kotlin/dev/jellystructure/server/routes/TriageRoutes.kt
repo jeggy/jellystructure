@@ -389,6 +389,13 @@ private fun MediaItem.detectCascadeMismatch(): CascadeMismatch? {
     )
 }
 
+/**
+ * What the triage count (and, since DEB-2498 FR-285-16, the Dashboard's background build) reads: the library, every health check's
+ * revision — MKV, file damage, track coverage, A/V sync, timeline holes — and the music and audiobook stores. A change in any of them is a reason to count again.
+ */
+internal fun triageVersionKey(store: MediaStore, music: dev.jellystructure.media.MusicPipeline?): String =
+    "${store.libraryVersion}:${dev.jellystructure.media.FileDamage.revision}:${dev.jellystructure.media.TrackCoverageFlags.revision}:${dev.jellystructure.media.AvSyncFlags.revision}:${dev.jellystructure.media.TimelineHolesFlags.revision}:${music?.store?.version}:${music?.audiobooks?.store?.version}:${dev.jellystructure.media.MkvHealthCache.sweptAt()}"   // Phase 255 — a coverage finding changes the count too
+
 /** Phase 278 (FR-278-11/12) — the music library's attention entries; absent entirely when no music library is mapped. */
 /**
  * Phase 117/146/285 — the per-type counts, computed once per library version and shared by `/triage/count` and the
@@ -399,7 +406,7 @@ internal suspend fun triageCountFor(store: MediaStore, configStore: ConfigStore,
     // Phase 254 — a deep check's finding changes the count without touching the library version.
     // Phase 317 — and the A/V sync revision, which bumps on every measured file: the library's zero moves
     // with the sweep, so a verdict can change without any file changing.
-    val ver = "${store.libraryVersion}:${dev.jellystructure.media.FileDamage.revision}:${dev.jellystructure.media.TrackCoverageFlags.revision}:${dev.jellystructure.media.AvSyncFlags.revision}:${dev.jellystructure.media.TimelineHolesFlags.revision}:${music?.store?.version}:${music?.audiobooks?.store?.version}"   // Phase 255 — a coverage finding changes the count too
+    val ver = triageVersionKey(store, music)
     triageCountCache?.let { (v, c) -> if (v == ver) return c }
     val all = store.allItems()
     val types = mediaTriageTypes(all, configStore, segmentStore)

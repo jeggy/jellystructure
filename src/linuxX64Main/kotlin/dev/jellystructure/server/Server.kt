@@ -49,6 +49,7 @@ import dev.jellystructure.media.LogoDownloader
 import dev.jellystructure.server.routes.metadataRoutes
 import dev.jellystructure.server.routes.segmentRoutes
 import dev.jellystructure.server.routes.triageRoutes
+import dev.jellystructure.server.routes.triageVersionKey
 import dev.jellystructure.server.routes.dashboardRoutes
 import dev.jellystructure.server.routes.DashboardService
 import dev.jellystructure.server.routes.channelLogoAdminRoutes
@@ -677,8 +678,11 @@ fun startServer(
                 autofetchRoutes(configStore, autofetch)   // DEB-2476 (FR-12)
                 triageRoutes(mediaStore, jellyfinClient, configStore, mediaHistory, seedingGuard, mediaSegmentStore, musicPipeline)
                 // Phase 285 — the Dashboard as one overview: one endpoint the page renders.
-                dashboardRoutes(DashboardService(mediaStore, jellyfinClient, configStore, mediaHistory, mediaSegmentStore, musicPipeline, castService, playbackService,
-                    suggestionService, subtitleCheckWiring, lidarrClient, publish = publishQueue, filterTags = filterTagCheck, unfilteredSso = unfilteredSsoAccounts, autofetch = autofetch) { realtimeIngest?.lastWebhookReceivedAt?.let { it * 1000 } }, mediaHistory)
+                val dashboardService = DashboardService(mediaStore, jellyfinClient, configStore, mediaHistory, mediaSegmentStore, musicPipeline, castService, playbackService,
+                    suggestionService, subtitleCheckWiring, lidarrClient, publish = publishQueue, filterTags = filterTagCheck, unfilteredSso = unfilteredSsoAccounts, autofetch = autofetch) { realtimeIngest?.lastWebhookReceivedAt?.let { it * 1000 } }
+                // DEB-2498 (FR-285-15/16/18) — the overview is built here in the background and held; the GET only reads it, and a landed build is pushed on /ws.
+                dashboardService.start(appScope, { triageVersionKey(mediaStore, musicPipeline) }) { broadcaster.broadcast(dev.jellystructure.jobs.JobEvent.DashboardUpdated(it.dto.computedAt)) }
+                dashboardRoutes(dashboardService, mediaHistory)
                 publishQueue?.let { publishRoutes(it) }   // Phase 307 — the publish queue on the Dashboard
                 seedingRoutes(mediaStore, mediaHistory, seedingSnapshot, configStore, appScope)   // Phase 315 — FR-315-4
                 dev.jellystructure.filefix.FileFixService.current?.let { fileFixRoutes(it, appScope) }   // Phase 314

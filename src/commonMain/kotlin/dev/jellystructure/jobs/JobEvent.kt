@@ -75,6 +75,10 @@ sealed class JobEvent {
         @kotlinx.serialization.EncodeDefault val summary: dev.jellystructure.model.SupportSummary = dev.jellystructure.model.SupportSummary(),
         @kotlinx.serialization.EncodeDefault val deleted: Boolean = false,
     ) : JobEvent()
+
+    /** DEB-2498 (FR-285-18) — a Dashboard overview build landed; an open Dashboard asks `GET /api/dashboard` again. Carries no data. */
+    @Serializable @SerialName("dashboard_updated")
+    data class DashboardUpdated(val computedAt: Long = 0) : JobEvent()
 }
 
 /** Phase 109 — everything the Activity ▸ Jobs page needs to render one row, in one shape shared by the

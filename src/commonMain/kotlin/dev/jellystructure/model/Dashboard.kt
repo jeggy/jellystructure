@@ -21,6 +21,11 @@ data class DashboardDto(
     @SerialName("first_run") val firstRun: Boolean = false,
     @SerialName("last_scan_at") val lastScanAt: Long? = null,
     @SerialName("next_scan_at") val nextScanAt: Long? = null,
+    /** DEB-2498 (FR-285-17) — false ⇒ no build has completed since boot: the page keeps *Loading…*, never *Nothing needs you*. */
+    val built: Boolean = true,
+    /** DEB-2498 (FR-285-19) — when the held overview was built (epoch seconds) and how long the build took, in milliseconds. */
+    val computedAt: Long = 0,
+    val buildMs: Long = 0,
 )
 
 @Serializable

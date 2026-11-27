@@ -74,8 +74,11 @@ class BazarrAdvisorService(
         val cfg = configStore.current.bazarr?.takeIf { it.enabled && it.url.isNotBlank() }
             ?: return BazarrAdvisorResponse(configured = false, reachable = false)
         val hook = SubtitleHook.current
+        // DEB-2498 (FR-285-16) — a Bazarr that does not answer is remembered for the same interval as one that does:
+        // one timeout per interval, not one per Dashboard build.
         val settings = client.systemSettings(cfg.url, cfg.apiKey)
             ?: return BazarrAdvisorResponse(true, false, hookCommand = hook?.command(), hookLastCalledAt = hook?.lastCalledAtMs())
+                .also { cache = now() to it }
         val r = BazarrAdvisorResponse(true, true, findings(settings, hook?.command()), hook?.command(), hook?.lastCalledAtMs())
         cache = now() to r
         return r

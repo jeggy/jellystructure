@@ -16,6 +16,7 @@ import dev.jellystructure.model.DashboardSince
 import dev.jellystructure.model.DashboardSinceItem
 import dev.jellystructure.model.MediaItem
 import dev.jellystructure.model.MediaKind
+import dev.jellystructure.jobs.JobEvent
 import dev.jellystructure.nowEpochSec
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.response.respond
@@ -23,6 +24,10 @@ import io.ktor.server.routing.Route
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import io.ktor.server.routing.route
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlin.time.TimeSource
 
 /**
  * Phase 285 — the Dashboard as one overview of what could be fixed. One computation builds every row the page
@@ -106,13 +111,43 @@ class DashboardService(
     // Phase 297 FR-297-6 — Known proxies is a Jellyfin setting (Dashboard → Networking), so its rows stay under Jellyfin.
     private val hostFindingPrefixes = listOf("swappiness", "scheduler_", "readahead_", "max_sectors_")
 
-    suspend fun build(jellyfinUserId: String?): DashboardDto {
+    /** DEB-2498 (FR-285-19) — what each step of one build cost, in order; logged when the build ends. One build runs at a time, so one log is enough. */
+    private class StepLog {
+        val steps = ArrayList<Pair<String, Long>>()
+        private var last = TimeSource.Monotonic.markNow()
+        /** The step that just ended: the time since the previous [lap]. */
+        fun lap(name: String) { steps += name to last.elapsedNow().inWholeMilliseconds; last = TimeSource.Monotonic.markNow() }
+        /** A cost inside a step, kept apart so the log says which part of the step it was; it does not move the lap clock. */
+        fun inside(name: String, ms: Long) {
+            val i = steps.indexOfFirst { it.first == name }
+            if (i >= 0) steps[i] = name to steps[i].second + ms else steps += name to ms
+        }
+    }
+    private var stepLog = StepLog()
+
+    /**
+     * The overview, built from scratch — only [DashboardHolder]'s worker calls this (FR-285-15). Everything in it is the same for
+     * every admin; the one thing that is not, *since your last visit*, is added per request by [overview].
+     */
+    suspend fun buildOverview(): HeldOverview {
+        val t0 = TimeSource.Monotonic.markNow()
+        val log = StepLog().also { stepLog = it }
+        val dto = build(log)
+        val ms = t0.elapsedNow().inWholeMilliseconds
+        println("[dashboard] built in ${ms} ms: " + log.steps.joinToString(", ") { "${it.first} ${it.second} ms" } + " — ${dto.rows.size} rows")
+        val kinds = store.allItems().associate { it.id to it.kind }
+        return HeldOverview(dto.copy(computedAt = nowEpochSec(), buildMs = ms), kinds)
+    }
+
+    private suspend fun build(log: StepLog): DashboardDto {
         val cfg = configStore.current
         val all = store.allItems()
+        log.lap("library")
         val rows = ArrayList<DashboardRow>()
 
         // ── Films · Series · Music · Audiobooks — the triage types, kind-split ──
         val count = triageCountFor(store, configStore, segmentStore, music)
+        log.lap("triage_count")
         val films = all.filter { it.kind == MediaKind.MOVIE || it.kind == MediaKind.MUSIC_VIDEO }
         val series = all.filter { it.kind == MediaKind.TV_SHOW }
         for (t in count.types) {
@@ -134,6 +169,8 @@ class DashboardService(
             }
         }
 
+        log.lap("triage_rows")
+
         // Phase 305 (FR-305-14) — songs that may be the same: a modal on the page, not a list.
         music?.let { m -> runCatching { dev.jellystructure.music.MusicAlbumPage.sameSongsRow(m.store.snapshot()) }.getOrNull()?.let { rows += it } }
 
@@ -147,6 +184,8 @@ class DashboardService(
 
         // Phase 314 (FR-314-11) — files a kind would fix while it is off, and files that couldn't be fixed.
         rows += runCatching { dev.jellystructure.filefix.FileFixService.current?.dashboardRows().orEmpty() }.getOrDefault(emptyList())
+
+        log.lap("local_rows")
 
         // ── Jellyfin · This server — 212/246/257's advisor, one row per finding; a per-library finding counts libraries ──
         val advisor = runCatching { dev.jellystructure.advisor.JellyfinAdvisorService.findings(jellyfinClient, cfg) }.getOrNull()
@@ -168,6 +207,8 @@ class DashboardService(
                     navPath, f.fieldLabel, f.currentValue, f.recommendation, f.tradeoff, f.action, f.id, href = "/settings?tab=libraries")
             }
         }
+
+        log.lap("jellyfin_advisor")
 
         // ── Subtitles — 273's fit numbers and the Bazarr advisor ──
         subtitles?.let { w ->
@@ -193,6 +234,8 @@ class DashboardService(
                 }
             }
         }
+
+        log.lap("subtitles_bazarr")
 
         // ── Services — 221's operator findings, Suggestions, the Chromecast card ──
         val webhookUrl = cfg.behavior.notificationsWebhook.trim()
@@ -225,6 +268,8 @@ class DashboardService(
                 "Tick *Supports casting to audio-only devices* on the console, then cast a song to a speaker once.", fix = "info", href = "/settings?tab=connections")
         }
 
+        log.lap("services_lidarr_cast")
+
         // DEB-2518 (FR-7) — a filter tag held here and not in Jellyfin: viewers filtered by it see titles they can't play.
         filterTags?.let { f -> rows += runCatching { f.rows() }.getOrDefault(emptyList()) }
 
@@ -237,6 +282,8 @@ class DashboardService(
         // DEB-2233 (FR-9) — the identity provider would return viewers somewhere that is not this server.
         dev.jellystructure.tv.SsoSetupFlag.dashboardRow(configStore)?.let { rows += it }
 
+        log.lap("filter_tags_sso_autofetch")
+
         // ── Phase 310 (FR-310-3) — the one writer every watch position goes through; critical, since it stops watch history.
         playbackWriterRow(runCatching { playbackService.writerStats() }.getOrNull())?.let { rows += it }
         // Phase 310 (FR-310-7) / 312 (FR-312-5) — places Jellyfin lost that can be put back; the owner presses Apply.
@@ -246,6 +293,8 @@ class DashboardService(
                 plan.size, "title", "here", action = "Show the list", opens = "playback_repair")
         }
 
+        log.lap("playback")
+
         // ── Order, headline, domains ──
         val ordered = rows.sortedWith(compareBy<DashboardRow>({ severityRank(it.severity) }, { -(it.count ?: 0) }, { it.label }))
         val domains = DOMAINS.mapNotNull { (id, label) -> ordered.count { it.domain == id }.takeIf { it > 0 }?.let { DashboardDomain(id, label, it) } }
@@ -253,7 +302,8 @@ class DashboardService(
             critical = ordered.count { it.severity == CRITICAL }, warnings = ordered.count { it.severity == WARNING }, info = ordered.count { it.severity == INFO },
             rows = ordered.size, things = ordered.filter { it.severity != INFO && it.unit !in setOf(null, "library", "setting") }.sumOf { it.count ?: 0 },
         )
-        return DashboardDto(headline, domains, ordered, since = since(jellyfinUserId, all), jellyfinReachable = jellyfinReachable, firstRun = all.isEmpty())
+        log.lap("order")
+        return DashboardDto(headline, domains, ordered, since = null, jellyfinReachable = jellyfinReachable, firstRun = all.isEmpty())
     }
 
     // Phase 294 (FR-294-2) — two Dashboard loads at once must not corrupt it: a LockedMap, not a HashMap.
@@ -273,7 +323,9 @@ class DashboardService(
         (dev.jellystructure.music.MusicTriage.MUSIC[key] ?: dev.jellystructure.music.MusicTriage.AUDIOBOOKS[key])?.unit ?: "album"
 
     private fun mediaRow(key: String, spec: Spec, domain: String, titleUnit: String, instances: Int, titles: Int, pool: List<MediaItem>): DashboardRow {
+        val t0 = TimeSource.Monotonic.markNow()
         val names = titlesFor(key, pool).take(3)
+        stepLog.inside("titles_for (inside triage_rows)", t0.elapsedNow().inWholeMilliseconds)
         val n = if (spec.instanceUnit != null) instances else titles.takeIf { it > 0 } ?: instances
         val titleCount = titles.takeIf { it > 0 } ?: instances
         val sentence = spec.sentence.replace("{titles}", "$titleCount ${plural(titleUnit, titleCount)}") + (if (names.isEmpty()) "" else " — " + names.joinToString(", ") + if (titleCount > names.size) "…" else "")
@@ -331,10 +383,9 @@ class DashboardService(
     }
 
     /** FR-285-8 — what changed by domain since this admin last opened the Dashboard. */
-    private fun since(jellyfinUserId: String?, all: List<MediaItem>): DashboardSince? {
+    private fun since(jellyfinUserId: String?, kinds: Map<String, MediaKind>): DashboardSince? {
         val uid = jellyfinUserId ?: return null
         val last = mediaHistory.lastDashboardVisit(uid) ?: return DashboardSince(null, emptyList())
-        val kinds = all.associate { it.id to it.kind }
         val byDomain = LinkedHashMap<String, MutableList<String>>()
         for (e in mediaHistory.since(last)) {
             val domain = when {
@@ -364,6 +415,32 @@ class DashboardService(
 
     private fun severityRank(s: String) = when (s) { CRITICAL -> 0; WARNING -> 1; else -> 2 }
 
+    private var holder: DashboardHolder? = null
+
+    /**
+     * DEB-2498 (FR-285-16) — start the one background builder: a build now (boot), another whenever something the overview
+     * reads has moved ([changeKey], polled every few seconds — a library write, a scan step, a health-check revision),
+     * and otherwise one every five minutes. [onBuilt] runs when a build lands (the `dashboard_updated` push).
+     */
+    fun start(scope: CoroutineScope, changeKey: () -> String, onBuilt: suspend (HeldOverview) -> Unit) {
+        val h = DashboardHolder(scope, ::buildOverview, onBuilt, onFailure = { println("[dashboard] build failed, keeping the last overview: ${it.message}") })
+        holder = h
+        scope.launch {
+            var last = changeKey()
+            while (true) {
+                delay(CHANGE_POLL_MS)
+                val now = changeKey()
+                if (now != last) { last = now; h.request() }
+            }
+        }
+    }
+
+    /** FR-285-15/-17 — what `GET /api/dashboard` answers: the held overview and this admin's *since*; nothing here builds or waits. */
+    fun overview(jellyfinUserId: String?): DashboardDto = servedOverview(holder?.current) { since(jellyfinUserId, it) }
+
+    /** FR-285-18 — a row action has changed something: build now and wait (at most [ACTION_WAIT_MS]) for it, so the list the page reads next reflects the action. */
+    suspend fun settleAfterAction() { holder?.requestAndWait(ACTION_WAIT_MS) }
+
     /** DEB-2518 (FR-7) — *Save to Jellyfin*: how many titles were queued, or null when Jellyfin could not be read. */
     suspend fun saveFilterTag(tag: String): Int? = filterTags?.save(tag)
 
@@ -378,6 +455,8 @@ class DashboardService(
         const val CRITICAL = "critical"
         const val WARNING = "warning"
         const val INFO = "info"
+        private const val CHANGE_POLL_MS = 2_000L
+        const val ACTION_WAIT_MS = 10_000L
         // Phase 307 (OQ2) — *Public databases* is its own chip: a different kind of decision from a fix.
         val DOMAINS = listOf("films" to "Films", "series" to "Series", "music" to "Music", "books" to "Audiobooks", "subs" to "Subtitles", "jf" to "Jellyfin", "host" to "This server", "svc" to "Services", "autofetch" to "Auto-fetch", "public" to "Public databases")
     }
@@ -387,22 +466,22 @@ fun Route.dashboardRoutes(service: DashboardService, mediaHistory: MediaHistory)
     route("/dashboard") {
         get {
             val uid = runCatching { call.attributes[SessionKey].jellyfinUserId }.getOrNull()
-            call.respond(service.build(uid))
+            call.respond(service.overview(uid))
         }
         /** Phase 310 (FR-310-7) / 312 (FR-312-5) — the dry run: what *Put them back* would change. Writes nothing. */
         get("/playback-repair") { call.respond(service.repairPlan()) }
         /** The owner's press. */
-        post("/playback-repair/apply") { call.respond(mapOf("put_back" to service.applyRepair())) }
+        post("/playback-repair/apply") { val n = service.applyRepair(); service.settleAfterAction(); call.respond(mapOf("put_back" to n)) }
         /** DEB-2518 (FR-7) — the operator's press: the NFO write and the refresh for the titles that tag differs on, and only those. */
         post("/filter-tags/{tag}/save") {
             val tag = call.parameters["tag"].orEmpty()
             when (val queued = service.saveFilterTag(tag)) {
                 null -> call.respond(HttpStatusCode.ServiceUnavailable, mapOf("error" to "Jellyfin could not be read"))
-                else -> call.respond(HttpStatusCode.Accepted, mapOf("queued" to queued))
+                else -> { service.settleAfterAction(); call.respond(HttpStatusCode.Accepted, mapOf("queued" to queued)) }
             }
         }
         /** DEB-2518 (FR-12) — the operator's press: the accounts the row names are remembered and no longer counted. Writes nothing to Jellyfin. */
-        post("/sso-unfiltered/dismiss") { call.respond(mapOf("dismissed" to service.dismissUnfilteredSso())) }
+        post("/sso-unfiltered/dismiss") { val n = service.dismissUnfilteredSso(); service.settleAfterAction(); call.respond(mapOf("dismissed" to n)) }
         /** FR-285-8 — the page says it was seen when the admin leaves it; the next open measures from here. */
         post("/seen") {
             runCatching { call.attributes[SessionKey].jellyfinUserId }.getOrNull()?.let { mediaHistory.markDashboardVisit(it, nowEpochSec()) }
