@@ -15,6 +15,7 @@ import dev.jellystructure.media.MediaHistory
 import dev.jellystructure.media.MediaStore
 import dev.jellystructure.media.Scanner
 import dev.jellystructure.media.ScanTracker
+import dev.jellystructure.server.routes.samsungDirectPlayRoutes
 import dev.jellystructure.server.routes.activityRoutes
 import dev.jellystructure.server.routes.publishRoutes
 import dev.jellystructure.server.routes.seedingRoutes
@@ -718,6 +719,7 @@ fun startServer(
                 }
                 if (samsungRequests != null && samsungRelease != null) samsungTvRoutes(samsungRequests, samsungRelease, deviceService)
                 supportService?.let { supportRoutes(it, configStore) }   // Phase 320 — /api/tv/support/** and /api/support/**
+                samsungDirectPlayRoutes(configStore)   // DEB-5916 (DEB-5503, FR-46)
                 sessionPublisher?.let { playbackSessionRoutes(it, it.sessions, it.control, it.setHouseholdControl, it.starter) }   // R368 + 304 + R369
                 channelLogoAdminRoutes(channelLogoStore, dev.jellystructure.tv.ChannelLogoUsage(raviloConfigService, liveTvService, configStore, jellyfinClient))   // DEB-1788
                 tvRoutes(deviceService, raviloConfigService, homeFeedService, browseService, detailService, playbackService, sessionService, jellyfinClient, configStore, channelLogoStore, imageProxyService, logoDownloader, castService, tvEventBus, upcomingService, seerrDiscoverService, mediaStore, loginRateLimiter, playbackQoeStore, screenPairingService, devicePolicyReconciler, goneUserRemoval, downloadService = dev.jellystructure.tv.DownloadService(mediaStore, jellyfinClient, configStore, detailService, playbackService))   // DEB-4061
