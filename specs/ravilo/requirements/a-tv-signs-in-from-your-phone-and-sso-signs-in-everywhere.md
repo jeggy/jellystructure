@@ -548,3 +548,10 @@ won't be available, and to move its legs to another device. No code changes.
 
 - **Acceptance 1 is met on the Sony BRAVIA alone.** Both household BRAVIAs run the same Android TV app as the Streamer, so either one stands in for it. Nothing in FR-5 differs between them.
 - **The QA rows changed with it.** DEB-2328's and DEB-2329's TV steps run on either BRAVIA, and DEB-2329 no longer carries the Ravilo Web code-typing step, which DEB-3088 already passed on a BRAVIA.
+
+## Amendment 2026-11-27 (DEB-5687/DEB-5850) — the App Link also claims `/join`
+
+FR-7's phone App Link on the build-time Ravilo Web host claims `https://<host>/join` as well as `/tv`, so an invite's
+Android button opens the installed app, or Ravilo Web when the app is not there. The host, `autoVerify`,
+`assetlinks.json` and the build property are unchanged. Ravilo Web serves `/join` as its start page and ignores the
+query. See `an-invite-link-sets-up-a-new-viewers-app.md` FR-5a.

@@ -74,9 +74,12 @@ credential, no account, no code (option S1 of the DEB-5687 research `research-in
 - Four parts, in this order:
   1. **Watch in your browser**: the Ravilo Web address (`SingleSignOnService.webBase()`). Absent when that is null.
   2. **Open the Ravilo app**: `dev.jellystructure.ravilo:/join?s=<public_url>`, the value written from configuration.
-  3. **Get the app**: one button per platform with a download (Android, macOS, Linux, Samsung TV), each to the newest
-     release file, and one line: *After installing, open this link again.* (No install referrer exists, so a link
-     never survives an install.)
+  3. **Get the app**: one button per platform. **Android** links to `<webBase>/join?s=<public_url>` on the Ravilo
+     Web address (FR-5a): a phone with Ravilo installed opens the app with the invite, and any other phone opens
+     Ravilo Web (owner, 2026-11-27: *"link to [the Ravilo Web address] which in it self would link to the already
+     installed android app, but if not, then just use ravilo web"*). With `webBase()` null the Android button is
+     absent. macOS, Linux and Samsung TV each link to the newest release file, with one line: *After installing,
+     open this link again.* (No install referrer exists, so a link never survives an install.)
   4. *On a TV, open Ravilo and type* followed by the host.
 - With `public_url` unset, `/join` answers 404 with a one-line page in the same shape: *This invite link isn't set up.*
 - Generated per request from configuration. It reveals nothing the open code mint (`linkUrl`) does not already reveal,
@@ -148,6 +151,19 @@ New layout, one round under `design/PROCESS.md`:
   waiting state, the not-found state, the new example. Draw it in the same round as DEB-5002 FR-4/FR-5's hidden-
   character line, which sits in the same place.
 
+### FR-5a — The Android button opens the app, or Ravilo Web (Android phone, Ravilo Web)
+
+- The phone's App Link filter (`ravilo-android/src/appLink/AndroidManifest.xml`, DEB-2233 FR-7) claims
+  `https://<raviloAppLinkHost>/join` beside `/tv`. Same host, same `autoVerify`, same `assetlinks.json`; no new file
+  and no new build property. A build without `-PraviloAppLinkHost` declares neither path, as today.
+- In the app, `/join` on that host goes through FR-5's `ServerInviteInbox`, with the same checks on `s`, and FR-6
+  holds: the address is shown and the viewer presses Connect.
+- **Ravilo Web serves `/join` as its own start page** (the image's single-page fallback must answer it, not 404) and
+  **ignores `s` entirely.** Ravilo Web already uses its saved address, then the operator default, then its own origin
+  (`RaviloRootActuals.kt:76-79`), so a query from a link never chooses its server.
+- An installed app that is not verified for the host (a sideloaded build signed with another key) opens Ravilo Web in
+  the browser, which still works.
+
 ## What this does not do yet
 
 - **A link that signs someone in (S2), and self-service accounts (S3).** Both contradict the Ravilo constitution's
@@ -155,7 +171,7 @@ New layout, one round under `design/PROCESS.md`:
   (item 2), *"jellystructure's machine token never approves a sign-in"* (item 7), and the admitting group is the
   directory's and the plugin's (item 9). They are owner and
   constitution questions, not build items. Where single sign-on is set up, S1 already gives a self-service start.
-- An App Link for `https://<host>/join` (DEB-2233 FR-7 claims `/tv` on one build-time host only).
+- An App Link on the backend's own host. The only App Link host stays DEB-2233 FR-7's build-time Ravilo Web host, which now claims `/join` as well as `/tv` (FR-5a).
 - A URL scheme on macOS or Linux, and a link handler on Android TV or Samsung. A TV has no camera and no browser.
 - Sending an address from a phone to a TV (R269's non-goal stands).
 - A server name or household name on the page. The server has none; the page shows the host.
@@ -197,6 +213,12 @@ One engineer. Each slice ≤ ~200 changed lines.
    `:ravilo-ui:desktopTest --tests '*ServerInviteInbox*'` (an origin kept once; a path, a query, `http` or user info
    dropped; a saved address drops it) and `:ravilo-i18n:desktopTest`. Device check on a QA row (the button from a
    browser page opens the app).
+5a. **FR-5a, the Android button.** After slices 3 and 5. `ravilo-android/src/appLink/AndroidManifest.xml` (`/join`
+   beside `/tv`), the Ravilo Web image's single-page fallback for `/join`, and FR-3's Android button. Proof: a case in
+   `InvitePagesTest.kt` (the Android button is `<webBase>/join?s=…`, absent with `webBase()` null), and a Playwright
+   case that opens `/join?s=https://other.example` on Ravilo Web and asserts the page starts against its own server.
+   Device check on a QA row: on a phone with the release build, the button opens the app; on a phone without it,
+   Ravilo Web.
 6. **FR-7 and `setup.server_example`, the probe.** After the design round, with DEB-5002 FR-4..FR-7 in the same hands
    (same file). `ServerSetupScreen.kt`, a probe seam on Android and desktop (none on web), `i18n/*.json`. Proof:
    `JAVA_HOME=~/.jdks/jbr-21.0.11 ./gradlew :ravilo-ui:testDebugUnitTest --tests '*ServerSetupProbe*' --console=plain`
