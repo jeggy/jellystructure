@@ -3,6 +3,7 @@ package dev.jellystructure.server.routes
 import dev.jellystructure.model.DashboardDto
 import dev.jellystructure.model.DashboardSince
 import dev.jellystructure.model.MediaKind
+import dev.jellystructure.ops.boundedOrNull
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.channels.Channel
@@ -10,7 +11,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withTimeoutOrNull
 import kotlin.concurrent.AtomicInt
 import kotlin.concurrent.AtomicLong
 import kotlin.concurrent.AtomicReference
@@ -67,12 +67,12 @@ class DashboardHolder(
     suspend fun requestAndWait(timeoutMs: Long = 10_000L): Boolean = awaitBuildFor(request(urgent = true), timeoutMs)
 
     suspend fun awaitBuildFor(ticket: Long, timeoutMs: Long): Boolean =
-        withTimeoutOrNull(timeoutMs) { completed.first { it >= ticket }; true } ?: false
+        boundedOrNull(timeoutMs, "dashboard build wait") { completed.first { it >= ticket }; true } ?: false
 
     private suspend fun loop() {
         var lastStart: TimeSource.Monotonic.ValueTimeMark? = null
         while (true) {
-            withTimeoutOrNull(maxAgeMs) { triggers.receive() }   // a trigger, or the interval running out
+            boundedOrNull(maxAgeMs, "dashboard build interval") { triggers.receive() }   // a trigger, or the interval running out
             lastStart?.let { mark ->
                 if (urgent.getAndSet(0) == 0) {
                     val wait = minGapMs - mark.elapsedNow().inWholeMilliseconds
