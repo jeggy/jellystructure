@@ -681,7 +681,8 @@ fun startServer(
                 val dashboardService = DashboardService(mediaStore, jellyfinClient, configStore, mediaHistory, mediaSegmentStore, musicPipeline, castService, playbackService,
                     suggestionService, subtitleCheckWiring, lidarrClient, publish = publishQueue, filterTags = filterTagCheck, unfilteredSso = unfilteredSsoAccounts, autofetch = autofetch) { realtimeIngest?.lastWebhookReceivedAt?.let { it * 1000 } }
                 // DEB-2498 (FR-285-15/16/18) — the overview is built here in the background and held; the GET only reads it, and a landed build is pushed on /ws.
-                dashboardService.start(appScope, { triageVersionKey(mediaStore, musicPipeline) }) { broadcaster.broadcast(dev.jellystructure.jobs.JobEvent.DashboardUpdated(it.dto.computedAt)) }
+                // The change key also holds the config's hash: a saved setting (Bazarr on, a webhook, Lidarr…) changes rows without touching the library.
+                dashboardService.start(appScope, { triageVersionKey(mediaStore, musicPipeline) + ":" + configStore.current.hashCode() }) { broadcaster.broadcast(dev.jellystructure.jobs.JobEvent.DashboardUpdated(it.dto.computedAt)) }
                 dashboardRoutes(dashboardService, mediaHistory)
                 publishQueue?.let { publishRoutes(it) }   // Phase 307 — the publish queue on the Dashboard
                 seedingRoutes(mediaStore, mediaHistory, seedingSnapshot, configStore, appScope)   // Phase 315 — FR-315-4

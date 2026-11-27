@@ -98,7 +98,8 @@ test.describe.serial("Bazarr subtitles — the Dashboard's Subtitles group", () 
     await saveSettings(page);
 
     await openDashboard(page);
-    expect((await overview(page)).rows.filter((r) => r.domain === "subs")).toEqual([]);
+    // DEB-2498 (FR-285-15/16) — /api/dashboard answers from the held build, which follows a saved setting within a few seconds.
+    await expect.poll(async () => (await overview(page)).rows.filter((r) => r.domain === "subs"), { timeout: 20_000 }).toEqual([]);
     await expect(page.locator('#ov-body [data-chip="subs"]')).toHaveCount(0);
     await expect(page.locator("#ov-body .ov-dom", { hasText: "Subtitles" })).toHaveCount(0);
   });
@@ -117,9 +118,10 @@ test.describe.serial("Bazarr subtitles — the Dashboard's Subtitles group", () 
     await openDashboard(page);
     // The row is read live from the mock's /api/system/settings, so a regression where the backend stops
     // reaching Bazarr (or the overview stops asking it) fails here.
+    // DEB-2498 (FR-285-15/16) — the held build catches up with the saved setting within a few seconds; wait for it, never assume it.
+    await expect.poll(async () => (await overview(page)).rows.filter((r) => r.domain === "subs").map((r) => r.label), { timeout: 20_000 })
+      .toContainEqual(expect.stringContaining("tell jellystructure when it places a subtitle"));
     const ov = await overview(page);
-    const subs = ov.rows.filter((r) => r.domain === "subs");
-    expect(subs.map((r) => r.label)).toContainEqual(expect.stringContaining("tell jellystructure when it places a subtitle"));
     if (!ov.firstRun) {
       const chip = page.locator('#ov-body [data-chip="subs"]');
       await expect(chip).toBeVisible({ timeout: 15_000 });

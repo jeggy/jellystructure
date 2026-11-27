@@ -207,6 +207,11 @@ that land while a build runs coalesce into **one** follow-up build; a build is n
 request waits on one (FR-203-4's shape). An outside service that fails is remembered as failed for the same
 interval as a success, so a down Bazarr costs one timeout per interval, not one per page open.
 
+*Amendment 2026-11-27 (DEB-2498):* a **saved setting** is also a trigger — turning Bazarr on, setting a webhook or
+Lidarr changes which rows exist without touching the library, and the page an admin opens next must not show the old
+list for up to five minutes. The builder watches the configuration alongside the library and the health-check revisions.
+A reader that needs the new row waits for it (the `dashboard_updated` push, or a poll); `GET /api/dashboard` still never builds.
+
 **FR-285-17 — "Not built yet" is not "nothing needs you".** Before the first build after a boot completes, the
 response says so (`built: false`) and the page keeps its existing *Loading…* state; it never renders FR-285-5's
 *Nothing needs you* from an overview that was never computed (the Phase 203 lesson).
