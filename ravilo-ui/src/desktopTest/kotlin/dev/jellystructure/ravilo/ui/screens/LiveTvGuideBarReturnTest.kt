@@ -50,7 +50,7 @@ class LiveTvGuideBarReturnTest {
     fun `Down from the top bar returns to the first channel row`() = withGuideServer { client ->
         runComposeUiTest {
             setContent { LiveTvGuideScreen(store = LiveTvGuideStore(client), displayName = "A", onBack = {}, onTuneChannel = {}) }
-            val onChannel = isFocused().and(hasAnyDescendant(hasText(channelName)))
+            val onChannel = isFocused().and(hasAnyDescendant(hasText(channelName)).or(hasText(channelName)))   // DEB-5838 (FR-4): the button merges its text
             waitUntil(timeoutMillis = 5_000) { onAllNodes(hasText(channelName)).fetchSemanticsNodes().isNotEmpty() }
             waitForIdle()
 

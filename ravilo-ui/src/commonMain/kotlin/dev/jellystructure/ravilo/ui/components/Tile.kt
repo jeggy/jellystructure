@@ -257,7 +257,7 @@ fun Tile(
                 }
                 RemoteImage(
                     url = posterUrl,
-                    contentDescription = if (a11yDetail != null) "$title, $a11yDetail" else title,
+                    contentDescription = tileA11yLabel(title, a11yDetail, if (watched) str("action.watched") else null),
                     modifier = Modifier.matchParentSize(),
                     contentScale = contentScale,
                     placeholderColor = posterPlaceholder,
@@ -562,3 +562,7 @@ private fun TileTitleFallback(title: String, hue: Long, surface: Color, modifier
         )
     }
 }
+
+/** DEB-5838 (FR-4) — what a screen reader says for a tile: the title, then the detail, then [watchedLabel] when the tile carries the badge. */
+internal fun tileA11yLabel(title: String, detail: String?, watchedLabel: String?): String =
+    listOfNotNull(title, detail, watchedLabel).joinToString(", ")

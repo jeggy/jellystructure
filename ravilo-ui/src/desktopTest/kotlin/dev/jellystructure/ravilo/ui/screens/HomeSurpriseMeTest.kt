@@ -118,7 +118,7 @@ class HomeSurpriseMeTest {
         val st = store(listOf(row("a", "1", "2"), row("b", "3", "4")))
         st.rememberReturn(SURPRISE_ROW_KEY, SURPRISE_ROW_KEY, 2, 0)
         val label = home(st, action = {})
-        waitUntil(timeoutMillis = 5_000) { onAllNodes(isFocused().and(hasAnyDescendant(hasText(label)))).fetchSemanticsNodes().isNotEmpty() }
+        waitUntil(timeoutMillis = 5_000) { onAllNodes(isFocused().and(hasAnyDescendant(hasText(label)).or(hasText(label)))).fetchSemanticsNodes().isNotEmpty() }
         onFocusedWith(label).assertIsFocused()
         assertNull(st.focusRowKey, "the return is spent")
     }

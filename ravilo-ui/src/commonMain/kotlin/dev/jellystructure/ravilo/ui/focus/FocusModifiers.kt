@@ -29,6 +29,10 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import dev.jellystructure.ravilo.ui.PlatformBackHandler
 import dev.jellystructure.ravilo.ui.isTvPlatform
 import kotlinx.coroutines.CoroutineScope
@@ -177,7 +181,18 @@ fun Modifier.dpadFocusable(
     // sites are lazy-list items where untested hover-focus churn isn't worth the risk; the player's
     // transport controls turn it on explicitly.
     moveFocusOnHover: Boolean = false,
+    /** DEB-5838 (FR-4) — what a screen reader is told this is (a tab, a switch…); a button by default. Only an item that can be pressed gets one. */
+    role: Role = Role.Button,
+    /** DEB-5838 (FR-4) — the label of the click action ("Open"), or null for the reader's own words. */
+    clickLabel: String? = null,
 ): Modifier = this
+    .then(
+        // DEB-5838 (FR-4) — static per item: no state is read, so a focus move recomposes nothing and adds no work.
+        if (onTap != null) Modifier.semantics(mergeDescendants = true) {
+            this.role = role
+            onClick(label = clickLabel) { onTap(); true }
+        } else Modifier,
+    )
     .onKeyEvent { ev ->
         if (ev.type != KeyEventType.KeyDown) return@onKeyEvent false
         // Media-transport keys are global content actions, not focus moves — handle them first and

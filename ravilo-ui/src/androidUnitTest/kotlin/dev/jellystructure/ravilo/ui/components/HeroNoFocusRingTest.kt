@@ -67,7 +67,7 @@ class HeroNoFocusRingTest {
 
     @Test fun `the hero takes focus on arrival with no ring, and Down leaves it`() {
         render(listOf(hero("h", "Stand-in Harbour")))
-        rule.onNode(isFocused() and hasAnyDescendant(hasText("Stand-in Harbour"))).assertExists()
+        rule.onNode(isFocused() and (hasAnyDescendant(hasText("Stand-in Harbour")) or hasText("Stand-in Harbour"))).assertExists()
         rule.onNodeWithTag(oldRingTag, useUnmergedTree = true).assertDoesNotExist()
         rule.onRoot().performKeyInput { pressKey(Key.DirectionDown) }
         rule.waitForIdle()
@@ -77,10 +77,10 @@ class HeroNoFocusRingTest {
 
     @Test fun `Right pages to the second slide, the hero keeps focus and still draws no ring`() {
         render(listOf(hero("a", "Stand-in Lighthouse"), hero("b", "Stand-in Ferry")))
-        rule.onNode(isFocused() and hasAnyDescendant(hasText("Stand-in Lighthouse"))).assertExists()
+        rule.onNode(isFocused() and (hasAnyDescendant(hasText("Stand-in Lighthouse")) or hasText("Stand-in Lighthouse"))).assertExists()
         rule.onRoot().performKeyInput { pressKey(Key.DirectionRight) }
         rule.waitForIdle()
-        rule.onNode(isFocused() and hasAnyDescendant(hasText("Stand-in Ferry"))).assertExists()
+        rule.onNode(isFocused() and (hasAnyDescendant(hasText("Stand-in Ferry")) or hasText("Stand-in Ferry"))).assertExists()
         rule.onNodeWithTag(oldRingTag, useUnmergedTree = true).assertDoesNotExist()
     }
 }

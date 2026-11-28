@@ -99,7 +99,7 @@ class BrowsePopoverFocusTest {
             }
             waitUntil(timeoutMillis = 5_000) { onAllNodes(isFocused()).fetchSemanticsNodes().isNotEmpty() }
             waitForIdle()
-            val labels = listOf("Action", "Comedy", "Drama").map { onAllNodesWithText(it)[0].fetchSemanticsNode().boundsInRoot }
+            val labels = listOf("Action", "Comedy", "Drama").map { onAllNodesWithText(it, useUnmergedTree = true)[0].fetchSemanticsNode().boundsInRoot }
                 .sortedBy { it.top }
             val pm = onNodeWithTag("stage").captureToImage().toPixelMap()
             // 5 dp into the row's 10 dp left padding: left of the 18 dp check slot, so no glyph or label is under it.
