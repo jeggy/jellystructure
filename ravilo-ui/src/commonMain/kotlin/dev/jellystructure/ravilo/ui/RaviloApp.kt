@@ -107,6 +107,8 @@ import dev.jellystructure.ravilo.ui.screens.HomeScreen
 import dev.jellystructure.ravilo.ui.screens.homeSeedWarmUrls
 import dev.jellystructure.ravilo.ui.screens.HomeSnapshot
 import dev.jellystructure.ravilo.ui.screens.HomeSnapshotCache
+import dev.jellystructure.ravilo.ui.screens.homeSeedFeed
+import dev.jellystructure.ravilo.ui.screens.homeStoreKey
 import dev.jellystructure.ravilo.ui.screens.HomeState
 import dev.jellystructure.ravilo.ui.screens.HomeStore
 import dev.jellystructure.ravilo.ui.screens.LiveTvGuideScreen
@@ -2616,7 +2618,9 @@ fun RaviloApp(
                 // R187 — str() is @Composable; hoisted here since it's read inside the onSeeAll callback
                 // below, which isn't composable context.
                 val homeLabel = str("nav.home")
-                val store = keptStore("home:${dest.displayName}") { HomeStore(apiClient, seedFeed = initialSnapshot?.feed) }
+                // DEB-5839 (FR-3) — the store is the profile's own: keyed by its user id, seeded only from that id's snapshot.
+                val homeUid = activeUserId
+                val store = keptStore(homeStoreKey(homeUid)) { HomeStore(apiClient, seedFeed = homeSeedFeed(homeUid, HomeSnapshotCache::load)) }
                 val da by store.discoverAvailable.collectAsState()
                 SideEffect { discoverAvailable = da }
                 val ua by store.upcomingAvailable.collectAsState()
@@ -2640,7 +2644,7 @@ fun RaviloApp(
                 val homeState by store.state.collectAsState()
                 LaunchedEffect(homeState, lang, themeState.skin, themeState.settings, tileScale, uiScalePct, gridColumns, portraitGridColumns) {
                     val loaded = homeState as? HomeState.Loaded ?: return@LaunchedEffect
-                    val uid = activeUserId ?: return@LaunchedEffect
+                    val uid = homeUid ?: return@LaunchedEffect   // FR-3 — only under the profile this store was seeded and fetched for
                     HomeSnapshotCache.save(uid, HomeSnapshot(
                         feed = loaded.feed,
                         uiLanguage = lang,

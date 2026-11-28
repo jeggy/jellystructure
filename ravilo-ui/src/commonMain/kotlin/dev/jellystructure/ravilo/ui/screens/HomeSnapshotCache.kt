@@ -75,3 +75,10 @@ expect object HomeSnapshotCache {
      *  signed-out profile doesn't leave its snapshot behind indefinitely. */
     fun clear(userId: String)
 }
+
+/** DEB-5839 (FR-3) — a retained Home store is the profile's own, never shared by display name. */
+internal fun homeStoreKey(userId: String?): String = "home:${userId.orEmpty()}"
+
+/** DEB-5839 (FR-3) — Home is seeded only from the snapshot of the profile that opens it; none ⇒ the store starts at Loading. */
+internal fun homeSeedFeed(userId: String?, load: (String) -> HomeSnapshot?): HomeFeed? =
+    userId?.let(load)?.feed
