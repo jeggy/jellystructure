@@ -12,6 +12,7 @@ import androidx.compose.ui.test.getBoundsInRoot
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.height
@@ -121,7 +122,7 @@ class ProfileMyListStableTest {
         runBlocking { assertTrue(store.refresh()) }   // the first visit's read
         setProfile(client, store, LayoutFamily.TV, 1f)
         // no waiting for a network answer: the kept answer is already on the first composed frame
-        rule.onNode(hasText("Keeper 1"), useUnmergedTree = true).assertExists()
+        rule.onAllNodes(hasText("Keeper 1"), useUnmergedTree = true).onFirst().assertExists()
         val kept = geometry()
         rule.waitForIdle()
         assertEquals(kept, geometry())

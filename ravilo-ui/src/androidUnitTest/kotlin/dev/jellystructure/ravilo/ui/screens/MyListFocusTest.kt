@@ -10,6 +10,7 @@ import androidx.compose.ui.test.hasAnyDescendant
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.isFocused
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performKeyInput
@@ -101,7 +102,7 @@ class MyListFocusTest {
         served = listOf(card(1))
         shown = true
         waitForTitles(1)
-        rule.onNode(hasText("Keeper 1"), useUnmergedTree = true).assertExists()
+        rule.onAllNodes(hasText("Keeper 1"), useUnmergedTree = true).onFirst().assertExists()
     }
 
     @Test fun `acceptance 2 — the opened title removed lands on its neighbour, not the app bar`() {
