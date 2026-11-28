@@ -63,6 +63,8 @@ jobs:
         run: ./scripts/check-docker-cache-ids.sh
       - name: The image build retries a transient registry error and nothing else (DEB-4106)
         run: ./scripts/test-retry-transient.sh
+      - name: The image build fetches no test-only dependency and starts from the carried set (DEB-5992)
+        run: ./scripts/test-gradle-dep-seed.sh
       - name: The images cross-build linuxArm64 (DEB-1490)
         run: ./scripts/check-arm64-images.sh
       - name: The A/V sync sidecar builds from pinned weights and stops only itself (DEB-3118)
@@ -306,6 +308,19 @@ jobs:
           key: ${{ runner.os }}-buildx-${{ hashFiles('Dockerfile', 'ravilo-web/Dockerfile', 'ravilo-screen/Dockerfile', 'build.gradle.kts', 'gradle/libs.versions.toml', 'ravilo-web/webpack.config.d/**') }}
           restore-keys: ${{ runner.os }}-buildx-
 
+      # DEB-5992 FR-8 — the Gradle dependency set a recent build on main carried, so a warm image build asks Maven Central
+      # and the Plugin Portal for nothing (three 429s on 2026-11-27 held 10-27 min, longer than any retry). A pull request
+      # restores it and never writes it. A miss leaves the directory empty and the images download everything, as before.
+      - name: Restore the carried Gradle dependency set
+        id: gradle-dep-seed
+        uses: actions/cache/restore@v4
+        with:
+          path: /tmp/gradle-dep-seed
+          key: gradle-dep-seed-${{ hashFiles('gradle/libs.versions.toml', 'gradle/wrapper/gradle-wrapper.properties', 'settings.gradle.kts') }}
+          restore-keys: gradle-dep-seed-
+      - name: Make sure the seed directory exists
+        run: mkdir -p /tmp/gradle-dep-seed
+
       - name: Run test stack
         run: |
           # 2026-08-18: `up --build` builds every image concurrently by default, each spinning up its
@@ -323,6 +338,12 @@ jobs:
           # on run 36134323199: three downloads at 12:26, 12:43, 12:51). The last prune may take
           # everything -- nothing builds after it. Fenced by scripts/check-docker-cache-ids.sh.
           docker compose -f docker-compose.test.yml build app
+          # DEB-5992 FR-8 — on main, and only when this key had no set: what the app build ends with (the restored set plus
+          # what it downloaded on top), written out before the prune below deletes the layers it is a cache hit on. Never
+          # fails the build; scripts/export-gradle-dep-seed.sh says what it did.
+          if [ "$GITHUB_REF" = "refs/heads/main" ] && [ "$SEED_HIT" != "true" ]; then
+            ./scripts/export-gradle-dep-seed.sh /tmp/gradle-dep-seed-new /tmp/gradle-dep-seed || true
+          fi
           docker buildx prune -f --filter 'type!=exec.cachemount'
           docker compose -f docker-compose.test.yml build ravilo-web
           docker buildx prune -f --filter 'type!=exec.cachemount'
@@ -346,6 +367,8 @@ jobs:
           FIXTURE_DIR: /tmp/jellystructure-fixtures
           JELLYFIN_USER: admin
           JELLYFIN_PASS: password
+          GRADLE_DEP_SEED_DIR: /tmp/gradle-dep-seed
+          SEED_HIT: ${{ steps.gradle-dep-seed.outputs.cache-hit }}
           # Consumed directly by docker-compose.test.yml's cache_from/cache_to build keys (the
           # Compose Specification's real mechanism for this) -- the old BUILDX_CACHE_FROM/
           # BUILDX_CACHE_TO env vars here were never read by anything and made caching a no-op.
@@ -362,6 +385,19 @@ jobs:
             rm -rf "/tmp/.buildx-cache/$img"
             mv "/tmp/.buildx-cache/$img-new" "/tmp/.buildx-cache/$img" 2>/dev/null || true
           done
+
+      # DEB-5992 FR-8 — the set the export above wrote, saved under this key (main only; the export wrote nothing otherwise).
+      - name: Did the export write a set
+        id: gradle-dep-export
+        if: always()
+        run: if [ -d /tmp/gradle-dep-seed-new/modules-2/files-2.1 ]; then echo "written=true" >> "$GITHUB_OUTPUT"; fi
+      - name: Carry the Gradle dependency set
+        if: always() && steps.gradle-dep-export.outputs.written == 'true'
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: /tmp/gradle-dep-seed-new
+          key: gradle-dep-seed-${{ hashFiles('gradle/libs.versions.toml', 'gradle/wrapper/gradle-wrapper.properties', 'settings.gradle.kts') }}
 
       - name: Upload Playwright report
         if: always()

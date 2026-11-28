@@ -1,4 +1,8 @@
 # syntax=docker/dockerfile:1
+# DEB-5992 FR-8 — the Gradle dependency set a recent build on `main` carried (scripts/seed-gradle-cache.sh). An empty stage
+# by default, so a plain `docker build` downloads everything as before; CI replaces it with a named build context
+# (`--build-context gradle-dep-seed=<dir>`, compose `additional_contexts`) holding that set's `modules-2`.
+FROM scratch AS gradle-dep-seed
 
 # DEB-1490 FR-2 — the builder always runs on the build host's own architecture (amd64): Kotlin/Native 2.3 ships no
 # Linux arm64 compiler host, so the arm64 image's executable is CROSS-compiled here (linuxArm64) and only the runtime
@@ -67,11 +71,13 @@ COPY design ./design
 # (journal-1.lock) and one build fails outright. Confirmed live building both images at once.
 # DEB-4106 FR-3 — every download the compile steps below would make happens HERE, retried on a transient upstream
 # error and with its errors shown. The compile steps then find it all in the cache mounts and download nothing.
-COPY scripts/retry-transient.sh scripts/fetch-dependencies.sh scripts/fetch-dependencies.init.gradle ./scripts/
-RUN --mount=type=cache,id=gradle-shared,sharing=locked,target=/root/.gradle \
+# DEB-5992 FR-8 — a warm build starts from the carried set and asks no repository for what it holds.
+COPY scripts/retry-transient.sh scripts/fetch-dependencies.sh scripts/fetch-dependencies.init.gradle scripts/seed-gradle-cache.sh ./scripts/
+RUN --mount=type=bind,from=gradle-dep-seed,target=/gradle-dep-seed \
+    --mount=type=cache,id=gradle-shared,sharing=locked,target=/root/.gradle \
     --mount=type=cache,id=konan-shared,sharing=locked,target=/root/.konan \
     --mount=type=cache,id=npm-shared,sharing=locked,target=/root/.npm \
-    ./scripts/fetch-dependencies.sh
+    ./scripts/seed-gradle-cache.sh /gradle-dep-seed && ./scripts/fetch-dependencies.sh
 
 COPY src ./src
 # R245 — the Chromecast receiver bundle (Kotlin/JS), dropped next to cast-receiver/index.html.
@@ -116,6 +122,19 @@ RUN --mount=type=cache,id=gradle-shared,sharing=locked,target=/root/.gradle \
     esac && \
     ./gradlew :linkReleaseExecutableLinux$K -Dorg.gradle.jvmargs="$J" --no-daemon && \
     mkdir -p /out && cp build/bin/$D/releaseExecutable/jellystructure.kexe /out/jellystructure
+
+# DEB-5992 FR-8 — the dependency set this build ends with, for the next one to start from: the whole `modules-2` of the
+# Gradle home (the carried set the fetch step was seeded with, plus what that step downloaded on top of it), without its
+# lock files. Built only on request (`--target gradle-dep-export --output type=local,dest=<dir>`, scripts/export-gradle-dep-seed.sh);
+# no image the default build or publish.yml makes contains it. Empty when the cache mount holds nothing.
+FROM builder AS gradle-dep-export-src
+RUN --mount=type=cache,id=gradle-shared,sharing=locked,target=/root/.gradle \
+    mkdir -p /out && \
+    if [ -d /root/.gradle/caches/modules-2/files-2.1 ]; then \
+        cp -a /root/.gradle/caches/modules-2 /out/ && rm -f /out/modules-2/*.lock /out/modules-2/gc.properties; \
+    fi
+FROM scratch AS gradle-dep-export
+COPY --from=gradle-dep-export-src /out/ /
 
 FROM debian:bookworm-slim
 WORKDIR /app

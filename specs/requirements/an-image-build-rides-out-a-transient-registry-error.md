@@ -287,3 +287,30 @@ dependency requests only what changed.
     restored one still fails on a `429` for an artifact the set should have held, FR-8 is broken and that run is a
     bug against this spec. If the failing runs are all dependency bumps (the set cannot hold a new version), the
     mirror goes to the owner as a decision, with this amendment's measured lengths.
+
+*Built 2026-11-28 (DEB-5992), measured locally on Docker 29.9.2 / buildx 0.38.1 with a fresh BuildKit builder per build:*
+- **FR-7.** `fetch-dependencies.init.gradle` skips `robolectricAndroidAll_*`. Only that name is skipped: the `*Test*`
+  classpaths are left alone, because the 419 MB is the measured cost, and a skipped classpath that a compile `RUN` still
+  resolves would move a download out of the fetch step. A later amendment may skip more, with its own measurement. The cold build of `Dockerfile` leaves no
+  `android-all-instrumented` in the Gradle cache (Acceptance 9).
+- **FR-8 differs from the recommended approach in one place, on purpose.** `GRADLE_RO_DEP_CACHE` is read-only, so a build
+  that uses it writes only what it downloaded on top into the Gradle home. The set the next run exports would then be the
+  delta, and the carried set would shrink on every dependency bump. The set is therefore copied into the writable
+  `gradle-shared` cache mount before the fetch step (`scripts/seed-gradle-cache.sh`, only when the mount holds no
+  `modules-2`), and the export is the whole mount's `modules-2` without its lock files (the `gradle-dep-export` target of
+  `Dockerfile`, `scripts/export-gradle-dep-seed.sh`). Both are named build contexts (`gradle-dep-seed`), empty by default
+  (`FROM scratch AS gradle-dep-seed`), so a plain `docker build` is unchanged.
+- **The set is 1.3 GB** (`modules-2`: `files-2.1` and `metadata-2.107`), identical in file list between the cold build and
+  the build that started from it. The key is the version catalog, the wrapper properties and `settings.gradle.kts` (one
+  commit in the last 30 days); a literal version in a module's own `build.gradle.kts` is fetched on top, not carried,
+  until the catalog next changes. Only `ci / e2e` on `main` writes it, and only when the key had no set. `publish (…)` and a
+  pull request restore only.
+- **Acceptance 10, measured.** Cold build 1: no seed, real repositories, fetch step 315 s, passes. Cold build 2: that set as
+  the seed, `repo.maven.apache.org`, `repo1.maven.org`, `plugins.gradle.org`, `dl.google.com` and `maven.google.com` all
+  resolved to a closed port (`--add-host … :127.0.0.1`, which refuses every connection, not only answers `429`): fetch step
+  150 s, the compile `RUN`s pass, and so no `RUN` after the seed asked any of them for anything. The Gradle distribution
+  (`services.gradle.org`), Node, yarn and Kotlin/Native's toolchain (`download.jetbrains.com`) are not Maven repositories
+  and are still downloaded; they are out of this amendment's scope.
+- Tests in CI: `scripts/test-gradle-dep-seed.sh` (the seed script's cases and the wiring of all three Dockerfiles, compose,
+  `ci.yml` and `publish.yml`). The export-then-save path runs only on `main`, so it is first exercised by the Publish run
+  of the commit that lands this; Acceptance 4's cache-key condition covers it.

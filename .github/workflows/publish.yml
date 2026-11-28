@@ -133,6 +133,18 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # DEB-5992 FR-8 — the Gradle dependency set `ci / e2e` carried from main, so this build asks Maven Central and the Plugin
+      # Portal for nothing it already has. Read here, never written: the `ci` job this one needs has just written it on main. A
+      # miss leaves the directory empty and the image downloads everything, as before.
+      - name: Restore the carried Gradle dependency set
+        uses: actions/cache/restore@v4
+        with:
+          path: /tmp/gradle-dep-seed
+          key: gradle-dep-seed-${{ hashFiles('gradle/libs.versions.toml', 'gradle/wrapper/gradle-wrapper.properties', 'settings.gradle.kts') }}
+          restore-keys: gradle-dep-seed-
+      - name: Make sure the seed directory exists
+        run: mkdir -p /tmp/gradle-dep-seed
+
       - name: Compute tags
         id: tags
         run: |
@@ -166,6 +178,8 @@ jobs:
           tags: ${{ steps.tags.outputs.tags }}
           build-args: |
             BUILD_VERSION=${{ steps.tags.outputs.build_version }}
+          build-contexts: |
+            gradle-dep-seed=/tmp/gradle-dep-seed
           cache-from: type=gha,scope=${{ matrix.image }}
           cache-to: type=gha,mode=max,scope=${{ matrix.image }}
 

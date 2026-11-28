@@ -10,11 +10,15 @@
 // plugin artifact" and drops the 5xx/timeout/429 it retried, so the outer retry would see nothing to match. Resolving
 // the marker ourselves keeps the real error: a transient one is rethrown (retried), a coordinate that does not
 // exist is rethrown at once (FR-2), anything else is reported and left to the plugins block.
+//
+// DEB-5992 FR-7 — a configuration that only a test task resolves is not fetched: no compile `RUN` in the three
+// Dockerfiles runs a test, and the Robolectric `android-all-instrumented` jars (ravilo-ui's robolectricAndroidAll_*,
+// 419 MB) were two of the three 429s. The runner-side jobs (`unit`, `android-release`) do not use this task.
 allprojects {
     tasks.register('fetchDependencies') {
         doLast {
             def transientError = ~/(?s).*(status code (5\d\d|429)|Read timed out|Connect timed out|connect timed out|Connection reset|Connection timed out|Remote host terminated|Premature end of Content-Length|Unexpected end of file).*/
-            configurations.findAll { it.canBeResolved }.each { c ->
+            configurations.findAll { it.canBeResolved && !it.name.startsWith('robolectricAndroidAll_') }.each { c ->
                 try {
                     c.incoming.files.files.size()
                 } catch (Throwable t) {

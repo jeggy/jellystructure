@@ -10,6 +10,10 @@
 # configures the WHOLE module graph before running any task, so every included module's directory must
 # exist even though this build only ever runs :ravilo-screen and :web-static-server tasks.
 #   docker build -f ravilo-screen/Dockerfile .
+# DEB-5992 FR-8 — the Gradle dependency set a recent build on `main` carried (scripts/seed-gradle-cache.sh). An empty stage
+# by default, so a plain `docker build` downloads everything as before; CI replaces it with a named build context
+# (`--build-context gradle-dep-seed=<dir>`, compose `additional_contexts`) holding that set's `modules-2`.
+FROM scratch AS gradle-dep-seed
 
 FROM eclipse-temurin:21-jdk AS builder
 WORKDIR /app
@@ -49,11 +53,13 @@ COPY ravilo-desktop ./ravilo-desktop
 COPY design ./design
 # DEB-4106 FR-3 — every download the compile steps below would make happens HERE, retried on a transient upstream
 # error and with its errors shown. The compile steps then find it all in the cache mounts and download nothing.
-COPY scripts/retry-transient.sh scripts/fetch-dependencies.sh scripts/fetch-dependencies.init.gradle ./scripts/
-RUN --mount=type=cache,id=gradle-shared,sharing=locked,target=/root/.gradle \
+# DEB-5992 FR-8 — a warm build starts from the carried set and asks no repository for what it holds.
+COPY scripts/retry-transient.sh scripts/fetch-dependencies.sh scripts/fetch-dependencies.init.gradle scripts/seed-gradle-cache.sh ./scripts/
+RUN --mount=type=bind,from=gradle-dep-seed,target=/gradle-dep-seed \
+    --mount=type=cache,id=gradle-shared,sharing=locked,target=/root/.gradle \
     --mount=type=cache,id=konan-shared,sharing=locked,target=/root/.konan \
     --mount=type=cache,id=npm-shared,sharing=locked,target=/root/.npm \
-    ./scripts/fetch-dependencies.sh
+    ./scripts/seed-gradle-cache.sh /gradle-dep-seed && ./scripts/fetch-dependencies.sh
 
 COPY src ./src
 RUN --mount=type=cache,id=gradle-shared,sharing=locked,target=/root/.gradle \

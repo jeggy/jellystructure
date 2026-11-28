@@ -86,6 +86,10 @@ services:
   app:
     build:
       context: .
+      # DEB-5992 FR-8 — the Gradle dependency set a recent build on main carried (ci.yml restores it into GRADLE_DEP_SEED_DIR);
+      # without one this is the empty directory and the image downloads everything, as before.
+      additional_contexts:
+        gradle-dep-seed: ${GRADLE_DEP_SEED_DIR:-./scripts/gradle-dep-seed-empty}
       # CI perf fix (2026-08-18) — ci.yml's old BUILDX_CACHE_FROM/BUILDX_CACHE_TO env vars were never
       # actually consumed by anything: `docker compose build` doesn't read those as a recognized
       # convention, so Docker layer caching has been a complete no-op since it was introduced — every
@@ -152,6 +156,10 @@ services:
     build:
       context: .
       dockerfile: ravilo-web/Dockerfile
+      # DEB-5992 FR-8 — the Gradle dependency set a recent build on main carried (ci.yml restores it into GRADLE_DEP_SEED_DIR);
+      # without one this is the empty directory and the image downloads everything, as before.
+      additional_contexts:
+        gradle-dep-seed: ${GRADLE_DEP_SEED_DIR:-./scripts/gradle-dep-seed-empty}
       cache_from:
         - type=local,src=${BUILDX_CACHE_DIR:-/tmp/.buildx-cache}/ravilo-web
       cache_to:
@@ -187,6 +195,10 @@ services:
     build:
       context: .
       dockerfile: ravilo-screen/Dockerfile
+      # DEB-5992 FR-8 — the Gradle dependency set a recent build on main carried (ci.yml restores it into GRADLE_DEP_SEED_DIR);
+      # without one this is the empty directory and the image downloads everything, as before.
+      additional_contexts:
+        gradle-dep-seed: ${GRADLE_DEP_SEED_DIR:-./scripts/gradle-dep-seed-empty}
       cache_from:
         - type=local,src=${BUILDX_CACHE_DIR:-/tmp/.buildx-cache}/ravilo-screen
       cache_to:

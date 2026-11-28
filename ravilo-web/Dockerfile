@@ -12,6 +12,10 @@
 # The wasmJsBrowserDistribution output is genuinely self-contained (verified 2026-08-17: skiko.wasm is
 # included content-hashed, no absolute/external refs in index.html, fonts bundled via composeResources)
 # so :web-static-server has no backend reachability requirement baked in either.
+# DEB-5992 FR-8 — the Gradle dependency set a recent build on `main` carried (scripts/seed-gradle-cache.sh). An empty stage
+# by default, so a plain `docker build` downloads everything as before; CI replaces it with a named build context
+# (`--build-context gradle-dep-seed=<dir>`, compose `additional_contexts`) holding that set's `modules-2`.
+FROM scratch AS gradle-dep-seed
 
 # DEB-1490 FR-2 — the builder always runs on the build host's own architecture (amd64): Kotlin/Native 2.3 ships no
 # Linux arm64 compiler host, so the arm64 image's server is CROSS-compiled here (linuxArm64) and only the runtime stage
@@ -61,11 +65,13 @@ COPY web-static-server ./web-static-server
 COPY design ./design
 # DEB-4106 FR-3 — every download the compile steps below would make happens HERE, retried on a transient upstream
 # error and with its errors shown. The compile steps then find it all in the cache mounts and download nothing.
-COPY scripts/retry-transient.sh scripts/fetch-dependencies.sh scripts/fetch-dependencies.init.gradle ./scripts/
-RUN --mount=type=cache,id=gradle-shared,sharing=locked,target=/root/.gradle \
+# DEB-5992 FR-8 — a warm build starts from the carried set and asks no repository for what it holds.
+COPY scripts/retry-transient.sh scripts/fetch-dependencies.sh scripts/fetch-dependencies.init.gradle scripts/seed-gradle-cache.sh ./scripts/
+RUN --mount=type=bind,from=gradle-dep-seed,target=/gradle-dep-seed \
+    --mount=type=cache,id=gradle-shared,sharing=locked,target=/root/.gradle \
     --mount=type=cache,id=konan-shared,sharing=locked,target=/root/.konan \
     --mount=type=cache,id=npm-shared,sharing=locked,target=/root/.npm \
-    ./scripts/fetch-dependencies.sh
+    ./scripts/seed-gradle-cache.sh /gradle-dep-seed && ./scripts/fetch-dependencies.sh
 
 COPY src ./src
 RUN --mount=type=cache,id=gradle-shared,sharing=locked,target=/root/.gradle \
