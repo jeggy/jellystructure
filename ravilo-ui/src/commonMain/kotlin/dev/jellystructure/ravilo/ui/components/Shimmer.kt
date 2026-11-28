@@ -151,14 +151,14 @@ fun TileShimmerGrid(columns: Int, modifier: Modifier = Modifier) {
     }
 }
 
+/** Test seam: the first skeleton row (heading and tiles, not the gap above it). */
+internal const val HOME_SKELETON_FIRST_ROW = "home-skeleton-first-row"
+
 /**
  * DEB-5837 FR-3 — Home's loading page in the loaded page's shape: the hero band at [homeHeroHeight]'s height, then as many
  * rows as fill the screen, each the loaded row's own pieces — a row gap, a heading line, [raviloRowHeadPadB], and a track of
  * `Tile(placeholder = true)` at the poster size inside the track's own padding. The app bar is drawn by the caller.
  */
-/** Test seam: the first skeleton row (heading and tiles, not the gap above it). */
-internal const val HOME_SKELETON_FIRST_ROW = "home-skeleton-first-row"
-
 @Composable
 fun HomeLoadingShell() {
     val brush = rememberShimmerBrush()
