@@ -77,7 +77,7 @@ fun DiscoverDetailScreen(
     // DEB-2349 (FR-5) — the detail (or the error) fades in once where the empty loading view was.
     Box(Modifier.fillMaxSize().background(colors.background).fadeInOnLoad(loading = state is DiscoverDetailState.Loading)) {
         when (val s = state) {
-            is DiscoverDetailState.Loading -> {}
+            is DiscoverDetailState.Loading -> dev.jellystructure.ravilo.ui.components.DetailLoadingShell()
             is DiscoverDetailState.Error -> LoadErrorState(s.kind, onRetry = { store.load() }, onBack = onBack)
             is DiscoverDetailState.Loaded -> DetailContent(s.detail, store, onWatchMovie, onGoToSeries)
         }

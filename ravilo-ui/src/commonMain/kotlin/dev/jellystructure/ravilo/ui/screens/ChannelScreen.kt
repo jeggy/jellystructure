@@ -200,9 +200,7 @@ fun ChannelScreen(
         // DEB-2349 (FR-5) — the channel (or the error) fades in once over the loading line; the nav bar below does not.
         Box(Modifier.fillMaxSize().fadeInOnLoad(loading = storeState is HomeState.Loading)) {
             when (val s = storeState) {
-                is HomeState.Loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text(str("loading"), color = colors.textSecondary, fontSize = 16.sp)
-                }
+                is HomeState.Loading -> dev.jellystructure.ravilo.ui.components.HomeLoadingShell()
                 is HomeState.Error -> LoadErrorState(
                     s.kind,
                     onRetry = { store.refresh() },

@@ -143,9 +143,7 @@ fun UpcomingDetailScreen(store: UpcomingDetailStore, onBack: () -> Unit = {}) {
     // DEB-2349 (FR-5) — the detail (or the error) fades in once over the spinner. The focus target is outside the fade.
     Box(Modifier.fillMaxSize().background(colors.background).dpadFocusable(focusRequester = rootFR).fadeInOnLoad(loading = state is UpcomingDetailState.Loading)) {
         when (val s = state) {
-            is UpcomingDetailState.Loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(color = colors.textSecondary)
-            }
+            is UpcomingDetailState.Loading -> dev.jellystructure.ravilo.ui.components.DetailLoadingShell()
             is UpcomingDetailState.Error -> LoadErrorState(s.kind, onRetry = { store.retry() }, onBack = onBack)
             is UpcomingDetailState.Loaded -> UpcomingDetailContent(s.item, s.genres, s.runtime, s.cast, s.members)
         }

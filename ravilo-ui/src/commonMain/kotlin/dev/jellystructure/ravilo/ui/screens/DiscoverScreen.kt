@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import androidx.compose.ui.platform.testTag
 import dev.jellystructure.ravilo.ui.components.fadeInOnLoad
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -275,11 +276,17 @@ private fun discoverHeaderSubtitle(segment: DiscoverSegment): String = when (seg
 // FR-R262-2 — Browse's own one-line treatment (open question 3: acceptable per the FR text; the
 // per-segment shimmer it also allows is deliberately left as later polish, zero design work needed).
 @Composable
-private fun DiscoverLoading() {
-    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Text(str("loading"), color = RaviloTheme.colors.textSecondary, fontSize = 16.sp)
+internal fun DiscoverLoading() {
+    // DEB-5837 FR-2 — the wall's tile grid in the loaded columns.
+    Box(Modifier.fillMaxSize().testTag(DISCOVER_SKELETON)) {
+        dev.jellystructure.ravilo.ui.components.TileShimmerGrid(
+            if (dev.jellystructure.ravilo.ui.LocalPortrait.current) dev.jellystructure.ravilo.ui.LocalPortraitGridColumns.current
+            else dev.jellystructure.ravilo.ui.LocalGridColumns.current,
+        )
     }
 }
+
+internal const val DISCOVER_SKELETON = "discover-skeleton"
 
 @Composable
 private fun DiscoverError(kind: LoadErrorKind, onRetry: (() -> Unit)? = null) {

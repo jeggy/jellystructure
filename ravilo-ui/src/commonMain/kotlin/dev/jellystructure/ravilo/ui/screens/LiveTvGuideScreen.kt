@@ -1,5 +1,9 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.ravilo.ui.theme.raviloHPad
+import dev.jellystructure.ravilo.ui.theme.RaviloDimens
+import dev.jellystructure.ravilo.ui.components.skeleton
+import androidx.compose.ui.platform.testTag
 import dev.jellystructure.ravilo.ui.components.fadeInOnLoad
 import dev.jellystructure.ravilo.ui.focus.focusRing
 import dev.jellystructure.ravilo.ui.focus.rememberFocusVisual
@@ -188,9 +192,7 @@ fun LiveTvGuideScreen(
         // DEB-2349 (FR-5) — the guide (or the error) fades in once over the spinner; the app bar and the details overlay do not.
         Box(Modifier.fillMaxSize().fadeInOnLoad(loading = state is LiveTvGuideState.Loading)) {
             when (val s = state) {
-                is LiveTvGuideState.Loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator(color = colors.accent)
-                }
+                is LiveTvGuideState.Loading -> GuideLoadingRows()
                 is LiveTvGuideState.Error -> LoadErrorState(s.kind, onRetry = { store.load() }, onBack = onBack)
                 is LiveTvGuideState.Loaded -> {
                     val categories = remember(s.channels) { s.channels.map { it.category }.filter { it.isNotBlank() }.distinct().sorted() }
@@ -803,4 +805,24 @@ internal fun guideLabelShiftPx(cellLeftPx: Float, innerWidthPx: Int, minLabelPx:
     if (cellLeftPx >= 0f) return 0
     val maxShift = (innerWidthPx - minLabelPx).coerceAtLeast(0)
     return (-cellLeftPx).toInt().coerceIn(0, maxShift)
+}
+
+internal const val GUIDE_SKELETON = "guide-skeleton"
+
+/** DEB-5837 FR-2 — channel rows at the loaded row height (78 dp): a channel block, then programme blocks. */
+@Composable
+internal fun GuideLoadingRows() {
+    val brush = dev.jellystructure.ravilo.ui.components.rememberShimmerBrush()
+    androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize().testTag(GUIDE_SKELETON)) {
+        val rows = maxOf(1, (maxHeight / 78.dp).toInt() + 1)
+        Column(Modifier.fillMaxWidth().padding(top = RaviloDimens.appBarHeight)) {
+            repeat(rows) {
+                Row(Modifier.fillMaxWidth().height(78.dp).padding(horizontal = raviloHPad, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.width(120.dp).fillMaxHeight().skeleton(RoundedCornerShape(10.dp), brush))
+                    Spacer(Modifier.width(12.dp))
+                    Box(Modifier.weight(1f).fillMaxHeight().skeleton(RoundedCornerShape(10.dp), brush))
+                }
+            }
+        }
+    }
 }
