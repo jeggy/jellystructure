@@ -1061,16 +1061,22 @@ private fun LiveTvGuideTile(onClick: () -> Unit, focusRequester: FocusRequester?
  * on the login screen instead of being permanently stuck.
  */
 @Composable
-private fun HomeErrorState(
+internal fun HomeErrorState(
     kind: LoadErrorKind,
     apiClient: TvApiClient,
     onRetry: () -> Unit,
     onSignOut: () -> Unit,
     onWatchDownloads: (() -> Unit)? = null,
+    desktop: Boolean = dev.jellystructure.ravilo.ui.isDesktopPlatform,
 ) {
     val colors = RaviloTheme.colors
     val scope = rememberCoroutineScope()
     var signOutFocused by rememberFocusVisual()
+    // DEB-5835 (FR-2) — Sign out asks first, with the confirmation the client's own menu opens.
+    var askSignOut by remember { mutableStateOf(false) }
+    val signOutRef = remember { arrayOfNulls<FocusRequester>(1) }
+    val handset = dev.jellystructure.ravilo.ui.theme.LocalHandset.current
+    val closeAsk = { askSignOut = false; runCatching { signOutRef[0]?.requestFocus() }; Unit }
     // R280 (FR-R280-3) — the heading, the sentence and the cause-appropriate action are the shared
     // surface now; Home keeps Sign out as its own second action, because Home is where a viewer with
     // a dead session lands and R237 already treats signing out as Home's case, not every screen's.
@@ -1087,14 +1093,33 @@ private fun HomeErrorState(
                     .background(colors.surfaceVariant, RoundedCornerShape(8.dp))
                     .focusRing(signOutFocused, RoundedCornerShape(8.dp), colors.focusRing, 2.dp)
                     .dpadFocusable(
-                        focusRequester = signOutFR,
+                        focusRequester = signOutFR.also { signOutRef[0] = it },
                         onFocused = { signOutFocused = true },
                         onBlurred = { signOutFocused = false },
                         onUp = { runCatching { primaryFR.requestFocus() } },
-                        onSelect = { scope.launch { unpairAllSessions(apiClient); onSignOut() } },
+                        onSelect = { askSignOut = true },
                     )
                     .padding(horizontal = 24.dp, vertical = 12.dp),
             ) { Text(str("profile.sign_out"), color = colors.textSecondary, fontSize = 14.sp, fontWeight = FontWeight.SemiBold) }
         },
     )
+    if (askSignOut) {
+        // The revoke stays best effort (signOutActiveSession / unpairAllSessions), so this works with the server unreachable.
+        if (!handset && !desktop) {
+            SignOutChoiceOverlay(
+                displayName = MultiTokenStore.getActive()?.displayName.orEmpty(),
+                onCancel = closeAsk,
+                onOnly = { askSignOut = false; scope.launch { signOutActiveSession(apiClient); onSignOut() } },
+                onEveryone = { askSignOut = false; scope.launch { unpairAllSessions(apiClient); onSignOut() } },
+            )
+        } else {
+            ConfirmOverlay(
+                title = str(if (desktop) "profile.signout_title_desk" else "profile.signout_title"),
+                description = str("profile.signout_body"),
+                confirmLabel = str("profile.signout_confirm"),
+                onCancel = closeAsk,
+                onConfirm = { askSignOut = false; scope.launch { signOutActiveSession(apiClient); onSignOut() } },
+            )
+        }
+    }
 }
