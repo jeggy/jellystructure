@@ -11,6 +11,7 @@ import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.onRoot
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.test.performKeyInput
 import androidx.compose.ui.test.pressKey
 import androidx.compose.ui.test.runComposeUiTest
@@ -18,13 +19,16 @@ import dev.jellystructure.ravilo.ui.theme.LocalReducedMotion
 import dev.jellystructure.shared.tv.Hero
 import dev.jellystructure.shared.tv.MediaCard
 import dev.jellystructure.shared.tv.MediaKind
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.runCurrent
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 /** DEB-5838 (FR-7) — under reduced motion the hero stays on one slide, does not drift and changes slide as a cut. */
-@OptIn(ExperimentalTestApi::class, ExperimentalComposeUiApi::class)
+@OptIn(ExperimentalTestApi::class, ExperimentalComposeUiApi::class, kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class HeroReducedMotionTest {
     private fun hero(id: String, title: String) = Hero(
         item = MediaCard(id = id, kind = MediaKind.MOVIE, title = title, year = 2020, genre = null, rating = null,
@@ -77,5 +81,29 @@ class HeroReducedMotionTest {
         mainClock.advanceTimeByFrame()
         mainClock.advanceTimeBy(7_500)
         onNode(hasText("Stand-in Ferry")).assertExists()
+    }
+
+    @Test fun `a pointer over the hero holds the slide and leaving restarts a full interval`() = kotlinx.coroutines.test.runTest {
+        val hovered = androidx.compose.runtime.mutableStateOf(true)
+        var due = false
+        val job = kotlinx.coroutines.CoroutineScope(coroutineContext).launch(start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) {
+            awaitHeroAdvance(7_000L) { !hovered.value }; due = true
+        }
+        advanceTimeBy(30_000L); runCurrent()
+        assertFalse(due, "held while the pointer is over the hero")
+        hovered.value = false; androidx.compose.runtime.snapshots.Snapshot.sendApplyNotifications(); runCurrent()
+        advanceTimeBy(6_999L); runCurrent()
+        assertFalse(due, "the interval restarts on leaving")
+        advanceTimeBy(1L); runCurrent()
+        assertTrue(due)
+        job.cancel()
+    }
+
+    @Test fun `hover enter and exit events toggle the hold`() {
+        val enter = androidx.compose.foundation.interaction.HoverInteraction.Enter()
+        assertTrue(heroHoverAfter(false, enter))
+        assertFalse(heroHoverAfter(true, androidx.compose.foundation.interaction.HoverInteraction.Exit(enter)))
+        assertTrue(heroHoverAfter(true, androidx.compose.foundation.interaction.PressInteraction.Cancel(
+            androidx.compose.foundation.interaction.PressInteraction.Press(Offset.Zero))))
     }
 }

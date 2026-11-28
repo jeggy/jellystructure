@@ -12,6 +12,10 @@ import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.foundation.hoverable
+import androidx.compose.foundation.interaction.HoverInteraction
+import androidx.compose.foundation.interaction.Interaction
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -31,6 +35,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
@@ -135,6 +140,12 @@ private fun HeroCarouselContent(
     // R374 — the hero draws no focus ring (reverses R350 FR-R350-8's hero ring, owner 2026-10-04). It is still the
     // focus target on arrival (R53); Left/Right page it, Up/Down/OK as before.
 
+    // DEB-5838 (FR-7) — a pointer over the hero holds the slide (a click on Play or More info acts on the slide seen).
+    // Only the interval lambda reads it, so a hover never recomposes the hero.
+    val hoverSource = remember { MutableInteractionSource() }
+    val hovered = remember { mutableStateOf(false) }
+    LaunchedEffect(hoverSource) { hoverSource.interactions.collect { hovered.value = heroHoverAfter(hovered.value, it) } }
+
     if (items.isEmpty()) return
     // The heroes list can change size under us (R33 live config push). Never index past its end —
     // coerce on read (guards the frame before the effect runs) and snap a now-stale cursor back to
@@ -195,7 +206,7 @@ private fun HeroCarouselContent(
         LaunchedEffect(resetTick, autoAdvanceSeconds) {
             // DEB-4283 (FR-R383-3) — the interval runs only while the hero can be seen: a slide change off screen is a
             // crossfade, a backdrop decode and ~35 frames drawn for nobody (Stue TV, Home rows 3-5).
-            awaitHeroAdvance(autoAdvanceSeconds * 1_000L, inView)
+            awaitHeroAdvance(autoAdvanceSeconds * 1_000L) { inView() && !hovered.value }
             activeIndex = (activeIndex + 1) % items.size
             resetTick++
         }
@@ -209,6 +220,7 @@ private fun HeroCarouselContent(
             // past the box — otherwise the scaled image overflows below the scrim gradients
             // (which only fill the box) and shows a thin un-darkened line at the very bottom edge.
             .clipToBounds()
+            .hoverable(hoverSource)
             // R53: the whole hero is one focusable surface — select opens detail, Left/Right page the
             // carousel (cyclic, since a full-bleed hero has no horizontal neighbour).
             // Bug fix: onDown used to be omitted, relying on native focus search to drop into the
@@ -423,6 +435,13 @@ internal suspend fun awaitHeroAdvance(intervalMs: Long, inView: () -> Boolean) {
 /** DEB-5838 (FR-7) — the slides advance by themselves only when asked to (> 0 s), when there is more than one, and not under reduced motion. */
 internal fun heroAutoAdvances(autoAdvanceSeconds: Int, slideCount: Int, reducedMotion: Boolean): Boolean =
     autoAdvanceSeconds > 0 && slideCount > 1 && !reducedMotion
+
+/** DEB-5838 (FR-7) — whether a pointer is over the hero after [event]. */
+internal fun heroHoverAfter(hovered: Boolean, event: Interaction): Boolean = when (event) {
+    is HoverInteraction.Enter -> true
+    is HoverInteraction.Exit -> false
+    else -> hovered
+}
 
 /** DEB-5838 (FR-7) — a crossfade between slides, or a cut under reduced motion. */
 internal fun heroSlideTransition(reducedMotion: Boolean): ContentTransform =
