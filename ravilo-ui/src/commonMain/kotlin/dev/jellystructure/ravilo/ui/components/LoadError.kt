@@ -100,14 +100,14 @@ fun loadErrorKindOf(t: Throwable?): LoadErrorKind = classifyLoadFailure(t).kind
  * R280 (FR-R280-5) — the heading for a cause. Pure, and outside the composable, so the mapping and
  * the existence of every key it names are covered by a test rather than by looking at a screen.
  */
-fun loadErrorTitleKey(kind: LoadErrorKind): String = when (kind) {
+fun loadErrorTitleKey(kind: LoadErrorKind, genericTitleKey: String? = null): String = when (kind) {
     LoadErrorKind.REAUTH -> "error.load.reauth.title"
     LoadErrorKind.FORBIDDEN -> "error.load.forbidden.title"
     LoadErrorKind.GONE -> "error.load.gone.title"
     // Reused verbatim: "Couldn't reach the server" is already exactly right for a failed screen load,
     // and a second key saying the same thing is the drift R279 spent a phase removing.
     LoadErrorKind.UNREACHABLE -> "error.play.unreachable.title"
-    LoadErrorKind.GENERIC -> "error.generic"
+    LoadErrorKind.GENERIC -> genericTitleKey ?: "error.generic"
     LoadErrorKind.PLAYBACK_UNAVAILABLE -> "player.unavailable"
     // R385 (FR-R385-4) — the heading names what the viewer must do, never what failed (D3).
     LoadErrorKind.MAC_INSTALL_PLACE -> "mac.install_place.title"
@@ -121,7 +121,9 @@ fun loadErrorTitleKey(kind: LoadErrorKind): String = when (kind) {
  * one the viewer opened inside the mounted image is *the disk image*. It defaults to what the app knows about itself,
  * and is a parameter so the mapping is testable without touching a global.
  */
-fun loadErrorBodyKey(kind: LoadErrorKind, install: MacInstallState? = MacDiagnosis.installState): String? = when (kind) {
+fun loadErrorBodyKey(
+    kind: LoadErrorKind, install: MacInstallState? = MacDiagnosis.installState, genericBodyKey: String? = null,
+): String? = when (kind) {
     LoadErrorKind.REAUTH -> "error.load.reauth.body"
     LoadErrorKind.FORBIDDEN -> "error.load.forbidden.body"
     LoadErrorKind.UNREACHABLE -> "error.play.unreachable.body"
@@ -129,7 +131,8 @@ fun loadErrorBodyKey(kind: LoadErrorKind, install: MacInstallState? = MacDiagnos
         if (install == MacInstallState.ON_VOLUME) "mac.install_place.body_volume" else "mac.install_place.body_translocated"
     LoadErrorKind.MAC_LOCAL_NETWORK -> "mac.local_network_blocked.body"
     // GONE has no next step, and GENERIC has no honest sentence beyond its heading.
-    LoadErrorKind.GONE, LoadErrorKind.GENERIC, LoadErrorKind.PLAYBACK_UNAVAILABLE -> null
+    LoadErrorKind.GENERIC -> genericBodyKey
+    LoadErrorKind.GONE, LoadErrorKind.PLAYBACK_UNAVAILABLE -> null
 }
 
 /**
@@ -172,10 +175,13 @@ fun LoadErrorState(
     onWatchDownloads: (() -> Unit)? = null,
     /** DEB-4912 (FR-12) — *Apps* under Retry on the can't-reach screen, while the TV's home-screen hook is on ([LocalOpenApps] is non-null). Only Home asks for it. */
     offerApps: Boolean = false,
+    /** DEB-5835 (FR-3) — a surface with a sentence of its own for [LoadErrorKind.GENERIC] (the live player's *Couldn't tune*). */
+    genericTitleKey: String? = null,
+    genericBodyKey: String? = null,
 ) {
     val colors = RaviloTheme.colors
-    val title = loadErrorTitleKey(kind)
-    val body = loadErrorBodyKey(kind)
+    val title = loadErrorTitleKey(kind, genericTitleKey)
+    val body = loadErrorBodyKey(kind, genericBodyKey = genericBodyKey)
     // FR-R280-3 — the action the cause allows, and only that one. A REAUTH offers the thing that
     // resolves it; a deterministic 403/404 offers the way out rather than a button that re-asks.
     val showRetry = onRetry != null && loadErrorOffersRetry(kind)

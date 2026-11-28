@@ -169,6 +169,7 @@
   "livetv.next": "Next",
   "livetv.tuning": "Tuning…",
   "livetv.tune_failed": "Couldn't tune this channel",
+  "livetv.tune_failed_body": "Try again, or switch to another channel.",
   "livetv.live_badge": "LIVE",
   "livetv.enter_channel": "Enter channel number",
   "livetv.watch_live": "Watch Live",

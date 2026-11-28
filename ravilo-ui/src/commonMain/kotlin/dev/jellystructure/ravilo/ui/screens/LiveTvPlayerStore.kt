@@ -6,6 +6,7 @@ import dev.jellystructure.ravilo.ui.seams.supportedAudioCodecs
 import dev.jellystructure.ravilo.ui.seams.supportsHevcOverHls
 import dev.jellystructure.ravilo.ui.seams.platformAudioDecoders
 import dev.jellystructure.ravilo.ui.components.LoadErrorKind
+import dev.jellystructure.ravilo.ui.components.loadErrorKindOf
 import dev.jellystructure.ravilo.ui.seams.detectDecoderLimits
 import dev.jellystructure.ravilo.ui.seams.detectHdrSupport
 import dev.jellystructure.shared.tv.ClientCapabilities
@@ -141,9 +142,11 @@ class LiveTvPlayerStore(private val apiClient: TvApiClient) {
                 _state.value = LiveTvPlayerState.Error("channel not found", LoadErrorKind.GONE)
                 return@launch
             }
-            val ticket = runCatching { apiClient.tuneLiveTv(channelId, capabilities(), via) }.getOrNull()
+            val attempt = runCatching { apiClient.tuneLiveTv(channelId, capabilities(), via) }
+            val ticket = attempt.getOrNull()
             if (ticket == null) {
-                _state.value = LiveTvPlayerState.Error("livetv.tune_failed")
+                // DEB-5835 (FR-3) — the failure keeps its cause: unreachable offers Retry, REAUTH Sign in, GONE Back.
+                _state.value = LiveTvPlayerState.Error("livetv.tune_failed", loadErrorKindOf(attempt.exceptionOrNull()))
                 return@launch
             }
             openLiveStreamId = ticket.liveStreamId
@@ -180,8 +183,9 @@ class LiveTvPlayerStore(private val apiClient: TvApiClient) {
     /** Zaps to the adjacent channel in lineup order ([direction] = +1/-1), wrapping around. DEB-2658 (DEB-2628 FR-8) — the lineup is
      *  the one list of stations and TV channels, so a zap can cross from a channel to a station and back; the screen follows the kind. */
     fun zap(direction: Int) {
-        val cur = (_state.value as? LiveTvPlayerState.Ready)?.channel ?: return
-        val next = zapTarget(channels, cur.channelId, direction) ?: return
+        // DEB-5835 (FR-3) — from an Error the failed channel is the one to step from.
+        val curId = (_state.value as? LiveTvPlayerState.Ready)?.channel?.channelId ?: currentChannelId ?: return
+        val next = zapTarget(channels, curId, direction) ?: return
         tune(next.channelId)
     }
 

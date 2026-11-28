@@ -163,6 +163,7 @@
   "livetv.next": "Næst",
   "livetv.tuning": "Skiftir rás…",
   "livetv.tune_failed": "Kundi ikki skifta til hesa rásina",
+  "livetv.tune_failed_body": "Royn aftur, ella skift til aðra rás.",
   "livetv.live_badge": "BEINLEIÐIS",
   "livetv.enter_channel": "Skriva rásnummar",
   "livetv.watch_live": "Sí beinleiðis",

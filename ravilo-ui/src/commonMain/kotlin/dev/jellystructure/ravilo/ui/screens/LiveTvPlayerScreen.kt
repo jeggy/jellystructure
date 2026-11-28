@@ -62,6 +62,7 @@ import dev.jellystructure.ravilo.ui.isTvPlatform
 import dev.jellystructure.ravilo.ui.seams.systemPrefersReducedMotion
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import dev.jellystructure.ravilo.ui.focus.playerBackGesture
+import dev.jellystructure.ravilo.ui.components.LoadErrorState
 import dev.jellystructure.ravilo.ui.i18n.str
 import dev.jellystructure.ravilo.ui.seams.LiveFallbackAction
 import dev.jellystructure.ravilo.ui.seams.LiveFallbackPolicy
@@ -248,8 +249,8 @@ fun LiveTvPlayerScreen(
 
     fun zap(direction: Int) {
         wake()
-        val cur = (state as? LiveTvPlayerState.Ready)?.channel
-        if (cur != null) zapBanner = zapTarget(store.channelList, cur.channelId, direction)
+        val cur = (state as? LiveTvPlayerState.Ready)?.channel?.channelId ?: store.tuningChannelId
+        if (cur != null) zapBanner = zapTarget(store.channelList, cur, direction)
         store.zap(direction)
     }
 
@@ -340,9 +341,13 @@ fun LiveTvPlayerScreen(
             }
         }
         if (state is LiveTvPlayerState.Error) {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text(str("livetv.tune_failed"), color = colors.text, fontSize = 16.sp)
-            }
+            // DEB-5835 (FR-3) — the cause, and the way on; radio draws the same surface in its layout's place.
+            LoadErrorState(
+                (state as LiveTvPlayerState.Error).kind,
+                onRetry = { store.tune(store.tuningChannelId ?: channelId) },
+                onBack = liveTvBack,
+                genericTitleKey = "livetv.tune_failed", genericBodyKey = "livetv.tune_failed_body",
+            )
         }
 
         val ready = state as? LiveTvPlayerState.Ready

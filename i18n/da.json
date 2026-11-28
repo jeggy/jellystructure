@@ -163,6 +163,7 @@
   "livetv.next": "Næste",
   "livetv.tuning": "Skifter kanal…",
   "livetv.tune_failed": "Kunne ikke skifte til denne kanal",
+  "livetv.tune_failed_body": "Prøv igen, eller skift til en anden kanal.",
   "livetv.live_badge": "LIVE",
   "livetv.enter_channel": "Indtast kanalnummer",
   "livetv.watch_live": "Se live",
