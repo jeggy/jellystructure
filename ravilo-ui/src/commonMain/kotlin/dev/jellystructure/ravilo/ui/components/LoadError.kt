@@ -17,6 +17,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import dev.jellystructure.ravilo.ui.LocalReauthRequired
 import dev.jellystructure.ravilo.ui.i18n.str
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 import dev.jellystructure.shared.tv.TvApiError
@@ -178,7 +179,9 @@ fun LoadErrorState(
     // FR-R280-3 — the action the cause allows, and only that one. A REAUTH offers the thing that
     // resolves it; a deterministic 403/404 offers the way out rather than a button that re-asks.
     val showRetry = onRetry != null && loadErrorOffersRetry(kind)
-    val showSignIn = onSignIn != null && kind == LoadErrorKind.REAUTH
+    // DEB-5835 (FR-1) — a REAUTH with no sign-in of its own takes the player's route: sign this profile out, then the picker.
+    val signIn = onSignIn ?: LocalReauthRequired.current
+    val showSignIn = signIn != null && kind == LoadErrorKind.REAUTH
     // R385 (FR-R385-4) — the Mac's two causes bring their own button from the platform: **Quit Ravilo** alone for the
     // one nothing in the app can change, **Open Settings** above the Retry for the one a permission fixes.
     val onQuit = if (kind == LoadErrorKind.MAC_INSTALL_PLACE) MacDiagnosis.quit else null
@@ -224,7 +227,7 @@ fun LoadErrorState(
                         str("download.watch_downloads"), focusRequester = primaryFR, onSelect = onWatchDownloads,
                         onDown = if (watchThenRetry) ({ runCatching { macRetryFR.requestFocus() }; Unit }) else onDown,
                     )
-                    showSignIn -> RaviloButton(str("action.sign_in"), focusRequester = primaryFR, onDown = onDown, onSelect = onSignIn)
+                    showSignIn -> RaviloButton(str("action.sign_in"), focusRequester = primaryFR, onDown = onDown, onSelect = signIn)
                     onQuit != null -> RaviloButton(str("mac.menu_quit"), focusRequester = primaryFR, onDown = onDown, onSelect = onQuit)
                     onOpenSettings != null -> RaviloButton(
                         str("mac.open_settings"), focusRequester = primaryFR, onSelect = onOpenSettings,

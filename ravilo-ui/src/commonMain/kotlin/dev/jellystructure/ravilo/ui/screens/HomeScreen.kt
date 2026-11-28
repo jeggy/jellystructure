@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.ravilo.ui.LocalReauthRequired
 import dev.jellystructure.ravilo.ui.components.fadeInOnLoad
 import dev.jellystructure.ravilo.ui.focus.focusRing
 import dev.jellystructure.ravilo.ui.focus.EdgeBand
@@ -1056,7 +1057,8 @@ private fun HomeErrorState(
     LoadErrorState(
         kind,
         onRetry = onRetry,
-        onSignIn = onSignOut,
+        // DEB-5835 (FR-1) — Home's Sign in takes the player's route too, so a dead profile does not stay in the picker.
+        onSignIn = LocalReauthRequired.current ?: onSignOut,
         onWatchDownloads = onWatchDownloads,
         offerApps = true,   // DEB-4912 (FR-12) — Apps under Retry while the hook is on
         extraAction = { primaryFR, signOutFR ->
