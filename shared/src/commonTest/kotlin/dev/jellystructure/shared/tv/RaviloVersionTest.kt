@@ -99,7 +99,7 @@ class RaviloUpdateNoticeTest {
     }
 
     @Test
-    fun `nothing for a dev build, an unknown server, another major or an older server`() {
+    fun `nothing for a dev build or an unknown server or another major or an older server`() {
         assertNull(raviloUpdateTarget("1.72-5-gabcdef12", "v1.73"))
         assertNull(raviloUpdateTarget("dev", "v1.73"))
         assertNull(raviloUpdateTarget(null, "v1.73"))
