@@ -108,3 +108,45 @@ screen. A design round draws them on phone, TV and desktop before they are built
 that path, and a query never supplies a host. Everything else is as above. See FR-4 of
 [`an-invite-link-sets-up-a-new-viewers-app.md`](an-invite-link-sets-up-a-new-viewers-app.md). That spec's setup-screen
 states are drawn in the same design round as FR-4 and FR-5 here.
+
+## Amendment 2026-11-28 (DEB-5013): the adopted drawing, and four things the round found
+
+Design round DEB-5012 (`design/incoming/2026-11-19-setup-hidden-characters/`, `81adb5945`) drew two directions.
+**Direction A is adopted**: the fix button sits under the mark line, in one column. Direction B put the button beside
+the warning. It is not taken, because at the narrowest column (412 dp, phone keyboard up) it breaks the English label
+mid-word and wraps the mark line inside the trailer. It also turns Down from the field into a sideways move. A is
+FR-5's field → fix → *Connect* order drawn as a column. Round DEB-5861 (2026-11-27) shows A under the invite line in its
+setup-screen frames, so the two lines coexist as drawn there.
+
+**FR-4, the mark for a line break is `¶` (U+00B6), not `⏎`.** U+23CE is in none of the three fonts Ravilo ships, so it
+would come from whatever fallback a device has, or show as an empty box. U+00B6 is in all three. Any other hidden
+character is still `·` (U+00B7). Each mark is drawn on an 18 % wash of the warning colour, so it does not read as part
+of the address. Only the marks are in the warning colour; the address text around them stays in the soft ink colour.
+
+**FR-4, a long mark line wraps.** It breaks between any two characters and never clips or scrolls. Clipping could hide
+the very mark the line exists to show, and a line that scrolls sideways cannot be reached with a D-pad.
+
+**FR-4, the warning colour is a new per-theme colour.** `RaviloColors` has no warning colour today. It gains one:
+`#f5b542` (ravilo.css `--warn`) in Aurora, Midnight and Graphite. Noir uses `#e0792f`, because its accent is
+`#f5b542`. Daylight uses `#8a5a00` for the sentence and the marks and `#c98a12` for the rail and the button border,
+because `#f5b542` on Daylight's background is 1.8 : 1.
+
+**FR-5, where focus starts.** When the screen opens on an address that shows FR-4's warning (one read back by FR-3,
+put back by *Wrong server?*, or pre-filled), focus starts on the fix button and not on *Connect*, which FR-6 disables.
+In every other case focus starts where it does today.
+
+The component, as measured in the round (dp; sp for text):
+
+| Part | Value |
+| --- | --- |
+| Rail | 3 wide, radius 2, in the warning colour, running the full height of the sentence, the mark line and the button |
+| Rail → text | 11 |
+| Field → warning | 10 (the column's own gap is 20; the warning belongs to the field) |
+| Sentence | Sora 600, 13.5 sp, line height 1.35, in the warning colour |
+| Sentence → mark line | 6 |
+| Mark line | JetBrains Mono 500, 14 sp, tracking 0.2 sp, soft ink colour; each mark is weight 700, in the warning colour, on its wash |
+| Mark line → button | 12 |
+| Fix button | Outlined: 1 border in the warning colour, no fill, ink text, Sora 600 14 sp, radius 8, at least 42 tall, full column width, label wraps |
+| The address in the label | JetBrains Mono 600 (the same face as the mark line) |
+| Fix button, focused | The same 2 ring *Connect* uses, and the border takes the ring colour. Not the inverted fill. |
+| *Connect* while the warning shows | The disabled state the screen already has. Otherwise unchanged (52 tall, radius 8) |
