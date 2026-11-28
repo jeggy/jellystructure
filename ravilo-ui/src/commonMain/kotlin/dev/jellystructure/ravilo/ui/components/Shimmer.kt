@@ -22,6 +22,11 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.ui.draw.clipToBounds
 import dev.jellystructure.ravilo.ui.theme.raviloTrackPadV
+import dev.jellystructure.ravilo.ui.theme.raviloRowHeadPadB
+import dev.jellystructure.ravilo.ui.theme.LocalLayoutFamily
+import dev.jellystructure.ravilo.ui.theme.SpaceGrotesk
+import dev.jellystructure.ravilo.ui.screens.homeHeroHeight
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -33,6 +38,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
@@ -113,22 +119,6 @@ fun ShimmerBox(
     )
 }
 
-/** Skeleton for a single poster tile (210×315). */
-@Composable
-fun TileShimmer(modifier: Modifier = Modifier) {
-    val brush = rememberShimmerBrush()
-    val colors = RaviloTheme.colors
-    Column(modifier = modifier.width(210.dp)) {
-        ShimmerBox(
-            modifier = Modifier.width(210.dp).height(315.dp),
-            brush = brush,
-            radius = colors.tileRadius.value,
-        )
-        Spacer(Modifier.height(8.dp))
-        ShimmerBox(modifier = Modifier.width(150.dp).height(18.dp), brush = brush)
-    }
-}
-
 /**
  * DEB-4091 FR-1 — the film grids' loading view: poster shimmers in the loaded grid's [columns], as many rows as fill
  * the page. Replaces the centred *Loading* line on the desktop Library and the phone's seeded grids.
@@ -161,33 +151,45 @@ fun TileShimmerGrid(columns: Int, modifier: Modifier = Modifier) {
     }
 }
 
-/** Full-screen loading shell shown while HomeState.Loading is active. */
+/**
+ * DEB-5837 FR-3 — Home's loading page in the loaded page's shape: the hero band at [homeHeroHeight]'s height, then as many
+ * rows as fill the screen, each the loaded row's own pieces — a row gap, a heading line, [raviloRowHeadPadB], and a track of
+ * `Tile(placeholder = true)` at the poster size inside the track's own padding. The app bar is drawn by the caller.
+ */
+/** Test seam: the first skeleton row (heading and tiles, not the gap above it). */
+internal const val HOME_SKELETON_FIRST_ROW = "home-skeleton-first-row"
+
 @Composable
 fun HomeLoadingShell() {
     val brush = rememberShimmerBrush()
-
-    Column(modifier = Modifier.fillMaxWidth()) {
-        // Hero skeleton
-        ShimmerBox(
-            modifier = Modifier.fillMaxWidth().height(600.dp),
-            brush = brush,
-            radius = 0f,
-        )
-        Spacer(Modifier.height(raviloRowGap))
-
-        // Two skeleton rows
-        repeat(2) {
-            Box(modifier = Modifier.padding(horizontal = raviloHPad)) {
-                ShimmerBox(modifier = Modifier.width(200.dp).height(29.dp), brush = brush)
+    val family = LocalLayoutFamily.current
+    val heroHeight = homeHeroHeight()
+    androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize().clipToBounds()) {
+        val screenHeight = maxHeight
+        Column(Modifier.fillMaxWidth().wrapContentHeight(align = Alignment.Top, unbounded = true)) {
+            ShimmerBox(modifier = Modifier.fillMaxWidth().height(heroHeight), brush = brush, radius = 0f)
+            // A row is at least its gap, heading and a poster tile; one more than fits keeps the page full to the foot.
+            val rows = maxOf(1, ((screenHeight - heroHeight) / 240.dp).toInt() + 1)
+            repeat(rows) { i ->
+                Spacer(Modifier.height(raviloRowGap))
+                Column(if (i == 0) Modifier.testTag(HOME_SKELETON_FIRST_ROW) else Modifier) {
+                Text(
+                    text = " ",
+                    fontSize = rowHeadingSize(family),
+                    fontWeight = FontWeight.SemiBold,
+                    fontFamily = SpaceGrotesk,
+                    letterSpacing = (-0.3).sp,
+                    modifier = Modifier.padding(horizontal = raviloHPad).width(200.dp).skeleton(RoundedCornerShape(10.dp), brush),
+                )
+                Spacer(Modifier.height(raviloRowHeadPadB))
+                Row(
+                    Modifier.padding(horizontal = raviloHPad, vertical = raviloTrackPadV),
+                    horizontalArrangement = Arrangement.spacedBy(raviloItemSpacing),
+                ) {
+                    repeat(8) { Tile(title = "", posterUrl = null, variant = TileVariant.POSTER, placeholder = true) }
+                }
+                }
             }
-            Spacer(Modifier.height(12.dp))
-            Row(
-                modifier = Modifier.padding(horizontal = raviloHPad),
-                horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(raviloItemSpacing),
-            ) {
-                repeat(5) { TileShimmer() }
-            }
-            Spacer(Modifier.height(raviloRowGap))
         }
     }
 }

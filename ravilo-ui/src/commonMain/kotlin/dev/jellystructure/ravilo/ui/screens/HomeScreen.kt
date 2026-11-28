@@ -161,7 +161,11 @@ fun HomeScreen(
     // DEB-2349 (FR-5) — the loaded feed (or the error) fades in once over the loading shell; a feed from R212's snapshot does not.
     Box(modifier = Modifier.fillMaxSize().background(colors.background).fadeInOnLoad(loading = state is HomeState.Loading)) {
         when (val s = state) {
-            is HomeState.Loading -> HomeLoadingShell()
+            is HomeState.Loading -> {
+                HomeLoadingShell()
+                // DEB-5837 (FR-3) — the real app bar, drawn as when loaded.
+                AppBar(navItems = raviloNavItems(), activeNav = activeNav, onNavSelect = onNavSelect, onProfile = onProfile, onSearch = onSearch)
+            }
             is HomeState.Error   -> HomeErrorState(
                 kind = s.kind,
                 apiClient = apiClient,
@@ -185,6 +189,25 @@ fun HomeScreen(
                 onOpenLiveTvGuide = onOpenLiveTvGuide,
             )
         }
+    }
+}
+
+/**
+ * DEB-5837 (FR-3) — the Home hero band's height, from the one function the loaded Home and its skeleton both call.
+ * [heroPct] is the feed's share of the screen (R27, 56 until a feed is known); [portraitHeroPct] replaces it on a portrait
+ * viewport when set (R159). A computer's hero is the mockup's band instead (R337).
+ */
+@Composable
+internal fun homeHeroHeight(heroPct: Int = 56, portraitHeroPct: Int? = null): androidx.compose.ui.unit.Dp {
+    val density = LocalDensity.current
+    val containerH = LocalWindowInfo.current.containerSize.height
+    val pct = if (LocalPortrait.current && portraitHeroPct != null) portraitHeroPct.coerceIn(20, 100) else heroPct.coerceIn(40, 100)
+    val screenH = with(density) { containerH.toDp() }
+    // R337 — a computer's hero is the mockup's band (`.hero`: 380 of 760), not a TV's share of the screen.
+    return when {
+        containerH <= 0 -> 460.dp
+        dev.jellystructure.ravilo.ui.theme.isDesktopLayout -> maxOf(380.dp, screenH * 0.5f)
+        else -> screenH * (pct / 100f)
     }
 }
 
@@ -217,16 +240,7 @@ private fun HomeLoaded(
     // Hero height as a % of the screen, per the user's config (R27); auto-advance interval too.
     // R159 — portrait override, when set, replaces the landscape value; both are already on the feed
     // (no refetch), the client only selects by its own viewport (presentation selection, not derived state).
-    val density = LocalDensity.current
-    val containerH = LocalWindowInfo.current.containerSize.height
-    val portraitHeroPct = feed.portraitHeroHeightPct
-    val heroPct = if (LocalPortrait.current && portraitHeroPct != null)
-        portraitHeroPct.coerceIn(20, 100) else feed.heroHeightPct.coerceIn(40, 100)
-    val tvHeroHeight = if (containerH > 0)
-        with(density) { containerH.toDp() } * (heroPct / 100f)
-    else 460.dp
-    // R337 — a computer's hero is the mockup's band (`.hero`: 380 of 760), not a TV's share of the screen.
-    val heroHeight = if (dev.jellystructure.ravilo.ui.theme.isDesktopLayout && containerH > 0) maxOf(380.dp, with(density) { containerH.toDp() } * 0.5f) else tvHeroHeight
+    val heroHeight = homeHeroHeight(feed.heroHeightPct, feed.portraitHeroHeightPct)
 
     val hasHero     = feed.heroes.isNotEmpty()
     val hasChannels = feed.channels.isNotEmpty()
