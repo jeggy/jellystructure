@@ -74,10 +74,10 @@ private val AUTH_HEADER: String by lazy {
  * HLS/AAC stereo transcode (the shape measured in the research: MP3 direct, WMA → `/audio/{id}/master.m3u8`).
  * A client that declares nothing gets the list a phone's Media3 plays.
  */
-internal fun audioDeviceProfile(capabilities: ClientCapabilities): String {
+internal fun audioDeviceProfile(capabilities: ClientCapabilities, maxBps: Long? = null): String {
     val containers = capabilities.containers.ifEmpty { listOf("mp3", "flac", "ogg", "oga", "opus", "m4a", "mp4", "aac", "wav", "mka", "webm") }
     val codecs = capabilities.audioCodecs.ifEmpty { listOf("mp3", "flac", "vorbis", "opus", "aac", "alac", "pcm_s16le", "pcm_s24le") }
-    return """{"MaxStreamingBitrate":140000000,"MusicStreamingTranscodingBitrate":256000,""" +
+    return """{"MaxStreamingBitrate":${maxBps ?: 140000000},"MusicStreamingTranscodingBitrate":256000,""" +
         """"DirectPlayProfiles":[{"Container":"${containers.joinToString(",")}","Type":"Audio","AudioCodec":"${codecs.joinToString(",")}"}],""" +
         """"TranscodingProfiles":[{"Container":"ts","Type":"Audio","AudioCodec":"aac","Protocol":"hls","Context":"Streaming","MaxAudioChannels":"2","BreakOnNonKeyFrames":true}],""" +
         // R351 (FR-R351-10) — a player that takes fewer channels than a file has converts it (a speaker says 2).
@@ -1367,6 +1367,8 @@ class JellyfinClient(
         decodeFailed: Map<String, Long> = emptyMap(),
         /** DEB-3642 (FR-4) — the file's header is broken: direct play AND direct stream off for this negotiation (per file, never stored on the device). */
         noDirect: Boolean = false,
+        /** DEB-5531 (FR-279-12) — a song: the line's cap (0.8 × its figure); null = today's profile. */
+        audioMaxBps: Long? = null,
     ): JellyfinPlaybackInfoResponse? = runCatching {
         val subBody = (subtitleStreamIndex?.let { ""","SubtitleStreamIndex":$it""" } ?: "") +
             (audioStreamIndex?.let { ""","AudioStreamIndex":$it""" } ?: "")
@@ -1377,7 +1379,7 @@ class JellyfinClient(
         httpPost(baseUrl.trimEnd('/') + "/Items/$itemId/PlaybackInfo?UserId=$userId") {
             jellyfinAuth(userToken, identity)
             contentType(ContentType.Application.Json)
-            setBody(playbackInfoBody(if (audio) audioDeviceProfile(capabilities) else deviceProfile(capabilities, throughputCapBps, decodeFailed), mediaSourceBody + subBody, noDirect))
+            setBody(playbackInfoBody(if (audio) audioDeviceProfile(capabilities, audioMaxBps) else deviceProfile(capabilities, throughputCapBps, decodeFailed), mediaSourceBody + subBody, noDirect))
         }.bodyOrNull<JellyfinPlaybackInfoResponse>("getPlaybackInfo")
     }.getOrElse { Logger.warn("Jellyfin getPlaybackInfo failed: ${it.message}"); null }
 

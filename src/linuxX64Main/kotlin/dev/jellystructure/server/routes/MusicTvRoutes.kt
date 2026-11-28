@@ -1,5 +1,6 @@
 package dev.jellystructure.server.routes
 
+import io.ktor.server.plugins.origin
 import dev.jellystructure.auth.DeviceKey
 import dev.jellystructure.auth.JellyfinClient
 import dev.jellystructure.config.ConfigStore
@@ -122,7 +123,8 @@ fun Route.musicTvRoutes(
         if (!svc.visible(device, trackId) || track == null) return@post call.respond(HttpStatusCode.Forbidden, mapOf("error" to "Not available"))
         // Phase 288 — a FLAC with no seek table, for a player that cannot scan it, is negotiated as a conversion.
         val capabilities = dev.jellystructure.music.FlacIndex.capabilitiesFor(req.capabilities, track.container, track.codec, track.path)
-        call.respond(playback.startMusicPlayback(device, trackId, capabilities, req.startPositionMs))
+        call.respond(playback.startMusicPlayback(device, trackId, capabilities, req.startPositionMs,
+            clientAddress = dev.jellystructure.auth.LoginRateLimiter.clientKey(call.request.origin.remoteHost, call.request.headers["X-Forwarded-For"])))   // DEB-5531
         svc.forget(device)   // Recently played moved.
     }
 

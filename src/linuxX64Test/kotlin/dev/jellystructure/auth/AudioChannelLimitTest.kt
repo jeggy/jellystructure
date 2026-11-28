@@ -56,6 +56,13 @@ class AudioChannelLimitTest {
         assertTrue(""""CodecProfiles":[]""" in audioDeviceProfile(ClientCapabilities()))
     }
 
+    @Test fun a_line_cap_replaces_the_streaming_ceiling_and_nothing_else() {
+        val caps = ClientCapabilities()
+        assertTrue(""""MaxStreamingBitrate":1136000,""" in audioDeviceProfile(caps, 1_136_000))
+        assertEquals(audioDeviceProfile(caps).replace("140000000", "1136000"), audioDeviceProfile(caps, 1_136_000))
+        assertTrue(""""MaxStreamingBitrate":140000000,""" in audioDeviceProfile(caps))
+    }
+
     @Test fun the_conversion_url_carries_the_limit_when_jellyfin_left_it_out() {
         val url = "http://jf/videos/x/master.m3u8?VideoCodec=h264&AudioCodec=aac&ApiKey=t"
         assertEquals("$url&TranscodingMaxAudioChannels=2", withChannelLimit(url, hub))

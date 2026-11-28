@@ -855,7 +855,8 @@ fun Route.tvRoutes(
         val device = call.attributes[DeviceKey]
         val req = call.receive<PlaybackProgressRequest>()
         playbackService.reportProgress(device, req.itemId, req.positionMs, req.isPaused, req.volumePercent, req.muted, req.sessionId,   // R357 / R368
-            waiting = req.waiting, waitDetail = req.waitDetail, pauseBy = req.pauseBy)   // DEB-3034 (FR-3, FR-7)
+            waiting = req.waiting, waitDetail = req.waitDetail, pauseBy = req.pauseBy,   // DEB-3034 (FR-3, FR-7)
+            clientAddress = dev.jellystructure.auth.LoginRateLimiter.clientKey(call.request.origin.remoteHost, call.request.headers["X-Forwarded-For"]))   // DEB-5531
         call.respond(mapOf("status" to "ok"))
     }
 

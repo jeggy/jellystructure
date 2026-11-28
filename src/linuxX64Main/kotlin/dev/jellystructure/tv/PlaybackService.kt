@@ -1739,9 +1739,13 @@ class PlaybackService(
      * construction (dev review 3). A song always starts at 0 unless the phone says where (Jellyfin keeps no music
      * position; a resumed queue carries its own).
      */
+    private val songLineFigure = SongLineFigure()
+
     suspend fun startMusicPlayback(device: DeviceData, trackId: String, capabilities: ClientCapabilities, startPositionMs: Long? = null,
                                    /** R368 (dev review item 4) — the book this part belongs to: the session's kind is `audiobook`. */
-                                   bookId: String? = null): StreamTicket {
+                                   bookId: String? = null,
+                                   /** DEB-5531 (FR-279-12) — the caller's address; a song's line figure counts only from the same one. */
+                                   clientAddress: String? = null): StreamTicket {
         val jellyfinBase = configStore.current.apiKeys.jellyfinUrl.trimEnd('/')
         val token = jellyfinClient.tvTokenForClient(jellyfinBase, device)
             ?: throw JellyfinReauthRequiredException("This device's Jellyfin sign-in has expired — sign in again to continue listening.")
@@ -1749,7 +1753,8 @@ class PlaybackService(
         val playSessionId = playSessionIdFor(device, trackId)
         val startMs = (startPositionMs ?: 0L).coerceAtLeast(0L)
         jellyfinClient.startPlaybackSession(jellyfinBase, token, trackId, startMs * TICKS_PER_MS, trackId, identity, playSessionId)
-        val info = jellyfinClient.getPlaybackInfo(jellyfinBase, token, device.jellyfinUserId, trackId, capabilities = capabilities, identity = identity, audio = true)
+        val info = jellyfinClient.getPlaybackInfo(jellyfinBase, token, device.jellyfinUserId, trackId, capabilities = capabilities, identity = identity, audio = true,
+            audioMaxBps = if (bookId == null && clientAddress != null) songLineFigure.capFor(device.deviceId, clientAddress, nowMs()) else null)
         val source = info?.mediaSources?.firstOrNull()
         val needsTranscode = source != null && !source.supportsDirectPlay && source.transcodingUrl != null
         val jellyfinPlaySessionId = info?.playSessionId
@@ -1795,7 +1800,10 @@ class PlaybackService(
                                 *  then found by the book whatever part it is on, never minted beside it. */
                                bookId: String? = null,
                                /** DEB-3034 (FR-3, FR-7) — a song's wait and what sent a pause: the session's timeline only. */
-                               waiting: Boolean? = null, waitDetail: String? = null, pauseBy: String? = null) {
+                               waiting: Boolean? = null, waitDetail: String? = null, pauseBy: String? = null,
+                               /** DEB-5531 (FR-279-12) — the caller's address, kept with a song's line figure. */
+                               clientAddress: String? = null) {
+        if (waiting == true && clientAddress != null) songLineFigure.record(device.deviceId, clientAddress, waitDetail, nowMs())
         // No requireVisible() here deliberately — this is a heartbeat for a session startPlayback
         // already gated; failing a heartbeat because a policy/library edit drifted mid-playback would
         // only strand a phantom "Now Playing" in Jellyfin, the exact bug class the watchdog above
