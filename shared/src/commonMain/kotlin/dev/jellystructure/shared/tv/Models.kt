@@ -130,6 +130,12 @@ data class ClientCapabilities(
      * decoder, so the video is copied instead of re-encoded. Default false.
      */
     @SerialName("hls_hevc_capable") val hlsHevcCapable: Boolean = false,
+    /**
+     * DEB-5503 (FR-43) — on a direct play this app changes audio only by restreaming, never inside the file. The server negotiates a
+     * `tizen` start, prepare, prewarm or restream as `hls_only` unless this is true: an app without the field (the 1.73 `.wgt`) switches
+     * audio inside the file and freezes. Opt-in, default false; nothing but the Samsung app reads it.
+     */
+    @SerialName("audio_by_restream") val audioByRestream: Boolean = false,
     // Bug fix: an HDR10/HDR10+ (PQ) or HLG source used to always direct-play regardless of whether
     // the device could actually display it correctly — Jellyfin's DeviceProfile declared no VideoRange
     // constraint at all, so it never had a reason to tone-map-transcode to SDR. These default to

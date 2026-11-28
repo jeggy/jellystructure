@@ -61,12 +61,26 @@ class SamsungAudioPickTest {
 
     @Test fun `the switch helper reads the pick only for a tizen device`() {
         val caps = ClientCapabilities(containers = listOf("mkv", "mp4"))
-        assertTrue(capabilitiesForPlatform(caps, "tizen", samsungDirectPlay = true, audioOffDefault = true).hlsOnly)
-        assertSame(caps, capabilitiesForPlatform(caps, "tizen", samsungDirectPlay = true, audioOffDefault = false))
+        val byRestream = caps.copy(audioByRestream = true)
+        assertTrue(capabilitiesForPlatform(byRestream, "tizen", samsungDirectPlay = true, audioOffDefault = true).hlsOnly)
+        assertSame(byRestream, capabilitiesForPlatform(byRestream, "tizen", samsungDirectPlay = true, audioOffDefault = false))
         assertSame(caps, capabilitiesForPlatform(caps, "tv", samsungDirectPlay = true, audioOffDefault = true))
     }
 
-    private class Fake { val bodies = mutableListOf<String>() }
+    @Test fun `the ticket's audio - a copy of the default is the default and any other track is as asked`() {
+        val tracks = listOf(track(1, default = true), track(2), track(9, copyOf = 1), track(10, copyOf = 2))
+        assertEquals(1, directAudioIndex(tracks, emptySet(), 9))
+        assertEquals(10, directAudioIndex(tracks, emptySet(), 10), "a copy of another track stays as asked")
+        assertEquals(2, directAudioIndex(tracks, emptySet(), 2))
+        assertEquals(1, directAudioIndex(tracks, emptySet(), 1))
+        assertEquals(null, directAudioIndex(tracks, emptySet(), null))
+    }
+
+    private class Fake {
+        val bodies = mutableListOf<String>()
+        /** DEB-6101 — the file's audio streams as Jellyfin lists them; the default is an E-AC-3 track with an added AAC "Stereo" copy beside it. */
+        var copyFile = false
+    }
 
     private fun rig(name: String, block: suspend (PlaybackService, Fake) -> Unit) = runBlocking {
         val run = "${getpid()}-$name"
@@ -77,10 +91,14 @@ class SamsungAudioPickTest {
                 get("/Users/{id}") { call.respondText("{}", ContentType.Application.Json) }
                 get("/Items/{id}") {
                     val id = call.parameters["id"]!!
-                    call.respondText("""{"Id":"$id","Name":"Film $id","RunTimeTicks":${100 * 60_000L * 10_000},"UserData":{"PlaybackPositionTicks":0,"Played":false},"MediaStreams":[
-                        {"Type":"Video","Index":0,"Codec":"h264"},
+                    val audio = if (fake.copyFile) """
+                        {"Type":"Audio","Index":1,"Codec":"eac3","Language":"eng","Channels":6,"IsDefault":true},
+                        {"Type":"Audio","Index":2,"Codec":"aac","Language":"dan","Channels":2},
+                        {"Type":"Audio","Index":3,"Codec":"aac","Language":"eng","Channels":2,"Title":"Stereo"}""" else """
                         {"Type":"Audio","Index":1,"Codec":"aac","Language":"eng","Channels":2,"IsDefault":true},
-                        {"Type":"Audio","Index":2,"Codec":"aac","Language":"dan","Channels":2}]}""", ContentType.Application.Json)
+                        {"Type":"Audio","Index":2,"Codec":"aac","Language":"dan","Channels":2}"""
+                    call.respondText("""{"Id":"$id","Name":"Film $id","RunTimeTicks":${100 * 60_000L * 10_000},"UserData":{"PlaybackPositionTicks":0,"Played":false},"MediaStreams":[
+                        {"Type":"Video","Index":0,"Codec":"h264"},$audio]}""", ContentType.Application.Json)
                 }
                 post("/Items/{id}/PlaybackInfo") {
                     val id = call.parameters["id"]!!
@@ -120,7 +138,7 @@ class SamsungAudioPickTest {
         jellyfinUserToken = "jt-$id", isAdmin = false, platform = platform, kind = "tv",
     )
 
-    private val caps = ClientCapabilities(containers = listOf("mkv", "mp4"), videoCodecs = listOf("h264"), audioCodecs = listOf("aac"), hlsOnly = false)
+    private val caps = ClientCapabilities(containers = listOf("mkv", "mp4"), videoCodecs = listOf("h264"), audioCodecs = listOf("aac"), hlsOnly = false, audioByRestream = true)
 
     private fun assertLadder(body: String, audio: Int?) {
         assertTrue(""""DirectPlayProfiles":[]""" in body, "no direct-play profile: $body")
@@ -174,5 +192,63 @@ class SamsungAudioPickTest {
     @Test fun `a tizen prepare carries no pick and so it keeps FR-43's containers`() = rig("prepare") { service, fake ->
         service.preparePlayback(device("s5", "tizen"), "film", caps)
         assertDirect(fake.bodies.last())
+    }
+
+    // DEB-6101 (FR-43) — an app that does not say it changes audio only by restreaming (the 1.73 .wgt) gets 1.72's negotiation.
+    @Test fun `a tizen start without audio_by_restream never gets a direct-play profile`() = rig("norestream") { service, fake ->
+        val old = caps.copy(audioByRestream = false)
+        val tizen = device("n1", "tizen")
+        service.startPlayback(tizen, "film", old)
+        assertLadder(fake.bodies.last(), audio = null)
+        service.startPlayback(tizen, "film", old, audioLanguage = "eng")
+        assertLadder(fake.bodies.last(), audio = null)
+        service.preparePlayback(tizen, "film", old)
+        assertLadder(fake.bodies.last(), audio = null)
+        service.prewarmPlayback(tizen, "film", old)
+        assertLadder(fake.bodies.last(), audio = null)
+        service.restream(tizen, "film", -1, 1_000L, old, audioStreamIndex = 1)
+        assertLadder(fake.bodies.last(), audio = 1)
+        // Android TV never reads the field.
+        service.startPlayback(device("n2", "tv"), "film", old)
+        assertDirect(fake.bodies.last())
+    }
+
+    // DEB-6101 (FR-44) — the file's default is E-AC-3 (stream 1); jellystructure's AAC copy of it is stream 3; the device decodes AAC only.
+    @Test fun `a tizen start that would play the added copy of the default asks for the default and stays direct`() = rig("copystart") { service, fake ->
+        fake.copyFile = true
+        service.startPlayback(device("c1", "tizen"), "film", caps.copy(audioCodecs = listOf("aac")))
+        assertDirect(fake.bodies.last())
+        assertTrue(""""AudioStreamIndex":1""" in fake.bodies.last(), "the default, not the copy: ${fake.bodies.last()}")
+        assertFalse(""""AudioStreamIndex":3""" in fake.bodies.last(), fake.bodies.last())
+        // The same pick on Android TV keeps the copy it always played.
+        service.startPlayback(device("c2", "tv"), "film", caps.copy(audioCodecs = listOf("aac")))
+        assertTrue(""""AudioStreamIndex":3""" in fake.bodies.last(), fake.bodies.last())
+    }
+
+    @Test fun `a tizen restream onto the added copy of the default ask for the default and stay direct`() = rig("copyrestream") { service, fake ->
+        fake.copyFile = true
+        val tizen = device("c3", "tizen")
+        service.restream(tizen, "film", -1, 1_000L, caps, audioStreamIndex = 3)
+        assertDirect(fake.bodies.last())
+        assertTrue(""""AudioStreamIndex":1""" in fake.bodies.last(), fake.bodies.last())
+    }
+
+    @Test fun `a tizen start onto a real second track is hls_only and carries that track`() = rig("secondtrack") { service, fake ->
+        fake.copyFile = true
+        service.startPlayback(device("c4", "tizen"), "film", caps, audioLanguage = "dan")
+        assertLadder(fake.bodies.last(), audio = 2)
+        service.restream(device("c4", "tizen"), "film", -1, 1_000L, caps, audioStreamIndex = 2)
+        assertLadder(fake.bodies.last(), audio = 2)
+    }
+
+    // The invariant: every tizen answer that is direct names the default track (or none), whichever track was asked.
+    @Test fun `every tizen restream answered direct names the default track`() = rig("invariant") { service, fake ->
+        fake.copyFile = true
+        val tizen = device("i1", "tizen")
+        for (asked in listOf(1, 2, 3)) {
+            service.restream(tizen, "film", -1, 1_000L, caps, audioStreamIndex = asked)
+            val body = fake.bodies.last()
+            if (""""DirectPlayProfiles":[]""" !in body) assertTrue(""""AudioStreamIndex":1""" in body, "asked $asked, direct: $body")
+        }
     }
 }

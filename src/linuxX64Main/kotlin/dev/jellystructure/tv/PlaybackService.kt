@@ -1389,8 +1389,9 @@ class PlaybackService(
         // fMP4; every use below sees the same narrowed capabilities.
         // DEB-3642 (FR-3, FR-4) — the file's own checks: an audio track that holds no packets is never asked for, and a broken header is never direct-played.
         val ghosts = ghostFactsOf(jellyfinId)
-        val askedAudio = realAudioFor(jellyfinId, ghosts, copyIndex ?: wantedAudioIndex) { buildAudioTracks(itemDetail, mediaSourceId) }
-        capabilities = forAudioPick(capabilities, device, itemDetail, mediaSourceId, ghosts, askedAudio)   // DEB-5916 (FR-44)
+        val (pickedCaps, askedAudio) = forAudioPick(capabilities, device, itemDetail, mediaSourceId, ghosts,
+            realAudioFor(jellyfinId, ghosts, copyIndex ?: wantedAudioIndex) { buildAudioTracks(itemDetail, mediaSourceId) })   // DEB-5916, DEB-6101 (FR-44)
+        capabilities = pickedCaps
         val negotiatedCaps = forPlatformAudio(capabilities, playingAudioCodec(buildAudioTracks(itemDetail), askedAudio))
         if (negotiatedCaps !== capabilities) Logger.info("playback start: device=${device.deviceId} item=$jellyfinId no platform ${missingPlatformAudio(capabilities).joinToString("/")} decoder — those are re-encoded${if (negotiatedCaps.hlsHevc && !capabilities.hlsHevc) ", HEVC copied in fMP4" else ""} (R379)", "tv")
         // 308 (FR-308-4) — direct play only when the file fits what this device has measured its path to carry: the
@@ -1552,8 +1553,8 @@ class PlaybackService(
         // R379 — the same narrowing as a start: an AC-3 episode on a device without the decoder is a transcode, so it is
         // not preloaded (R381's owner decision 2).
         val ghosts = ghostFactsOf(jellyfinId)   // DEB-3642 (FR-3, FR-4) — a broken header is not preloaded as a direct play either
-        val askedAudio = realAudioFor(jellyfinId, ghosts, null) { buildAudioTracks(itemDetail) }
-        val negotiatedCaps = forPlatformAudio(forAudioPick(capabilities, device, itemDetail, null, ghosts, askedAudio), playingAudioCodec(buildAudioTracks(itemDetail), askedAudio))   // DEB-5916 (FR-44)
+        val (pickedCaps, askedAudio) = forAudioPick(capabilities, device, itemDetail, null, ghosts, realAudioFor(jellyfinId, ghosts, null) { buildAudioTracks(itemDetail) })   // DEB-5916, DEB-6101 (FR-44)
+        val negotiatedCaps = forPlatformAudio(pickedCaps, playingAudioCodec(buildAudioTracks(itemDetail), askedAudio))
         val playbackInfo = jellyfinClient.getPlaybackInfo(jellyfinBase, token, device.jellyfinUserId, jellyfinId, capabilities = negotiatedCaps,
             identity = identity, audioStreamIndex = askedAudio, throughputCapBps = negotiationCap(capabilities.hlsAdaptive, takeOf(device), device.isTvApp), decodeFailed = decodeFailedOf(device),   // 309 — the start's own cap
             noDirect = ghosts.noDirect)
@@ -1646,9 +1647,12 @@ class PlaybackService(
      * audio switch is unreliable, so the answer is our ladder carrying that audio. [asked] is the track the negotiation asks Jellyfin for.
      * Every other platform, and a Samsung on its default track, keeps [caps].
      */
-    private fun forAudioPick(caps: ClientCapabilities, device: DeviceData, itemDetail: JellyfinItemDetail?, mediaSourceId: String?, ghosts: GhostFacts, asked: Int?): ClientCapabilities {
-        if (device.platform != "tizen" || caps.hlsOnly) return caps
-        return capabilitiesForPlatform(caps, device.platform, true, audioIsOffDefault(buildAudioTracks(itemDetail, mediaSourceId), ghosts.empty, asked))
+    private fun forAudioPick(caps: ClientCapabilities, device: DeviceData, itemDetail: JellyfinItemDetail?, mediaSourceId: String?, ghosts: GhostFacts, asked: Int?): Pair<ClientCapabilities, Int?> {
+        if (device.platform != "tizen" || caps.hlsOnly) return caps to asked
+        val tracks = buildAudioTracks(itemDetail, mediaSourceId)
+        val negotiated = capabilitiesForPlatform(caps, device.platform, true, audioIsOffDefault(tracks, ghosts.empty, asked))
+        // DEB-6101 (FR-44) — a direct ticket carries the default track: an added copy of it asks for the default itself.
+        return negotiated to if (negotiated.hlsOnly) asked else directAudioIndex(tracks, ghosts.empty, asked)
     }
 
     private fun rememberCapabilities(device: DeviceData, caps: ClientCapabilities) {
@@ -1693,8 +1697,7 @@ class PlaybackService(
         }
         val take = takeOf(target)
         val ghosts = ghostFactsOf(jellyfinId)   // DEB-3642 — the warm plan must be the play's: the same real tracks, the same route
-        val askedAudio = realAudioFor(jellyfinId, ghosts, wantedAudioIndex) { audio }
-        val caps = forAudioPick(baseCaps, target, itemDetail, null, ghosts, askedAudio)   // DEB-5916 (FR-44)
+        val (caps, askedAudio) = forAudioPick(baseCaps, target, itemDetail, null, ghosts, realAudioFor(jellyfinId, ghosts, wantedAudioIndex) { audio })   // DEB-5916, DEB-6101 (FR-44)
         val playbackInfo = jellyfinClient.getPlaybackInfo(jellyfinBase, token, target.jellyfinUserId, jellyfinId, capabilities = caps, identity = identity,
             audioStreamIndex = askedAudio, throughputCapBps = negotiationCap(caps.hlsAdaptive, take, target.isTvApp), decodeFailed = decodeFailedOf(target), noDirect = ghosts.noDirect)
         val source = playbackInfo?.mediaSources?.firstOrNull() ?: return none("no PlaybackInfo")
@@ -2586,8 +2589,8 @@ class PlaybackService(
         // that picked a picture subtitle was sent 1080p and six channels again.
         // R379 — narrowed first, so a burn-in on a device without a platform AC-3 decoder never copies AC-3 either.
         val ghosts = ghostFactsOf(jellyfinId)   // DEB-3642 (FR-3, FR-4)
-        val askedAudio = realAudioFor(jellyfinId, ghosts, audioStreamIndex) { audio }
-        val limits = burnInLimits(capabilities?.let { forPlatformAudio(forAudioPick(it, device, itemDetail, chosenSource, ghosts, askedAudio), playingAudioCodec(audio, askedAudio)) })   // DEB-5916 (FR-44)
+        val askedAudio = realAudioFor(jellyfinId, ghosts, audioStreamIndex) { audio }   // a burn-in always transcodes: the asked track is carried as it is, never the default's
+        val limits = burnInLimits(capabilities?.let { forPlatformAudio(forAudioPick(it, device, itemDetail, chosenSource, ghosts, askedAudio).first, playingAudioCodec(audio, askedAudio)) })   // DEB-5916 (FR-44)
         val measuredBps = measuredThroughputOf(device)   // 308 (FR-308-4)
         val take = takeOf(device)   // 309 (FR-309-1)
         val playbackInfo = jellyfinClient.getPlaybackInfo(jellyfinBase, token, device.jellyfinUserId, jellyfinId, capabilities = limits, subtitleStreamIndex = subtitleStreamIndex, identity = identity, mediaSourceId = chosenSource ?: jellyfinId, audioStreamIndex = askedAudio, throughputCapBps = negotiationCap(capabilities?.hlsAdaptive == true, take, device.isTvApp), noDirect = ghosts.noDirect)
@@ -2699,8 +2702,8 @@ class PlaybackService(
         val chosenSource = chooseMediaSource(itemDetail?.mediaSources.orEmpty(), mediaSourceId, decodesDolbyVisionEl(capabilities))   // phase 314c
         // R379 — an audio switch to (or on) an AC-3 track on a device without the platform decoder is re-encoded.
         val ghosts = ghostFactsOf(jellyfinId)   // DEB-3642 (FR-3, FR-4)
-        val askedAudio = realAudioFor(jellyfinId, ghosts, audioStreamIndex) { buildAudioTracks(itemDetail, chosenSource) }
-        val capabilities = forAudioPick(capabilities, device, itemDetail, chosenSource, ghosts, askedAudio)   // DEB-5916 (FR-44)
+        val (capabilities, askedAudio) = forAudioPick(capabilities, device, itemDetail, chosenSource, ghosts,
+            realAudioFor(jellyfinId, ghosts, audioStreamIndex) { buildAudioTracks(itemDetail, chosenSource) })   // DEB-5916, DEB-6101 (FR-44)
         val negotiatedCaps = forPlatformAudio(capabilities, playingAudioCodec(buildAudioTracks(itemDetail), askedAudio))
         val take = takeOf(device)   // 309 (FR-309-1)
         // DEB-2205 (FR-4) — a ladder that takes the place of a direct play starts within what the path measured, not at the file's own proof.

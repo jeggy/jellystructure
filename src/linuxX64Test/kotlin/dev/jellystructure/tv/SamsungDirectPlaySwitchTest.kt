@@ -13,7 +13,7 @@ import kotlin.test.assertTrue
 class SamsungDirectPlaySwitchTest {
     private val caps = ClientCapabilities(
         containers = listOf("mkv", "mp4"), videoCodecs = listOf("h264", "hevc"), audioCodecs = listOf("aac", "ac3"),
-        maxAudioChannels = 6, hlsOnly = false, hlsHevc = true,
+        maxAudioChannels = 6, hlsOnly = false, hlsHevc = true, audioByRestream = true,
     )
 
     @Test fun `a tizen device with the switch off negotiates as hls_only and nothing else changes`() {
@@ -24,6 +24,13 @@ class SamsungDirectPlaySwitchTest {
 
     @Test fun `a tizen device with the switch on is unchanged`() {
         assertSame(caps, capabilitiesForPlatform(caps, "tizen", samsungDirectPlay = true))
+    }
+
+    @Test fun `a tizen device whose app does not send audio_by_restream negotiates as hls_only whatever the switch says`() {
+        val old = caps.copy(audioByRestream = false)
+        assertEquals(old.copy(hlsOnly = true), capabilitiesForPlatform(old, "tizen", samsungDirectPlay = true))
+        assertEquals(old.copy(hlsOnly = true), capabilitiesForPlatform(old, "tizen", samsungDirectPlay = false))
+        assertSame(old, capabilitiesForPlatform(old, "tv", samsungDirectPlay = true), "Android TV never reads the field")
     }
 
     @Test fun `Android TV with the switch off is unchanged`() {
