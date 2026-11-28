@@ -33,13 +33,8 @@ export function fakeAvPlayInitScript() {
   // DEB-5503 (FR-44) — the tracks `getTotalTrackInfo()` lists: `setAudioTracks(n)` is a file with n audio tracks (indexed per type, as the
   // ticket's container order is), the default being none; a test that sets another count is a file the player lists differently.
   let audioTracks = 0;
-  // DEB-5917 (FR-44) — the audio track playing now, as `getCurrentStreamInfo()` lists it; `setSelectTrack` moves it unless the test makes the
-  // select throw (`failSelect('throw')`, QA's PLAYER_ERROR_INVALID_PARAMETER) or return and change nothing (`failSelect('ignore')`).
-  let currentAudio = 0;
-  let selectFailure: "throw" | "ignore" | undefined;
   (window as any).__avplay = {
     setAudioTracks(n: number) { audioTracks = n; },
-    failSelect(how: "throw" | "ignore" | undefined) { selectFailure = how; },
     bufferStart() { buffering = true; listener.onbufferingstart?.(); },
     bufferComplete() { buffering = false; listener.onbufferingcomplete?.(); },
     hold() { held = true; },
@@ -58,11 +53,15 @@ export function fakeAvPlayInitScript() {
     // DEB-5081 (FR-33) — the next n `prepareAsync` calls fail with this error and later ones succeed: a start that fails once and is asked again.
     failPrepareTimes: 0,
     failPrepareTimesWith: "Unknown error" as string,
+    // DEB-5503 (FR-44) — the next n `open()` calls throw PLAYER_ERROR_INVALID_OPERATION, as AVPlay did after a throwing setSelectTrack (QA DEB-5918).
+    failOpenTimes: 0,
   };
   (window as any).webapis = {
     avplay: {
       open(url: string) {
         (window as any).__avplayCalls.push(["open", url]);
+        const fakeAv = (window as any).__avplay;
+        if (fakeAv.failOpenTimes > 0) { fakeAv.failOpenTimes--; throw new Error("PLAYER_ERROR_INVALID_OPERATION"); }
         // DEB-4874 — the device's rule: open() is only legal from NONE (nothing open, or after close()). Over an open stream the
         // real AVPlay throws PLAYER_ERROR_INVALID_STATE, and Chromium would otherwise never show the app doing that.
         if (state !== "NONE") {
@@ -71,7 +70,6 @@ export function fakeAvPlayInitScript() {
           throw e;
         }
         state = "IDLE";
-        currentAudio = 0;
       },
       setDisplayRect(...args: number[]) {
         (window as any).__avplayCalls.push(["setDisplayRect", ...args]);
@@ -128,13 +126,8 @@ export function fakeAvPlayInitScript() {
       getTotalTrackInfo() {
         return [{ index: 0, type: "VIDEO", extra_info: "{}" }, ...Array.from({ length: audioTracks }, (_, i) => ({ index: i, type: "AUDIO", extra_info: "{}" }))];
       },
-      getCurrentStreamInfo() {
-        return [{ index: 0, type: "VIDEO", extra_info: "{}" }, ...(audioTracks > 0 ? [{ index: currentAudio, type: "AUDIO", extra_info: "{}" }] : [])];
-      },
       setSelectTrack(type: string, index: number) {
         (window as any).__avplayCalls.push(["setSelectTrack", type, index]);
-        if (selectFailure === "throw") throw new Error("PLAYER_ERROR_INVALID_PARAMETER");
-        if (selectFailure !== "ignore" && type === "AUDIO") currentAudio = index;
       },
       setStreamingProperty(type: string, value: string) {
         (window as any).__avplayCalls.push(["setStreamingProperty", type, value]);

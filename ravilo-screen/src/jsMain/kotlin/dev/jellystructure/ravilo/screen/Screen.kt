@@ -156,8 +156,14 @@ private class Screen(private val serverUrl: String) {
     /** DEB-5394 (FR-37) — the last successful `startPlayback` round trip, handed to the QoE when its item begins. */
     private var startRequestMs = 0L
     private var selectedAudio = 0
-    /** DEB-5503 (FR-44) — the audio of a direct play that is not the file's default, to be selected in the file at the first PLAYING (null = nothing to select). */
-    private var pendingFileAudio: Int? = null
+    /**
+     * DEB-5503 (FR-44) — where a restream's reopen stands. [OPENED]: `open()` was called and nothing has played yet, so an error is the reopen failing;
+     * [ASKING]: it failed and the one more restream (as `hls_only`) is being asked for; [FALLBACK_OPENED]: that one's `open()` was called, and an error now ends the play.
+     */
+    private enum class Reopen { NONE, OPENED, ASKING, FALLBACK_OPENED }
+    private class ReopenAsk(val subIndex: Int, val audioIndex: Int?, val thenShow: Int, val atMs: Long)
+    private var reopen = Reopen.NONE
+    private var reopenAsk: ReopenAsk? = null
     private var selectedSub = -1
     private var subSize = "M"
     private var ticket: StreamTicket? = null
@@ -245,9 +251,9 @@ private class Screen(private val serverUrl: String) {
             override fun onBufferingStart() { buffering = true; qoe.bufferingStarted(backend.positionMs()); if (loaded) show("buffering"); sendStatus() }
             override fun onBufferingComplete() { buffering = false; qoe.bufferingCompleted(); if (loaded) show(); sendStatus() }
             override fun onPlaying() {
+                reopen = Reopen.NONE   // the reopened stream is up
                 if (pauseOnNextPlaying) { pauseOnNextPlaying = false; backend.pause(); return }
                 playing = true; buffering = false; loaded = true; qoe.paused(false); show(); sendStatus()
-                pendingFileAudio?.let { pendingFileAudio = null; chooseFileAudio(it) }
             }
             override fun onPaused() { playing = false; qoe.paused(true); showChrome(); sendStatus() }
             override fun onPlayTime(ms: Long) = qoe.playTime(ms)
@@ -257,6 +263,7 @@ private class Screen(private val serverUrl: String) {
             override fun onStreamCompleted() { onFinished() }
             override fun onError(detail: String) {
                 console.error("Ravilo screen: backend error: $detail")
+                if (reopen != Reopen.NONE) { reopenFailed(); return }   // DEB-5503 (FR-44)
                 if (askingAgain || recovering) return
                 val failure = HTTP_STATUS.find(detail)?.value?.toIntOrNull() ?: -1
                 if (askAgain(failure)) return   // FR-33
@@ -292,6 +299,7 @@ private class Screen(private val serverUrl: String) {
         qoe.end()   // FR-25 — the item's final report, whichever way it ended (Back, stop, the stream's end, hiding the app)
         loaded = false; playing = false; buffering = false; itemId = null; title = null; kicker = null; artUrl = null; ticket = null
         attempt = null; askingAgain = false; recovering = false; recoveredAt = null
+        reopen = Reopen.NONE; reopenAsk = null
         startedFromTv = false
         seriesName = null; logoUrl = null; logoInk = null   // R303
         segments = null; nextId = null; nextTitle = null; nextKicker = null; following = emptyList()   // R264
@@ -577,8 +585,7 @@ private class Screen(private val serverUrl: String) {
         }
         val t = remembered.ticket
         ticket = t
-        selectedAudio = currentAudioPos(t)   // DEB-5917 — the track that plays until a select holds; a remembered in-file pick is made at the first PLAYING
-        pendingFileAudio = remembered.fileAudio
+        selectedAudio = currentAudioPos(t)
         // R285 — positions in receiverSubtitles(), the list the remote is shown; this used to index
         // the ticket's raw list, which stops matching the moment a ticket interleaves PGS and text.
         showSubtitle(if (t.burnedSubtitleIndex != null) -1 else remembered.subtitle)
@@ -587,6 +594,7 @@ private class Screen(private val serverUrl: String) {
         lastProgressAt = nowMs()
         qoe.beginItem(env.jellyfinId, t.startVariantBps, t.directPlay, backend.capabilities().linkKind, streamBps = t.streamBps.takeIf { t.directPlay })
         qoe.startRequested(startRequestMs)   // DEB-5394 (FR-37)
+        reopen = Reopen.NONE; reopenAsk = null   // a start is not a reopen: the first-start ask (FR-33) is its own
         val opened = runCatching { backend.open(t.hlsUrl ?: "", env.startPositionMs.takeIf { it > 0 } ?: t.startPositionMs, t.startVariantBps, t.directPlay) }
         if (opened.isFailure) {
             // DEB-4874 — a start that never opened has played nothing: the server's session for it is closed at 0, never at the
@@ -635,28 +643,12 @@ private class Screen(private val serverUrl: String) {
     private fun subtitleInputs(t: StreamTicket) = receiverSubtitles(t).mapIndexed { i, s -> TrackInput(i, s.language, s.label, s.forced, s.isDefault) }
 
     /** What a start ends up with once the profile's remembered choice is applied: the ticket to play and the text subtitle to draw (-1 = none). */
-    private class RememberedStart(val ticket: StreamTicket, val subtitle: Int, val fileAudio: Int? = null)
+    private class RememberedStart(val ticket: StreamTicket, val subtitle: Int)
 
     /** DEB-5503 (FR-44) — the audio that plays on a ticket before anyone picks: a transcode's own, or the file's default on a direct play. */
     private fun currentAudioPos(t: StreamTicket): Int = if (t.directPlay) defaultAudioPos(t) else receiverSelectedAudio(t)
 
     private fun defaultAudioPos(t: StreamTicket): Int = t.audio.indexOfFirst { it.isDefault }.takeIf { it >= 0 } ?: 0
-
-    /** DEB-5503 (FR-44) — audio [pos] of a direct play can be selected in the file: it is one of the container's tracks, in a codec this app declares. */
-    private fun fileAudioSelectable(t: StreamTicket, pos: Int): Boolean {
-        val a = t.audio.getOrNull(pos) ?: return false
-        return t.directPlay && !a.external && a.codec?.lowercase() in backend.capabilities().audioCodecs
-    }
-
-    /**
-     * DEB-5503 (FR-44) — make audio [pos] the one that plays in the file. DEB-5917: [onResult] is true only when the select held (the player's
-     * current stream says so); false when it is impossible, threw, or did not take, and the caller restreams to our ladder.
-     */
-    private fun selectFileAudio(t: StreamTicket, pos: Int, onResult: (Boolean) -> Unit) {
-        val inContainer = t.audio.filter { !it.external }
-        if (!fileAudioSelectable(t, pos)) { onResult(false); return }
-        backend.selectFileAudio(inContainer.indexOf(t.audio[pos]), inContainer.size, onResult)
-    }
 
     /** DEB-5917 (FR-44) — a restream for audio on a direct play asks as a device that plays HLS only, so the answer is our ladder and never the same file again. */
     private fun ladderCapabilities() = backend.capabilities().copy(hlsOnly = true)
@@ -692,11 +684,9 @@ private class Screen(private val serverUrl: String) {
             else -> -1
         }
         if (audioPos == null && burn == null && !unburn) return RememberedStart(t, text)
-        // DEB-5503 (FR-44) — a direct play's audio is chosen inside the file at the first PLAYING; a burn-in (or an audio the player cannot take) is a restream, as before.
-        if (audioPos != null && burn == null && !unburn && fileAudioSelectable(t, audioPos)) return RememberedStart(t, text, fileAudio = audioPos)
         val audioStream = audioPos?.let { t.audio[it].index } ?: t.audioStreamIndex
         val subStream = burn ?: if (unburn) -1 else (t.burnedSubtitleIndex ?: -1)
-        // DEB-5917 (FR-44) — an audio the player cannot take in the file asks as HLS only: the answer is our ladder with that audio.
+        // DEB-5503 (FR-44) — the app never switches audio inside the file: a remembered audio that is not the file's default is a restream asking as HLS only, so the answer is our ladder with that audio.
         val caps = if (t.directPlay && audioPos != null) ladderCapabilities() else backend.capabilities()
         val next = runCatching { api.restream(id, subStream, startAt, caps, audioStream) }.getOrNull()
             ?: return RememberedStart(t, text)   // the restream did not come: the stream the start gave is still a good one
@@ -890,25 +880,21 @@ private class Screen(private val serverUrl: String) {
         val wanted = t.audio.getOrNull(idx) ?: return
         rememberAudioPick(idx)
         if (t.audio.size < 2) return   // DEB-5917 — one audio track: nothing to change
-        if (t.directPlay) { if (idx != selectedAudio) chooseFileAudio(idx); return }
+        if (t.directPlay) { chooseFileAudio(idx); return }
         if (wanted.index == ticket?.audioStreamIndex) return
         GlobalScope.launch { restream(ticket?.burnedSubtitleIndex ?: -1, wanted.index, thenShow = selectedSub) }
     }
 
     /**
-     * DEB-5503 (FR-44) — audio [idx] of a direct play: in the file when the player takes it, a restream with that audio when it does not.
-     * DEB-5917 — the select is checked; a failed or impossible one restreams once, as HLS only. If that restream is answered with the file
-     * again, the item plays on with the track it has: [restream] makes no further attempt and the picker marks the track playing.
+     * DEB-5503 (FR-44) — audio [idx] of a direct play is one restream asking as HLS only: the player is closed, then the answer is our ladder with that
+     * audio, from the current position. The app never switches audio inside the file. A restream answered with the file again plays on with the track
+     * it has: [restream] makes no further attempt and the picker marks the track playing.
      */
     private fun chooseFileAudio(idx: Int) {
         val t = ticket ?: return
         val wanted = t.audio.getOrNull(idx) ?: return
-        if (idx == selectedAudio || t.audio.size < 2) return   // nothing changes: no select, no restream
-        selectFileAudio(t, idx) { held ->
-            if (ticket !== t) return@selectFileAudio   // the viewer moved on while the select was being checked
-            if (held) { selectedAudio = idx; sendStatus() }
-            else GlobalScope.launch { restream(t.burnedSubtitleIndex ?: -1, wanted.index, thenShow = selectedSub, audioHlsOnly = true) }
-        }
+        if (idx == selectedAudio || t.audio.size < 2) return   // nothing changes: no restream
+        GlobalScope.launch { restream(t.burnedSubtitleIndex ?: -1, wanted.index, thenShow = selectedSub, audioHlsOnly = true) }
     }
 
     /** R285 — text is drawn here, a picture subtitle is a burn-in restream. False when nothing changed
@@ -1767,24 +1753,56 @@ private class Screen(private val serverUrl: String) {
      * burned in (negative = none) and [audioIndex] carried. Keeps play/pause. A failure leaves the
      * running stream alone — a track change that did not happen is better than a player that stopped.
      * False only when the call failed; [atMs] is the position to ask at when AVPlay cannot say (FR-63's errored stream).
+     * DEB-5503 (FR-44) — every reopen starts from a closed player: `stop()`, then `close()`, then `open()`. When that `open()` or its `prepareAsync`
+     * fails, [reopenFailed] asks once more with [fallback] (as `hls_only`, so the answer is our ladder), and a second failure ends on FR-60's screen.
      */
-    private suspend fun restream(subIndex: Int, audioIndex: Int?, thenShow: Int, belowBandwidthBps: Long? = null, atMs: Long? = null, audioHlsOnly: Boolean = false): Boolean {
+    private suspend fun restream(subIndex: Int, audioIndex: Int?, thenShow: Int, belowBandwidthBps: Long? = null, atMs: Long? = null, audioHlsOnly: Boolean = false, fallback: Boolean = false): Boolean {
         val id = itemId ?: return true
         val pos = atMs ?: backend.positionMs()
         val wasPlaying = playing
-        val t = runCatching { api.restream(id, subIndex, pos, if (audioHlsOnly) ladderCapabilities() else backend.capabilities(), audioIndex, belowBandwidthBps = belowBandwidthBps) }.getOrNull()
+        val t = runCatching { api.restream(id, subIndex, pos, if (audioHlsOnly || fallback) ladderCapabilities() else backend.capabilities(), audioIndex, belowBandwidthBps = belowBandwidthBps) }.getOrNull()
             ?: run { if (loaded && !buffering && !recovering) show(); sendStatus(); return false }   // FR-32 — a freeze's buffering view must not outlive a restream that never came
         if (itemId != id) return true                  // the viewer moved on while we were negotiating
         ticket = t
         selectedAudio = currentAudioPos(t)
-        pendingFileAudio = null
         showSubtitle(if (t.burnedSubtitleIndex != null) -1 else thenShow)   // never draw over a burn-in
         pauseOnNextPlaying = !wasPlaying
+        backend.stop()
         backend.close()
         qoe.restreamed(t.streamBps.takeIf { t.directPlay })   // FR-25 — the same item again: its counts stay, its own start is not a stall
-        backend.open(t.hlsUrl ?: "", pos, t.startVariantBps, t.directPlay)
+        reopenAsk = ReopenAsk(subIndex, audioIndex, thenShow, pos)
+        reopen = if (fallback) Reopen.FALLBACK_OPENED else Reopen.OPENED
+        val opened = runCatching { backend.open(t.hlsUrl ?: "", pos, t.startVariantBps, t.directPlay) }
+        if (opened.isFailure) { console.error("Ravilo screen: reopen failed: ${opened.exceptionOrNull()}"); reopenFailed() }
         sendStatus()
         return true
+    }
+
+    /**
+     * DEB-5503 (FR-44) — a restream's `open()` or `prepareAsync` failed. The first time, the same restream is asked once more as `hls_only`; the second time, or when that
+     * ask itself gets no answer, the play ends on FR-60's failure screen with its stop at the position. The page keeps taking keys throughout.
+     */
+    private fun reopenFailed() {
+        val id = itemId ?: return
+        val ask = reopenAsk ?: return
+        when (reopen) {
+            Reopen.OPENED -> {
+                reopen = Reopen.ASKING
+                GlobalScope.launch {
+                    val answered = restream(ask.subIndex, ask.audioIndex, ask.thenShow, atMs = ask.atMs, fallback = true)
+                    if (itemId == id && !answered) endFailedReopen(id, ask.atMs)
+                }
+            }
+            Reopen.FALLBACK_OPENED -> endFailedReopen(id, ask.atMs)
+            else -> {}   // NONE: nothing reopened; ASKING: a second error of the failure already being answered
+        }
+    }
+
+    private fun endFailedReopen(id: String, pos: Long) {
+        reopen = Reopen.NONE; reopenAsk = null
+        qoe.end(failure = -1)
+        failPlay(null)
+        GlobalScope.launch { stopWithRetry(id, pos) }
     }
 
     /** DEB-5024 (FR-27) — no rung in the master is below the one playing; no answer from AVPlay counts as none. */

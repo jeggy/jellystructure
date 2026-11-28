@@ -564,6 +564,7 @@ test.describe("DEB-5503 — a direct play on AVPlay", () => {
     expect(caps.video_codecs).toEqual(["h264", "hevc"]);
     expect(caps.audio_codecs).toEqual(["aac", "ac3", "eac3", "mp3", "opus"]);
     expect(caps.hls_adaptive).toBe(true);
+    expect(caps.audio_by_restream, "FR-43: the app changes audio only by restreaming").toBe(true);
   });
 
   test("FR-44: a direct play opens the ticket's URL with no start rung, and seeks to 1 000 ms before it plays from 0", async ({ page }) => {
@@ -586,14 +587,19 @@ test.describe("DEB-5503 — a direct play on AVPlay", () => {
     expect(c.map((x) => x[0]).indexOf("seekTo")).toBeLessThan(c.map((x) => x[0]).indexOf("play"));
   });
 
-  test("FR-44: a remembered audio in the file is selected in the file at PLAYING, with no restream", async ({ page }) => {
+  const selects = (c: Array<[string, ...unknown[]]>) => c.filter((x) => x[0] === "setSelectTrack" && x[1] === "AUDIO");
+  /** The index of the first [name] call after [from] in a recorded call list, or -1. */
+  const after = (c: Array<[string, ...unknown[]]>, name: string, from: number) => c.findIndex((x, i) => i > from && x[0] === name);
+
+  test("FR-44: a remembered audio that is not the file's default restreams as hls_only before the stream opens; AUDIO is never selected in the file", async ({ page }) => {
     await remember(page, "dan");
     const seen = await boot(page, ladder, direct);
     await page.evaluate(() => (window as any).__avplay.setAudioTracks(3));
     await openAndPlay(page);
-    expect((await calls(page)).filter((x) => x[0] === "setSelectTrack")).toEqual([["setSelectTrack", "AUDIO", 1]]);
-    expect(seen.restreams).toHaveLength(0);
-    expect((await calls(page)).filter((x) => x[0] === "open")).toHaveLength(1);
+    await expect.poll(() => seen.restreams.length, { timeout: 10_000 }).toBe(1);
+    expect(seen.restreams[0]).toMatchObject({ item_id: "m1", audio_stream_index: 2, capabilities: { hls_only: true } });
+    expect(selects(await calls(page))).toEqual([]);
+    expect((await calls(page)).filter((x) => x[0] === "setSelectTrack"), "and no TEXT select either: the sidecar draws it").toEqual([]);
   });
 
   test("FR-44: a remembered audio whose codec is not declared (DTS) restreams with that audio, before the stream opens", async ({ page }) => {
@@ -603,62 +609,118 @@ test.describe("DEB-5503 — a direct play on AVPlay", () => {
     await openAndPlay(page);
     expect(seen.restreams).toHaveLength(1);
     expect(seen.restreams[0]).toMatchObject({ item_id: "m1", audio_stream_index: 3 });
-    expect((await calls(page)).some((x) => x[0] === "setSelectTrack")).toBe(false);
+    expect(selects(await calls(page))).toEqual([]);
   });
 
-  test("FR-44: a player that lists a different number of audio tracks than the ticket is not selected into; the audio is a restream", async ({ page }) => {
-    await remember(page, "dan");
-    const seen = await boot(page, ladder, direct);
-    await page.evaluate(() => (window as any).__avplay.setAudioTracks(2));
-    await openAndPlay(page);
-    await expect.poll(() => seen.restreams.length, { timeout: 10_000 }).toBe(1);
-    expect(seen.restreams[0]).toMatchObject({ item_id: "m1", audio_stream_index: 2 });
-    expect((await calls(page)).some((x) => x[0] === "setSelectTrack")).toBe(false);
-  });
-
-  // DEB-5917 (DEB-5503, FR-44) — the app checks its own select, and a failed one is one restream that asks for HLS only.
-  const failSelect = (page: Page, how: "throw" | "ignore") => page.evaluate((h) => (window as any).__avplay.failSelect(h), how);
-
-  test("FR-44: a select that throws is one restream, posting hls_only = true with that audio", async ({ page }) => {
-    await remember(page, "dan");
-    const seen = await boot(page, ladder, direct);
-    await page.evaluate(() => (window as any).__avplay.setAudioTracks(3));
-    await failSelect(page, "throw");
-    await openAndPlay(page);
-    await expect.poll(() => seen.restreams.length, { timeout: 10_000 }).toBe(1);
-    expect(seen.restreams[0]).toMatchObject({ item_id: "m1", audio_stream_index: 2, capabilities: { hls_only: true } });
-    await page.waitForTimeout(2_000);
-    expect(seen.restreams, "one restream, not a second try").toHaveLength(1);
-  });
-
-  test("FR-44: a select that returns but leaves the old track current is the same one restream", async ({ page }) => {
-    await remember(page, "dan");
-    const seen = await boot(page, ladder, direct);
-    await page.evaluate(() => (window as any).__avplay.setAudioTracks(3));
-    await failSelect(page, "ignore");
-    await openAndPlay(page);
-    await expect.poll(() => seen.restreams.length, { timeout: 10_000 }).toBe(1);
-    expect(seen.restreams[0]).toMatchObject({ item_id: "m1", audio_stream_index: 2, capabilities: { hls_only: true } });
-    expect((await calls(page)).filter((x) => x[0] === "setSelectTrack")).toEqual([["setSelectTrack", "AUDIO", 1]]);
-    await page.waitForTimeout(2_000);
-    expect(seen.restreams).toHaveLength(1);
-  });
-
-  test("FR-44: a pick in the picker whose select fails restreams once, and an answer that is the same file plays on with no second try", async ({ page }) => {
+  // DEB-5503 (FR-44, amended 2026-11-28) — QA DEB-5918: a setSelectTrack that throws leaves AVPlay unusable, so the app never calls it for audio.
+  test("FR-44: a pick during a direct play never selects AUDIO; it stops, then closes the player, and restreams once as hls_only before the next open", async ({ page }) => {
     const noSubs = { ...direct, subtitles: [] };
-    const seen = await boot(page, noSubs, noSubs);          // the server answers the restream with the same direct file
+    const seen = await boot(page, ladder, noSubs);
     await page.evaluate(() => (window as any).__avplay.setAudioTracks(3));
-    await failSelect(page, "ignore");
     await openAndPlay(page);
+    const before = (await calls(page)).length;
     await openPickerFromChrome(page);
     await page.keyboard.press("ArrowDown");                 // Dansk
     await page.keyboard.press("Enter");
     await expect.poll(() => seen.restreams.length, { timeout: 10_000 }).toBe(1);
     expect(seen.restreams[0]).toMatchObject({ item_id: "m1", audio_stream_index: 2, capabilities: { hls_only: true } });
+    await expect.poll(async () => (await calls(page)).filter((x, i) => i >= before && x[0] === "open").length, { timeout: 10_000 }).toBe(1);
+    const c = await calls(page);
+    expect(selects(c)).toEqual([]);
+    const reopen = c.findIndex((x, i) => i >= before && x[0] === "open");
+    const stop = c.findIndex((x, i) => i >= before && x[0] === "stop");
+    expect(stop, "stop() is called").toBeGreaterThanOrEqual(0);
+    expect(after(c, "close", stop), "and close() follows it").toBeGreaterThan(stop);
+    expect(after(c, "close", stop)).toBeLessThan(reopen);
+    expect(reopen).toBeGreaterThan(stop);
+    await page.waitForTimeout(2_000);
+    expect(seen.restreams, "one restream per pick").toHaveLength(1);
+  });
+
+  test("FR-44: a pick the server answers with the same file plays on, with no second restream", async ({ page }) => {
+    const noSubs = { ...direct, subtitles: [] };
+    const seen = await boot(page, noSubs, noSubs);          // the server answers the restream with the same direct file
+    await page.evaluate(() => (window as any).__avplay.setAudioTracks(3));
+    await openAndPlay(page);
+    await openPickerFromChrome(page);
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("Enter");
+    await expect.poll(() => seen.restreams.length, { timeout: 10_000 }).toBe(1);
     await page.waitForTimeout(3_000);
-    expect(seen.restreams, "answered with the same file: no second restream").toHaveLength(1);
-    expect((await calls(page)).filter((x) => x[0] === "setSelectTrack"), "and no second select").toHaveLength(1);
-    await expect.poll(async () => (await page.evaluate(() => (window as any).__avplayCalls as Array<[string]>)).filter((x) => x[0] === "play").length, { timeout: 5_000 }).toBeGreaterThan(1);
+    expect(seen.restreams).toHaveLength(1);
+    expect(selects(await calls(page))).toEqual([]);
+    await expect.poll(async () => (await calls(page)).filter((x) => x[0] === "play").length, { timeout: 5_000 }).toBeGreaterThan(1);
+  });
+
+  test("FR-44: picking the audio that already plays makes no restream", async ({ page }) => {
+    const noSubs = { ...direct, subtitles: [] };
+    const seen = await boot(page, ladder, noSubs);
+    await page.evaluate(() => (window as any).__avplay.setAudioTracks(3));
+    await openAndPlay(page);
+    await openPickerFromChrome(page);
+    await page.keyboard.press("Enter");                      // the focus starts on the playing track
+    await page.waitForTimeout(2_000);
+    expect(seen.restreams).toHaveLength(0);
+    expect(selects(await calls(page))).toEqual([]);
+  });
+
+  // The device that failed: after a throw AVPlay answered every open() with INVALID_OPERATION. A reopen that fails is asked once more as hls_only.
+  const pickDansk = async (page: Page) => {
+    await openPickerFromChrome(page);
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("Enter");
+  };
+
+  test("FR-44: an open that fails after a restream is one more restream as hls_only, and the answer plays", async ({ page }) => {
+    const noSubs = { ...direct, subtitles: [] };
+    const seen = await boot(page, ladder, noSubs);
+    await page.evaluate(() => (window as any).__avplay.setAudioTracks(3));
+    await openAndPlay(page);
+    const before = (await calls(page)).length;
+    await page.evaluate(() => { (window as any).__avplay.failPrepareTimes = 1; (window as any).__avplay.failPrepareTimesWith = "PLAYER_ERROR_INVALID_OPERATION"; });
+    await pickDansk(page);
+    await expect.poll(() => seen.restreams.length, { timeout: 10_000 }).toBe(2);
+    expect(seen.restreams[1]).toMatchObject({ item_id: "m1", capabilities: { hls_only: true } });
+    expect(seen.restreams[1].audio_stream_index, "the fallback keeps the audio the viewer asked for").toBe(2);
+    await expect.poll(async () => (await calls(page)).filter((x, i) => i >= before && x[0] === "open").length, { timeout: 10_000 }).toBe(2);
+    // Each of the two reopens started from a closed player.
+    const c = await calls(page);
+    const opens = c.map((x, i) => (i >= before && x[0] === "open" ? i : -1)).filter((i) => i >= 0);
+    for (const o of opens) {
+      const lastStop = c.map((x, i) => (i < o && x[0] === "stop" ? i : -1)).filter((i) => i >= 0).pop()!;
+      expect(c.findIndex((x, i) => i > lastStop && i < o && x[0] === "close"), `open at ${o}: stop() then close() before it`).toBeGreaterThan(lastStop);
+    }
+    await expect(page.locator("#failed")).not.toHaveClass(/\bon\b/);
+    await page.waitForTimeout(2_000);
+    expect(seen.restreams, "no third try").toHaveLength(2);
+  });
+
+  test("FR-44: a second failed open ends on the failure screen, and a key still works", async ({ page }) => {
+    const noSubs = { ...direct, subtitles: [] };
+    const seen = await boot(page, ladder, noSubs);
+    await page.evaluate(() => (window as any).__avplay.setAudioTracks(3));
+    await openAndPlay(page);
+    await page.evaluate(() => { (window as any).__avplay.failPrepareTimes = 2; (window as any).__avplay.failPrepareTimesWith = "PLAYER_ERROR_INVALID_OPERATION"; });
+    await pickDansk(page);
+    await expect(page.locator("#failed")).toHaveClass(/\bon\b/, { timeout: 15_000 });
+    expect(seen.restreams, "the pick's restream and one more, then the screen").toHaveLength(2);
+    await page.waitForTimeout(1_500);
+    expect(seen.restreams).toHaveLength(2);
+    // The page still answers the remote: Back leaves the failure screen for where the play began.
+    await page.keyboard.press("Escape");
+    await expect(page.locator("#failed")).not.toHaveClass(/\bon\b/, { timeout: 5_000 });
+  });
+
+  test("FR-44: an open() that throws is the same failure: one more restream as hls_only", async ({ page }) => {
+    const noSubs = { ...direct, subtitles: [] };
+    const seen = await boot(page, ladder, noSubs);
+    await page.evaluate(() => (window as any).__avplay.setAudioTracks(3));
+    await openAndPlay(page);
+    await page.evaluate(() => { (window as any).__avplay.failOpenTimes = 1; });
+    await pickDansk(page);
+    await expect.poll(() => seen.restreams.length, { timeout: 10_000 }).toBe(2);
+    expect(seen.restreams[1]).toMatchObject({ item_id: "m1", capabilities: { hls_only: true } });
+    await expect(page.locator("#failed")).not.toHaveClass(/\bon\b/);
   });
 
   test("FR-44: a one-track file with a remembered pick makes no select and no restream", async ({ page }) => {
@@ -669,7 +731,7 @@ test.describe("DEB-5503 — a direct play on AVPlay", () => {
     await openAndPlay(page);
     await page.waitForTimeout(2_000);
     expect(seen.restreams).toHaveLength(0);
-    expect((await calls(page)).some((x) => x[0] === "setSelectTrack")).toBe(false);
+    expect(selects(await calls(page))).toEqual([]);
   });
 
   test("FR-44: the sidecar subtitle is asked for after the first frame, not on the start path", async ({ page }) => {

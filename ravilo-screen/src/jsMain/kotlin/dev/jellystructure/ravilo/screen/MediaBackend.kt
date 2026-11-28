@@ -27,6 +27,8 @@ interface MediaBackend {
     fun play()
     fun pause()
     fun seekTo(ms: Long)
+    /** DEB-5503 (FR-44) — AVPlay's `stop()`: with [close], what every reopen does first, so `open()` never meets a player a failed call left half-open. */
+    fun stop() {}
     fun close()
     /** "IDLE" | "READY" | "PLAYING" | "PAUSED" | "NONE" — AVPlay's own vocabulary; the `<video>` backend
      *  maps HTMLMediaElement's state onto it so both report identically. */
@@ -46,12 +48,6 @@ interface MediaBackend {
      *  container-embedded selection is wired here for now. */
     fun selectAudioTrack(index: Int) {}
     fun selectSubtitleTrack(index: Int) {}
-    /**
-     * DEB-5503 (FR-44) — on a direct play, make the [position]th of the file's audio tracks the one that plays, in place. [fileAudioTracks]
-     * is how many container audio tracks the ticket lists. DEB-5917: [onResult] says whether the select *held* — false when the player lists a
-     * different number, cannot select, throws, or still plays the old track a second on — and the caller restreams with that audio instead.
-     */
-    fun selectFileAudio(position: Int, fileAudioTracks: Int, onResult: (Boolean) -> Unit) { onResult(false) }
     /** DEB-5024 (FR-25) — the bitrate of the rung playing now, when the player answers a number (AVPlay's `CURRENT_BANDWIDTH`). */
     fun currentBandwidthBps(): Long? = null
     /** DEB-5024 (FR-27) — the bitrates of the master's rungs, when the player answers (AVPlay's `AVAILABLE_BITRATE`); empty = unknown. */
@@ -97,6 +93,8 @@ class AvPlayBackend(private val serverUrl: String) : MediaBackend {
     override fun open(hlsUrl: String, startPositionMs: Long, startVariantBps: Long?, directPlay: Boolean) {
         // DEB-4874 — `avplay.open` is only legal from NONE: over a stream that is still open (the episode the next-up card leaves,
         // whoever started it) it throws PLAYER_ERROR_INVALID_STATE. Leave AVPlay closed first, so every start is safe, not one path.
+        // DEB-5503 (FR-44) — stop() before close(), as every restream does: a player a failed call left half-open must not meet open().
+        runCatching { WebApisGlobal.avplay.stop() }
         runCatching { WebApisGlobal.avplay.close() }
         val openedAtMs = Date.now()   // DEB-5394 (FR-37) — the second span starts here
         // DEB-4845 — AVPlay draws on a plane behind the page; an opaque page background (html, body) hides it,
@@ -138,6 +136,7 @@ class AvPlayBackend(private val serverUrl: String) : MediaBackend {
     override fun play() { listener?.onViewerAction(); runCatching { WebApisGlobal.avplay.play() }; listener?.onPlaying() }
     override fun pause() { listener?.onViewerAction(); runCatching { WebApisGlobal.avplay.pause() }; listener?.onPaused() }
     override fun seekTo(ms: Long) { listener?.onViewerAction(); runCatching { WebApisGlobal.avplay.seekTo(ms.toInt()) } }
+    override fun stop() { runCatching { WebApisGlobal.avplay.stop() } }
     override fun close() {
         runCatching { WebApisGlobal.avplay.close() }
         document.documentElement?.classList?.remove(AVPLAY_ON)
@@ -157,6 +156,7 @@ class AvPlayBackend(private val serverUrl: String) : MediaBackend {
         maxAudioChannels = 6,
         hlsOnly = false,
         hlsAdaptive = true,   // DEB-5024 (FR-26) — AVPlay plays a multi-variant master and picks its own rung
+        audioByRestream = true,   // DEB-5503 (FR-43) — a pick during a direct play is a restream; this app never switches audio inside the file
         linkKind = "unknown",
     )
 
@@ -170,32 +170,8 @@ class AvPlayBackend(private val serverUrl: String) : MediaBackend {
         if (v == null || v == undefined) null else v.toString().trim().toLongOrNull()?.takeIf { it > 0 }
     }.getOrNull()
 
-    override fun selectAudioTrack(index: Int) { runCatching { WebApisGlobal.avplay.setSelectTrack("AUDIO", index) } }
     override fun selectSubtitleTrack(index: Int) { runCatching { WebApisGlobal.avplay.setSelectTrack("TEXT", index) } }
-
-    /**
-     * DEB-5503 (FR-44) — the ticket's container order is the player's: its [position]th audio is the [position]th `AUDIO` entry, checked against the count first.
-     * DEB-5917 — a select counts only when it holds: `getCurrentStreamInfo()`'s `AUDIO` entry must have the selected index within 1 s. A throw, or the old track
-     * still current, is a failure (QA saw both on Tizen 5.0: `PLAYER_ERROR_INVALID_PARAMETER`, and a select that returned and changed nothing).
-     */
-    override fun selectFileAudio(position: Int, fileAudioTracks: Int, onResult: (Boolean) -> Unit) {
-        val track = runCatching {
-            val audio = WebApisGlobal.avplay.getTotalTrackInfo().filter { it.type == "AUDIO" }
-            if (audio.size == fileAudioTracks) audio.getOrNull(position) else null
-        }.getOrNull()
-        if (track == null || runCatching { WebApisGlobal.avplay.setSelectTrack("AUDIO", track.index) }.isFailure) { onResult(false); return }
-        val deadline = Date.now() + FILE_AUDIO_HOLD_MS
-        fun check() {
-            val holds = runCatching { WebApisGlobal.avplay.getCurrentStreamInfo().any { it.type == "AUDIO" && it.index == track.index } }.getOrDefault(false)
-            if (holds) onResult(true) else if (Date.now() >= deadline) onResult(false) else window.setTimeout({ check() }, FILE_AUDIO_POLL_MS)
-        }
-        check()
-    }
 }
-
-/** DEB-5917 (FR-44) — how long a select has to show in `getCurrentStreamInfo()`, and how often it is read meanwhile. */
-const val FILE_AUDIO_HOLD_MS = 1_000.0
-const val FILE_AUDIO_POLL_MS = 100
 
 /** DEB-5503 (FR-44) — AVPlay's `seekTo(0)` fails or does not seek, so a direct play that starts at 0 seeks here. */
 const val DIRECT_START_AT_ZERO_MS = 1_000L

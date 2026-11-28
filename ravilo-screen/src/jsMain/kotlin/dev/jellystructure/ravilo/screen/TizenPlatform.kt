@@ -66,8 +66,6 @@ external interface AvPlayObject {
      *  module's other AVPlay doc comments). */
     fun getTotalTrackInfo(): Array<AvPlayTrackInfo>
     fun setSelectTrack(type: String, index: Int)
-    /** DEB-5917 (DEB-5503, FR-44) — the tracks playing now, one per type: a select holds only when this lists it. */
-    fun getCurrentStreamInfo(): Array<AvPlayTrackInfo>
 }
 
 external interface AvPlayTrackInfo {
