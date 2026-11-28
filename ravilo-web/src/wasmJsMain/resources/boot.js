@@ -263,6 +263,44 @@ if (!raviloSupportsWasmGC()) {
                 }
                 watch(reg.installing);
                 reg.addEventListener('updatefound', function() { watch(reg.installing); });
+
+                // DEB-5851 (FR-8) — a tab left open asks its worker for a newer build: when it becomes visible and an
+                // hour has passed since the last ask, and once every 6 h while it stays visible. update() is the one
+                // request; the page's own version is the server's (R252), so no /api/health read is added here.
+                var HOUR = 3600000, ASK_EVERY = 6 * HOUR, IDLE_RELOAD = 30 * 60000;
+                var lastAsk = Date.now();
+                function ask() { lastAsk = Date.now(); try { reg.update().catch(function() {}); } catch (e) {} }
+                setInterval(function() {
+                    if (document.visibilityState === 'visible' && Date.now() - lastAsk >= ASK_EVERY) ask();
+                }, ASK_EVERY);
+
+                // DEB-5851 (FR-10) — a hidden, idle tab with a new build waiting reloads itself onto the same URL.
+                // Never while visible, never with a player open (window.__raviloPlayerOpen, set by the app), and
+                // once per waiting build: the flag below is kept until a load finds nothing waiting.
+                var IDLE_KEY = 'ravilo_idle_reload';
+                var idleTimer = null;
+                function sessionGet() { try { return sessionStorage.getItem(IDLE_KEY); } catch (e) { return null; } }
+                function sessionSet(v) { try { if (v) sessionStorage.setItem(IDLE_KEY, v); else sessionStorage.removeItem(IDLE_KEY); } catch (e) {} }
+                if (!reg.waiting && !reg.installing) sessionSet(null);
+                function idleReload() {
+                    idleTimer = null;
+                    if (document.visibilityState !== 'hidden') return;
+                    if (window.__raviloPlayerOpen === true) return;
+                    if (window.__raviloUpdateAvailable !== true || !reg.waiting) return;
+                    if (sessionGet() === '1') return;
+                    sessionSet('1');
+                    reg.waiting.postMessage('SKIP_WAITING');
+                    window.location.reload();
+                }
+                document.addEventListener('visibilitychange', function() {
+                    if (document.visibilityState === 'visible') {
+                        if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
+                        if (Date.now() - lastAsk >= HOUR) ask();
+                    } else {
+                        if (idleTimer) clearTimeout(idleTimer);
+                        idleTimer = setTimeout(idleReload, IDLE_RELOAD);
+                    }
+                });
             }).catch(function() { /* no service worker is not a hard failure — see FR-R263-5 */ });
         });
     }

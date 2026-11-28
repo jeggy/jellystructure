@@ -1656,7 +1656,7 @@ fun RaviloApp(
         // DEB-5851 (FR-2) — Android TV, the phone and Linux ask the server's version once a day; never over a play. The Mac
         // has its own check (R386) and the web its service worker (FR-8).
         val clientUpdatePlayer = remember { kotlinx.coroutines.flow.MutableStateFlow(false) }
-        LaunchedEffect(updatePlaying) { clientUpdatePlayer.value = updatePlaying }
+        LaunchedEffect(updatePlaying) { clientUpdatePlayer.value = updatePlaying; dev.jellystructure.ravilo.ui.seams.reportPlayerOpen(updatePlaying) }
         if (!isMacPlatform && !isWebPlatform) {
             LaunchedEffect(apiClient) {
                 dev.jellystructure.ravilo.ui.components.ClientUpdate.run(apiClient, clientUpdatePlayer) { Clock.System.now().toEpochMilliseconds() }
@@ -3983,7 +3983,7 @@ fun RaviloApp(
         // own (a plain 6dp corner offset), so without this it could sit under a notch/status bar.
         Box(Modifier.fillMaxSize().safeAreaPadding()) { FrameTrackerOverlay(fpsOverlay) }  // R94: F5 toggles; no-op when false
         ServerMessageHost()  // R152: floats over every screen incl. the player (reads LocalServerMessages)
-        UpdateToast()  // R263 (FR-R263-5): no-op off the web
+        UpdateToast(held = updatePlaying)  // R263 (FR-R263-5): no-op off the web; DEB-5851 (FR-9) not over a play
         dev.jellystructure.ravilo.ui.seams.DesktopWindowFrame()  // R337 — GNOME's undecorated window: resize edges and a border
         } // Box (back-intercept)
         } // CompositionLocalProvider (live config)

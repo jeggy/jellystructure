@@ -36,6 +36,10 @@ expect fun triggerNativeInstall()
 @Composable
 expect fun rememberUpdateAvailable(): Boolean
 
+/** DEB-5851 (FR-9, FR-10) — tells the page whether a player is on screen (boot.js's `window.__raviloPlayerOpen`): a hidden,
+ *  idle tab reloads itself onto a waiting build only when none is. A no-op off the web. */
+expect fun reportPlayerOpen(open: Boolean)
+
 /** Tells the waiting service worker to activate immediately, then reloads the page — the "Ravilo
  *  updated · Reload" toast's action. A no-op off the web. */
 expect fun reloadForUpdate()

@@ -19,14 +19,18 @@ import dev.jellystructure.ravilo.ui.seams.rememberUpdateAvailable
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 import dev.jellystructure.ravilo.ui.theme.Sora
 
+/** DEB-5851 (FR-9) — a waiting build shows the toast unless a player is on screen; it shows when the player closes. */
+fun updateToastShows(available: Boolean, held: Boolean): Boolean = available && !held
+
 /**
  * R263 (FR-R263-5) — "while a new build is waiting, the app shows one toast." A no-op on every
  * platform but the web (`rememberUpdateAvailable` is a constant `false` there); mounted once at the
- * app root, same tier as [ServerMessageHost], so it floats over whatever screen is current.
+ * app root, same tier as [ServerMessageHost], so it floats over whatever screen is current — except a player's ([held]).
  */
 @Composable
-fun UpdateToast() {
-    if (!rememberUpdateAvailable()) return
+fun UpdateToast(held: Boolean = false) {
+    // DEB-5851 (FR-9) — held while a player is on screen, and shown when it closes. Reload stays the viewer's own act.
+    if (!updateToastShows(rememberUpdateAvailable(), held)) return
     val colors = RaviloTheme.colors
     Box(Modifier.fillMaxWidth().padding(top = 16.dp), contentAlignment = Alignment.TopCenter) {
         Text(

@@ -16,6 +16,7 @@ actual fun triggerNativeInstall() {}
 @Composable
 actual fun rememberUpdateAvailable(): Boolean = false
 
+actual fun reportPlayerOpen(open: Boolean) {}
 actual fun reloadForUpdate() {}
 
 actual fun installCardDismissed(): Boolean = true

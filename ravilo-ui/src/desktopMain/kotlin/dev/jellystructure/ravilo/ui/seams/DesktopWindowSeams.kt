@@ -61,6 +61,7 @@ actual val isIOSWebPlatform: Boolean = false
 @Composable actual fun rememberInstallPromptAvailable(): Boolean = false
 actual fun triggerNativeInstall() {}
 @Composable actual fun rememberUpdateAvailable(): Boolean = false
+actual fun reportPlayerOpen(open: Boolean) {}
 actual fun reloadForUpdate() {}
 actual fun installCardDismissed(): Boolean = true
 actual fun dismissInstallCard() {}

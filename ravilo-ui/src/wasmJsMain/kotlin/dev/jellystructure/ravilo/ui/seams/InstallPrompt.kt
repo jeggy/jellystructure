@@ -56,6 +56,10 @@ private fun jsUpdateAvailable(): Boolean = js("(window.__raviloUpdateAvailable =
 
 private fun jsTriggerInstall(): Unit = js("(window.raviloTriggerInstall && window.raviloTriggerInstall())")
 
+actual fun reportPlayerOpen(open: Boolean): Unit = jsReportPlayerOpen(open)
+
+private fun jsReportPlayerOpen(open: Boolean): Unit = js("(window.__raviloPlayerOpen = open)")
+
 actual fun reloadForUpdate(): Unit = jsReloadForUpdate()
 
 private fun jsReloadForUpdate(): Unit = js(
