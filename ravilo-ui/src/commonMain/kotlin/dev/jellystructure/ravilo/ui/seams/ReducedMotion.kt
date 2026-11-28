@@ -14,3 +14,10 @@ package dev.jellystructure.ravilo.ui.seams
  * matching FR-R240-4: the controller renders whatever mode it's handed, it doesn't own precedence.
  */
 expect fun systemPrefersReducedMotion(): Boolean
+
+/**
+ * DEB-5838 (FR-5) — true while a screen reader is driving the device (Android's touch exploration). The phone's film
+ * player keeps its chrome up then: a reader cannot find a control that hides after 3 s. Desktop and web are false —
+ * the web's accessibility tree is off (FR-4), and the desktop player is driven by keys.
+ */
+expect fun screenReaderOn(): Boolean

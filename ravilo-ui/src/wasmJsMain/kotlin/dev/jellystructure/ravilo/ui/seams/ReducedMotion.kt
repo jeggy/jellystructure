@@ -7,3 +7,6 @@ package dev.jellystructure.ravilo.ui.seams
  *  the browser has no opinion (no user preference set, or an old engine with no support at all). */
 actual fun systemPrefersReducedMotion(): Boolean =
     js("window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches")
+
+/** DEB-5838 (FR-5) — the web accessibility tree is off (FR-4), so there is no reader to hold the chrome for. */
+actual fun screenReaderOn(): Boolean = false

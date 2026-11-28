@@ -492,6 +492,11 @@
   "player.now_showing": "Now showing",
   "player.last_used": "Last used",
   "player.back": "Back",
+  "player.skip_back_10": {"text": "Back 10 seconds", "note": "DEB-5838 FR-5 — the phone player's screen-reader names."},
+  "player.skip_forward_30": {"text": "Forward 30 seconds", "note": "DEB-5838 FR-5 — the phone player's screen-reader names."},
+  "player.pause": {"text": "Pause", "note": "DEB-5838 FR-5 — the phone player's screen-reader names."},
+  "player.seek_position": {"text": "Position", "note": "DEB-5838 FR-5 — the phone player's screen-reader names."},
+  "player.seek_state": {"text": "{position} of {duration}", "note": "DEB-5838 FR-5 — the phone player's screen-reader names."},
   "player.still_watching": {
     "text": "Are you still watching?",
     "note": "DEB-5843 — the Are-you-still-watching card (FR-8)."

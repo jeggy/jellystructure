@@ -108,6 +108,9 @@ actual fun Modifier.wakeOnPointerMove(onMove: () -> Unit): Modifier =
 
 actual fun systemPrefersReducedMotion(): Boolean = reducedMotion
 
+/** DEB-5838 (FR-5) — the desktop player is driven by keys and keeps R244's and R329's chrome. */
+actual fun screenReaderOn(): Boolean = false
+
 /** macOS's *Reduce motion* (Accessibility → Display), and Linux's (above), read once; the Mac's is: `defaults read com.apple.universalaccess reduceMotion`. */
 private val reducedMotion: Boolean by lazy {
     // DEB-5838 (FR-7) — Linux asks the Settings portal (GNOME animations off, KDE duration factor 0); no answer in 2 s ⇒ motion.

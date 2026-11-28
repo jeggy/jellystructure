@@ -445,6 +445,11 @@
   "action.cancel": "Angra",
   "player.audio_subs": "Ljóð & undirtekstir",
   "player.pip": "Mynd í mynd",
+  "player.skip_back_10": {"text": "Aftur 10 sekund", "note": "DEB-5838 FR-5 — draft, check before release."},
+  "player.skip_forward_30": {"text": "Fram 30 sekund", "note": "DEB-5838 FR-5 — draft, check before release."},
+  "player.pause": {"text": "Steðga", "note": "DEB-5838 FR-5 — draft, check before release."},
+  "player.seek_position": {"text": "Støða", "note": "DEB-5838 FR-5 — draft, check before release."},
+  "player.seek_state": {"text": "{position} av {duration}", "note": "DEB-5838 FR-5 — draft, check before release."},
   "player.sound_blocked": "Trýst á ein knapp fyri at fáa ljóð",
   "player.next": "Næsti",
   "player.up_next": {

@@ -445,6 +445,11 @@
   "action.cancel": "Annuller",
   "player.audio_subs": "Lyd & undertekster",
   "player.pip": "Billede i billede",
+  "player.skip_back_10": {"text": "Tilbage 10 sekunder", "note": "DEB-5838 FR-5 — draft, check before release."},
+  "player.skip_forward_30": {"text": "Frem 30 sekunder", "note": "DEB-5838 FR-5 — draft, check before release."},
+  "player.pause": {"text": "Pause", "note": "DEB-5838 FR-5 — draft, check before release."},
+  "player.seek_position": {"text": "Position", "note": "DEB-5838 FR-5 — draft, check before release."},
+  "player.seek_state": {"text": "{position} af {duration}", "note": "DEB-5838 FR-5 — draft, check before release."},
   "player.sound_blocked": "Klik eller tryk på en tast for at få lyd",
   "player.next": "Næste",
   "player.up_next": {

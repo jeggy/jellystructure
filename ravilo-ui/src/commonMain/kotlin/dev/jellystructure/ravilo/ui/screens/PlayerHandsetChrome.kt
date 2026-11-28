@@ -98,6 +98,13 @@ import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.semantics.setProgress
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.progressBarRangeInfo
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.Velocity
 import kotlinx.coroutines.Job
@@ -122,6 +129,16 @@ private const val FIT_TOAST_MS = 900L                   // FR-R244-6
 private const val SWIPE_PILL_LINGER_MS = 600L
 
 internal val HANDSET_TARGET: Dp = 46.dp
+
+/** DEB-5838 (FR-5) — the 3.0 s auto-hide runs for everyone but a viewer whose screen reader is on (a tap on the picture still hides it). */
+internal fun handsetChromeMayHide(screenReaderOn: Boolean): Boolean = !screenReaderOn
+
+private const val SEEK_BACK_MS = 10_000L      // the same step as the Back 10 s button
+private const val SEEK_FORWARD_MS = 30_000L   // the same step as the Forward 30 s button
+
+/** DEB-5838 (FR-5) — where a screen reader's increase (+1) or decrease (-1) puts the film: 30 s on, or 10 s back, within the film. */
+internal fun handsetSeekStep(positionMs: Long, durationMs: Long, direction: Int): Long =
+    (positionMs + if (direction > 0) SEEK_FORWARD_MS else -SEEK_BACK_MS).coerceIn(0L, durationMs.coerceAtLeast(0L))
 private val CARD = Color(0xFF0E1119)
 
 internal enum class HandsetRailItem { SUBTITLES, NEXT, EPISODES, LOCK, GUIDE }
@@ -202,7 +219,7 @@ internal fun HandsetPlayerChrome(
                 modifier = Modifier.fillMaxWidth().align(Alignment.TopCenter).padding(horizontal = 8.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                HandsetIconButton(size = HANDSET_TARGET, onClick = onBack) { tint ->
+                HandsetIconButton(size = HANDSET_TARGET, onClick = onBack, label = str("player.back"), showLabel = false) { tint ->
                     Canvas(Modifier.size(20.dp)) {
                         val p = Path().apply {
                             moveTo(size.width * 0.62f, size.height * 0.12f)
@@ -274,9 +291,9 @@ internal fun HandsetPlayerChrome(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(if (portrait) 26.dp else 40.dp),
             ) {
-                if (showSkips) HandsetSkipButton(label = "10 s", back = true, onClick = onSkipBack)
-                HandsetPlayButton(isPlaying = isPlaying, buffering = stallActive, colors = colors, onClick = onPlayPause)
-                if (showSkips) HandsetSkipButton(label = "30 s", back = false, onClick = onSkipFwd)
+                if (showSkips) HandsetSkipButton(label = "10 s", description = str("player.skip_back_10"), back = true, onClick = onSkipBack)
+                HandsetPlayButton(isPlaying = isPlaying, name = str(if (isPlaying) "player.pause" else "action.play"), buffering = stallActive, colors = colors, onClick = onPlayPause)
+                if (showSkips) HandsetSkipButton(label = "30 s", description = str("player.skip_forward_30"), back = false, onClick = onSkipFwd)
             }
 
             // ── Landscape rail: a right-edge column, vertically centred ──
@@ -330,6 +347,8 @@ private fun HandsetIconButton(
     onClick: () -> Unit,
     label: String? = null,
     showLabel: Boolean = true,
+    /** DEB-5838 (FR-5) — what a screen reader says when it differs from the visible [label] ("10 s" → "Back 10 seconds"). */
+    description: String? = null,
     glyph: @Composable (tint: Color) -> Unit,
 ) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -339,7 +358,9 @@ private fun HandsetIconButton(
                 .clip(CircleShape)
                 .background(Color.Black.copy(alpha = 0.32f))
                 .border(1.dp, Color.White.copy(alpha = 0.16f), CircleShape)
-                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onClick),
+                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, role = Role.Button, onClick = onClick)
+                // DEB-5838 (FR-5) — a label hidden by showLabel = false still names the node.
+                .semantics { (description ?: label)?.let { contentDescription = it } },
             contentAlignment = Alignment.Center,
         ) { glyph(Color.White) }
         if (label != null && showLabel) {
@@ -351,8 +372,8 @@ private fun HandsetIconButton(
 
 /** FR-R244-1 — the amount is a label under the arrow ("10 s" / "30 s"), never a numeral inside the glyph. */
 @Composable
-private fun HandsetSkipButton(label: String, back: Boolean, onClick: () -> Unit) {
-    HandsetIconButton(size = 50.dp, onClick = onClick, label = label) { tint -> SkipGlyph(back, tint) }
+private fun HandsetSkipButton(label: String, description: String, back: Boolean, onClick: () -> Unit) {
+    HandsetIconButton(size = 50.dp, onClick = onClick, label = label, description = description) { tint -> SkipGlyph(back, tint) }
 }
 
 /**
@@ -383,13 +404,14 @@ internal fun SkipGlyph(back: Boolean, tint: Color, size: Dp = 22.dp) {
 }
 
 @Composable
-private fun HandsetPlayButton(isPlaying: Boolean, buffering: Boolean, colors: RaviloColors, onClick: () -> Unit) {
+private fun HandsetPlayButton(isPlaying: Boolean, name: String, buffering: Boolean, colors: RaviloColors, onClick: () -> Unit) {
     Box(
         modifier = Modifier
             .size(72.dp)
             .clip(CircleShape)
             .background(Color.White.copy(alpha = 0.92f))
-            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onClick),
+            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, role = Role.Button, onClick = onClick)
+            .semantics { contentDescription = name },   // DEB-5838 (FR-5)
         contentAlignment = Alignment.Center,
     ) {
         if (buffering) {
@@ -485,6 +507,10 @@ private fun HandsetSeekBar(
         return ((x / widthPx) * durationMs).toLong().coerceIn(0L, durationMs)
     }
 
+    // DEB-5838 (FR-5) — a slider to a screen reader: "{position} of {duration}", increase/decrease as the Back/Forward buttons, set-progress.
+    val seekName = str("player.seek_position")
+    val seekState = str("player.seek_state", mapOf("position" to hmsLabel(positionMs), "duration" to hmsLabel(durationMs)))
+
     BoxWithConstraints(Modifier.fillMaxWidth()) {
         val widthDp = maxWidth
         // Time bubble above the thumb while dragging (no thumbnail — trickplayUrl is always null).
@@ -500,6 +526,16 @@ private fun HandsetSeekBar(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(HANDSET_TARGET)
+                .semantics {
+                    contentDescription = seekName
+                    stateDescription = seekState
+                    progressBarRangeInfo = ProgressBarRangeInfo(positionMs.toFloat().coerceIn(0f, durationMs.toFloat().coerceAtLeast(1f)), 0f..durationMs.toFloat().coerceAtLeast(1f), steps = 1)
+                    // The reader asks for a value above or below the current one; the direction is what we take, the step is ours.
+                    setProgress { v ->
+                        val to = handsetSeekStep(positionMs, durationMs, if (v >= positionMs) 1 else -1)
+                        onSeekStart(to); onSeekEnd(); true
+                    }
+                }
                 .pointerInput(durationMs) {
                     detectTapGestures(onTap = { offset -> onSeekStart(posAt(offset.x, size.width)); onSeekEnd() })
                 }
