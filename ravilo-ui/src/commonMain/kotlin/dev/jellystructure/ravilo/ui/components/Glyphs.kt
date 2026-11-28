@@ -257,3 +257,41 @@ fun RadioGlyph(tint: Color, glyphSize: Dp, modifier: Modifier = Modifier, descri
             drawArc(tint, startAngle = 135f, sweepAngle = 90f, useCenter = false, topLeft = topLeft, size = box, style = stroke)
         }
     }
+
+/*
+ * DEB-4077 (DEB-4032, FR-9) — the *Collection* popover's per-kind glyphs, drawn on the round's 24-unit grid, filled, no stroke.
+ * Paths from design/incoming/2026-11-09-collection-glyphs (the wall) and …-glyph-movie (the clapperboard).
+ */
+
+/** A Ravilo collection: the wall — six poster plates. */
+@Composable
+fun CollectionWallGlyph(tint: Color, glyphSize: Dp, modifier: Modifier = Modifier, description: String? = null) =
+    GlyphCanvas(glyphSize, description, modifier) {
+        val u = size.minDimension / 24f
+        for (y in listOf(3.6f, 13.2f)) for (x in listOf(2.8f, 9.2f, 15.6f)) {
+            val r = 1.2f * u
+            drawRoundRect(tint, Offset(x * u, y * u), Size(5.6f * u, 7.2f * u), androidx.compose.ui.geometry.CornerRadius(r, r))
+        }
+    }
+
+/** A Jellyfin (hand-picked) collection: the clapperboard — a solid body under a slanted clapper bar of three parallelograms. */
+@Composable
+fun CollectionClapperGlyph(tint: Color, glyphSize: Dp, modifier: Modifier = Modifier, description: String? = null) =
+    GlyphCanvas(glyphSize, description, modifier) {
+        val u = size.minDimension / 24f
+        val r = 2.0f * u
+        drawRoundRect(tint, Offset(3.2f * u, 12.0f * u), Size(17.6f * u, 9.2f * u), androidx.compose.ui.geometry.CornerRadius(r, r))
+        val bars = listOf(
+            listOf(2.4f to 4.7f, 8.8f to 4.0f, 6.2f to 9.88f, 2.4f to 10.3f),
+            listOf(10.6f to 3.8f, 15.6f to 3.25f, 13.0f to 9.13f, 8.0f to 9.68f),
+            listOf(17.4f to 3.05f, 21.6f to 2.59f, 21.6f to 8.19f, 14.8f to 8.94f),
+        )
+        for (pts in bars) {
+            val p = Path().apply {
+                moveTo(pts[0].first * u, pts[0].second * u)
+                for (q in pts.drop(1)) lineTo(q.first * u, q.second * u)
+                close()
+            }
+            drawPath(p, tint)
+        }
+    }

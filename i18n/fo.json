@@ -368,6 +368,8 @@
   "browse.facet.watched": "Sætt",
   "browse.facet.audio": "Ljóð",
   "browse.facet.channel": "Savn",
+  "browse.facet.collection.kind.ravilo": "Ravilo-savn",
+  "browse.facet.collection.kind.jellyfin": "Handvalt savn",
   "browse.facet.quality": "Góðska",
   "browse.reset": "Strika filtur",
   "browse.sort": "Raða",

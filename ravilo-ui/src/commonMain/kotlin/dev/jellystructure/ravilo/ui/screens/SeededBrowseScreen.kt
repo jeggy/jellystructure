@@ -33,6 +33,8 @@ import dev.jellystructure.ravilo.ui.theme.raviloRowGap
 import dev.jellystructure.ravilo.ui.theme.raviloRowHeadPadB
 import dev.jellystructure.ravilo.ui.theme.raviloTrackPadV
 import dev.jellystructure.ravilo.ui.components.CheckGlyph
+import dev.jellystructure.ravilo.ui.components.CollectionClapperGlyph
+import dev.jellystructure.ravilo.ui.components.CollectionWallGlyph
 import dev.jellystructure.ravilo.ui.components.CloseGlyph
 import dev.jellystructure.ravilo.ui.components.TriangleGlyph
 import dev.jellystructure.ravilo.ui.components.GlyphDirection
@@ -224,6 +226,9 @@ class SeededBrowseStore(
      *  e.g. the Movies/Series tabs. Empty until the fetch resolves. */
     var channelNames by mutableStateOf(emptyMap<String, String>())
         private set
+    /** DEB-4077 (DEB-4032, FR-8) — Jellyfin collection id -> name, from the browse response's `box_sets`. Empty on an older server. */
+    var boxSetNames by mutableStateOf(emptyMap<String, String>())
+        private set
 
     // Active facet selections — multi-select OR within a facet (FR-RV-BROWSE1-4).
     var genre by mutableStateOf(setOf<String>())
@@ -289,6 +294,7 @@ class SeededBrowseStore(
                     SeededBrowseState.Loaded(items.map { BrowseCard(card = it) })
                 } else {
                     val resp = apiClient.browseSeeded(seedQuery, seedMediaKind)
+                    boxSetNames = resp.boxSets.associate { it.id to it.name }   // DEB-4077 (FR-8)
                     peopleNames = resp.people.mapNotNull { p -> p.id?.let { it.toString() to p.name } }.toMap()   // R325
                     SeededBrowseState.Loaded(resp.items)
                 }
@@ -314,7 +320,7 @@ private fun watchedState(c: MediaCard): String = when {
 
 /** Does [card] pass every active facet EXCEPT [excluding] — the "count against the seed with every
  *  other active facet applied" semantics of FR-RV-BROWSE1-5. */
-private fun SeededBrowseStore.matches(card: BrowseCard, excluding: BrowseFacetKey?): Boolean {
+internal fun SeededBrowseStore.matches(card: BrowseCard, excluding: BrowseFacetKey?): Boolean {
     val c = card.card
     if (excluding != BrowseFacetKey.GENRE && genre.isNotEmpty() && card.genres.none { it in genre }) return false
     if (excluding != BrowseFacetKey.TYPE && type.isNotEmpty() && c.kind.name !in type) return false
@@ -326,18 +332,27 @@ private fun SeededBrowseStore.matches(card: BrowseCard, excluding: BrowseFacetKe
     if (excluding != BrowseFacetKey.YEAR && year.isNotEmpty() && yearDecade(c.year) !in year) return false
     if (excluding != BrowseFacetKey.WATCHED && watched.isNotEmpty() && watchedState(c) !in watched) return false
     if (excluding != BrowseFacetKey.AUDIO && audio.isNotEmpty() && card.audioLanguages.none { it in audio }) return false
-    if (excluding != BrowseFacetKey.CHANNEL && channel.isNotEmpty() && card.channels.none { it in channel }) return false
+    if (excluding != BrowseFacetKey.CHANNEL && channel.isNotEmpty() && collectionValues(card).none { it in channel }) return false
     if (excluding != BrowseFacetKey.QUALITY && quality.isNotEmpty() && card.quality !in quality) return false
     if (excluding != BrowseFacetKey.PEOPLE && people.isNotEmpty() && card.people.none { it.toString() in people }) return false   // R325
     return true
 }
 
-private data class FacetValue(val value: String, val count: Int)
+/** DEB-4077 (DEB-4032, FR-8) — the *Collection* chip holds two kinds of value; a Jellyfin collection's id carries this prefix in
+ *  client state only, so the two id spaces never meet. A Ravilo collection's value is its bare channel id, as before. */
+internal const val BOX_SET_PREFIX = "box:"
+
+internal fun isBoxSetValue(value: String): Boolean = value.startsWith(BOX_SET_PREFIX)
+
+/** Every *Collection* value one card carries: its Ravilo collections, then its Jellyfin collections. */
+internal fun collectionValues(card: BrowseCard): List<String> = card.channels + card.boxSets.map { BOX_SET_PREFIX + it }
+
+internal data class FacetValue(val value: String, val count: Int)
 
 /** Value list for [key], counted against every OTHER active facet, ordered by count desc then by raw
  *  value (FR-RV-BROWSE1-5) — display labels are resolved separately, at render time
  *  ([facetValueLabel]), since [str] is `@Composable` and this runs inside a plain `remember` block. */
-private fun SeededBrowseStore.valuesFor(all: List<BrowseCard>, key: BrowseFacetKey): List<FacetValue> {
+internal fun SeededBrowseStore.valuesFor(all: List<BrowseCard>, key: BrowseFacetKey): List<FacetValue> {
     val narrowed = all.filter { matches(it, key) }
     val counts = mutableMapOf<String, Int>()
     fun bump(value: String) { counts[value] = (counts[value] ?: 0) + 1 }
@@ -349,7 +364,7 @@ private fun SeededBrowseStore.valuesFor(all: List<BrowseCard>, key: BrowseFacetK
             BrowseFacetKey.YEAR -> yearDecade(c.year)?.let { bump(it) }
             BrowseFacetKey.WATCHED -> bump(watchedState(c))
             BrowseFacetKey.AUDIO -> card.audioLanguages.forEach { bump(it) }
-            BrowseFacetKey.CHANNEL -> card.channels.forEach { bump(it) }
+            BrowseFacetKey.CHANNEL -> collectionValues(card).forEach { bump(it) }
             BrowseFacetKey.QUALITY -> card.quality?.let { bump(it) }
             BrowseFacetKey.PEOPLE -> card.people.forEach { bump(it.toString()) }   // R325 — ids; names at render time
             BrowseFacetKey.MATURITY -> {} // range picker, not a checklist
@@ -365,7 +380,7 @@ private fun SeededBrowseStore.valuesFor(all: List<BrowseCard>, key: BrowseFacetK
  *  codes, quality tiers) is already display-ready. [channelNames] resolves a channel id to its
  *  configured name (threaded in from the already-loaded Home/channel data by the caller). */
 @Composable
-private fun facetValueLabel(key: BrowseFacetKey, value: String, channelNames: Map<String, String>, peopleNames: Map<String, String> = emptyMap()): String = when (key) {
+private fun facetValueLabel(key: BrowseFacetKey, value: String, channelNames: Map<String, String>, peopleNames: Map<String, String> = emptyMap(), boxSetNames: Map<String, String> = emptyMap()): String = when (key) {
     BrowseFacetKey.TYPE -> when (value) {
         "MOVIE" -> str("browse.type.movie")
         "MUSIC_VIDEO" -> str("browse.type.musicvideo")
@@ -376,7 +391,7 @@ private fun facetValueLabel(key: BrowseFacetKey, value: String, channelNames: Ma
         "in_progress" -> str("browse.watched.in_progress")
         else -> str("browse.watched.unwatched")
     }
-    BrowseFacetKey.CHANNEL -> channelNames[value] ?: value
+    BrowseFacetKey.CHANNEL -> if (isBoxSetValue(value)) boxSetNames[value.removePrefix(BOX_SET_PREFIX)] ?: value else channelNames[value] ?: value
     BrowseFacetKey.AUDIO -> languageName(value) ?: value
     BrowseFacetKey.PEOPLE -> peopleNames[value] ?: value   // R325
     else -> value
@@ -695,7 +710,7 @@ private fun FacetBar(
         if (showTypeFacet) add(BrowseFacetKey.TYPE)
         add(BrowseFacetKey.MATURITY); add(BrowseFacetKey.YEAR); add(BrowseFacetKey.WATCHED)
         add(BrowseFacetKey.AUDIO)
-        if (all.any { it.channels.isNotEmpty() }) add(BrowseFacetKey.CHANNEL)
+        if (all.any { it.channels.isNotEmpty() || it.boxSets.isNotEmpty() }) add(BrowseFacetKey.CHANNEL)
         if (all.any { it.quality != null }) add(BrowseFacetKey.QUALITY)
         if (all.any { it.people.isNotEmpty() }) add(BrowseFacetKey.PEOPLE)   // R325 (FR-R325-4)
     }
@@ -815,7 +830,7 @@ private fun facetChipSummary(store: SeededBrowseStore, key: BrowseFacetKey): Str
     if (key == BrowseFacetKey.MATURITY) return store.maturity.label().takeIf { it.isNotBlank() }
     val sel = store.selectionFor(key)
     if (sel.isEmpty()) return null
-    val names = sel.map { facetValueLabel(key, it, store.channelNames, store.peopleNames) }
+    val names = sel.map { facetValueLabel(key, it, store.channelNames, store.peopleNames, store.boxSetNames) }
     return if (names.size <= 2) names.joinToString(", ") else names.take(2).joinToString(", ") + " +${names.size - 2}"
 }
 
@@ -858,22 +873,25 @@ private fun sortDirLabel(field: SortField, dir: SortDir): String = when (field) 
  * single-focus-root architecture, not this grid's native traversal (see the spec's backend-review
  * addendum). onBack closes and returns focus to the facet bar via [onClose].
  */
+private fun facetChannelName(store: SeededBrowseStore, value: String): String? =
+    if (isBoxSetValue(value)) store.boxSetNames[value.removePrefix(BOX_SET_PREFIX)] else store.channelNames[value]
+
 /** R187 fix — the popover's width tracks its actual content instead of always spanning the full facet
  *  bar: a rough char-count heuristic over the (already display-ready, per [facetValueLabel]'s doc
  *  comment) longest value, clamped to a sane range. Audio gets extra room for its flag glyph. */
 @Composable
 private fun facetPopoverWidth(store: SeededBrowseStore, values: List<FacetValue>, key: BrowseFacetKey): androidx.compose.ui.unit.Dp {
-    val maxLen = remember(values, store.channelNames, store.peopleNames) {
+    val maxLen = remember(values, store.channelNames, store.peopleNames, store.boxSetNames) {
         values.maxOfOrNull { v ->
             when (key) {
-                BrowseFacetKey.CHANNEL -> store.channelNames[v.value]?.length ?: v.value.length
+                BrowseFacetKey.CHANNEL -> facetChannelName(store, v.value)?.length ?: v.value.length
                 BrowseFacetKey.AUDIO -> (languageName(v.value) ?: v.value).length
                 BrowseFacetKey.PEOPLE -> store.peopleNames[v.value]?.length ?: v.value.length
                 else -> v.value.length
             }
         } ?: 8
     }
-    val flagAllowance = if (key == BrowseFacetKey.AUDIO) 28 else 0
+    val flagAllowance = if (key == BrowseFacetKey.AUDIO || key == BrowseFacetKey.CHANNEL) 28 else 0   // DEB-4077 (FR-9): the kind glyph costs what the flag does
     return (maxLen * 8 + 110 + flagAllowance).coerceIn(220, 420).dp
 }
 
@@ -882,7 +900,7 @@ private fun facetPopoverWidth(store: SeededBrowseStore, values: List<FacetValue>
  * row is inverted the way the TV bar's focused tab is: `colors.text` fill, `colors.background` ink, so nothing on it is drawn in
  * `accent` on the light fill. [focus] is 0 (resting) to 1 (focused); the three popovers share this, and the test reads it.
  */
-internal class PopoverRowInk(val fill: Color, val label: Color, val quiet: Color, val count: Color, val mark: Color)
+internal class PopoverRowInk(val fill: Color, val label: Color, val quiet: Color, val count: Color, val mark: Color, val glyph: Color)
 
 internal fun popoverRowInk(colors: RaviloColors, focus: Float): PopoverRowInk = PopoverRowInk(
     fill = colors.text.copy(alpha = focus),
@@ -890,6 +908,7 @@ internal fun popoverRowInk(colors: RaviloColors, focus: Float): PopoverRowInk = 
     quiet = lerp(colors.textSecondary, colors.background, focus),
     count = lerp(colors.textSecondary, colors.background.copy(alpha = 0.7f), focus),
     mark = lerp(colors.accent, colors.background, focus),
+    glyph = lerp(colors.text, colors.background, focus),   // DEB-4077 (FR-9): the kind glyph, inverted with the row like the check
 )
 
 /** The fill change follows the focus ring's FR-1 timing (DEB-2204): 200 ms on [RaviloMotion.EASE], a jump under reduced motion. */
@@ -960,7 +979,15 @@ internal fun FacetPopover(store: SeededBrowseStore, all: List<BrowseCard>, key: 
                                     Spacer(Modifier.width(8.dp))
                                 }
                             }
-                            Text(facetValueLabel(key, v.value, store.channelNames, store.peopleNames), color = ink.label, fontSize = 14.sp, fontFamily = Sora, modifier = Modifier.weight(1f))
+                            if (key == BrowseFacetKey.CHANNEL) {
+                                // DEB-4077 (DEB-4032, FR-9) — its own 18 dp slot after the check slot, 8 dp before the name.
+                                val jellyfin = isBoxSetValue(v.value)
+                                val kind = str(if (jellyfin) "browse.facet.collection.kind.jellyfin" else "browse.facet.collection.kind.ravilo")
+                                if (jellyfin) CollectionClapperGlyph(ink.glyph, 18.dp, description = kind)
+                                else CollectionWallGlyph(ink.glyph, 18.dp, description = kind)
+                                Spacer(Modifier.width(8.dp))
+                            }
+                            Text(facetValueLabel(key, v.value, store.channelNames, store.peopleNames, store.boxSetNames), color = ink.label, fontSize = 14.sp, fontFamily = Sora, modifier = Modifier.weight(1f))
                             Text(v.count.toString(), color = ink.count, fontSize = 13.sp, fontFamily = Sora)
                         }
                     }
