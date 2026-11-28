@@ -8,6 +8,6 @@ private fun lsRemoveUpdate(key: String): Unit = js("localStorage.removeItem(key)
 
 /** DEB-5851 — unused on the web (FR-8: the service worker is the only signal); present because the seam is common. */
 actual object ClientUpdateRecord {
-    actual fun read(): String? = runCatching { lsGetUpdate("ravilo.update.first_seen") }.getOrNull()
-    actual fun write(value: String?) { runCatching { if (value == null) lsRemoveUpdate("ravilo.update.first_seen") else lsSetUpdate("ravilo.update.first_seen", value) } }
+    actual fun read(key: String): String? = runCatching { lsGetUpdate("ravilo.update.$key") }.getOrNull()
+    actual fun write(key: String, value: String?) { runCatching { if (value == null) lsRemoveUpdate("ravilo.update.$key") else lsSetUpdate("ravilo.update.$key", value) } }
 }

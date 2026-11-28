@@ -279,6 +279,18 @@ fun ProfileScreen(
                 contentAlignment = Alignment.Center,
             ) { Text(str("profile.sign_out"), color = DANGER, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, fontFamily = Sora) }
 
+            // DEB-5851 (FR-5) — a newer Ravilo is out: one quiet line, directly above the version line. The phone only; Linux
+            // says it in Settings ▸ About and the TV in its About section.
+            if (!desk && !dev.jellystructure.ravilo.ui.isTvPlatform && !dev.jellystructure.ravilo.ui.isWebPlatform) {
+                dev.jellystructure.ravilo.ui.components.MarkUpdateSeen(dev.jellystructure.ravilo.ui.components.UpdateSurface.Profile)
+                Spacer(Modifier.height(14.dp))
+                dev.jellystructure.ravilo.ui.components.ClientUpdateLine(
+                    notice = dev.jellystructure.ravilo.ui.components.clientUpdateNotice(),
+                    source = dev.jellystructure.ravilo.ui.components.installSource(),
+                    openable = true,
+                    modifier = Modifier.align(Alignment.CenterHorizontally),
+                )
+            }
             Spacer(Modifier.height(14.dp))
             Text(
                 "Ravilo ${raviloVersion()} · ${str("profile.signed_in_to", mapOf("host" to serverHost))}",

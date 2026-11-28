@@ -16,12 +16,15 @@ import kotlinx.coroutines.launch
 
 /**
  * DEB-5851 (FR-3) — the one thing this device remembers about an update: the newest release it has seen the server
- * run, and when it first saw it. A string of its own, apart from the session store, so a sign-out keeps it.
+ * run, and when it first saw it. Plus, per surface, the release whose dot the viewer has already looked at (FR-5, FR-6, FR-7). A file of its own, apart
+ * from the session store, so a sign-out keeps both.
  */
 expect object ClientUpdateRecord {
-    fun read(): String?
-    fun write(value: String?)
+    fun read(key: String): String?
+    fun write(key: String, value: String?)
 }
+
+private const val FIRST_SEEN = "first_seen"
 
 internal fun encodeFirstSeen(v: UpdateFirstSeen?): String? = v?.let { "${it.release}|${it.atMs}" }
 
@@ -81,13 +84,26 @@ object ClientUpdate {
 
     fun homeDrawn() { pendingHome = true; check?.homeDrawn() }
 
+    /** The release each surface's dot was last looked at for; read once from the record, then kept here. */
+    private val seen = MutableStateFlow(UpdateSurface.entries.associateWith { ClientUpdateRecord.read(it.key) })
+
+    /** The viewer opened [surface]: its dot stays away until a larger release arrives (the line itself stays). */
+    fun markSeen(surface: UpdateSurface) {
+        val release = _notice.value?.toString() ?: return
+        ClientUpdateRecord.write(surface.key, release)
+        seen.value = seen.value + (surface to release)
+    }
+    /** Tests only. */
+    internal fun resetForTest(notice: RaviloVersion?) { _notice.value = notice; seen.value = UpdateSurface.entries.associateWith { null } }
+    val seenFlow: StateFlow<Map<UpdateSurface, String?>> get() = seen.asStateFlow()
+
     /** Suspends for the life of the caller (a `LaunchedEffect`). Never on the Mac or the web (FR-R386, FR-8). */
     suspend fun run(api: TvApiClient, playerOpen: StateFlow<Boolean>, nowMs: () -> Long) {
         val c = ClientUpdateCheck(
             appVersion = { raviloVersion() },
             fetchVersion = { api.serverVersion() },
-            readRecord = ClientUpdateRecord::read,
-            writeRecord = ClientUpdateRecord::write,
+            readRecord = { ClientUpdateRecord.read(FIRST_SEEN) },
+            writeRecord = { ClientUpdateRecord.write(FIRST_SEEN, it) },
             nowMs = nowMs,
             playerOpen = playerOpen,
         )
@@ -99,3 +115,18 @@ object ClientUpdate {
         }
     }
 }
+
+/** FR-5 to FR-7 — a surface's dot shows while there is a notice and the viewer has not opened that surface for this release. */
+fun updateDotFor(notice: RaviloVersion?, seen: String?): Boolean = notice != null && seen != notice.toString()
+
+/** The surfaces that carry a dot. */
+enum class UpdateSurface(val key: String) { Profile("dot_profile"), TvSettings("dot_tv_settings"), LinuxAbout("dot_linux_about") }
+
+/** FR-5 — the releases page a download install is sent to; Play's own page for a Play install. */
+const val RAVILO_RELEASES_URL = "https://github.com/jeggy/jellystructure/releases/latest"
+fun clientUpdateUrl(source: InstallSource, packageName: String = ownPackageName()): String =
+    if (source == InstallSource.GooglePlay && packageName.isNotBlank()) "https://play.google.com/store/apps/details?id=$packageName" else RAVILO_RELEASES_URL
+
+/** FR-4 — the second line's key for [source], and Samsung's own. */
+fun clientUpdateSecondLineKey(source: InstallSource): String =
+    if (source == InstallSource.GooglePlay) "update.available_play" else "update.available_download"

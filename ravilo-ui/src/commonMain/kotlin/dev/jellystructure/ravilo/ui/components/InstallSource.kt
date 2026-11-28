@@ -12,3 +12,6 @@ fun installSourceOf(installerPackage: String?): InstallSource =
 
 /** Android reads the installer package; everywhere else this is a download (the Linux `.flatpak`, a `.wgt` is not asked). */
 expect fun installSource(): InstallSource
+
+/** This app's own package name, which Google Play's page for it is keyed by; empty off Android. */
+expect fun ownPackageName(): String

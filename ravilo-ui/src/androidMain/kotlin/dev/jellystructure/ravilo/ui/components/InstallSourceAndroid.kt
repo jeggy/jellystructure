@@ -12,3 +12,5 @@ internal fun installerPackage(context: Context): String? = runCatching {
 }.getOrNull()
 
 actual fun installSource(): InstallSource = installSourceOf(runCatching { installerPackage(RaviloAppContext.get()) }.getOrNull())
+
+actual fun ownPackageName(): String = runCatching { RaviloAppContext.get().packageName }.getOrDefault("")
