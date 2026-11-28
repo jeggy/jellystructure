@@ -1,7 +1,11 @@
 package dev.jellystructure.ravilo.screen
 
 import dev.jellystructure.ravilo.i18n.SUPPORTED_LANGUAGES
+import dev.jellystructure.ravilo.i18n.t
 import dev.jellystructure.shared.raviloVersion
+import dev.jellystructure.shared.tv.UpdateFirstSeen
+import dev.jellystructure.shared.tv.parseRaviloRelease
+import dev.jellystructure.shared.tv.raviloUpdateNotice
 import dev.jellystructure.shared.tv.RaviloConfig
 import dev.jellystructure.shared.tv.TvApiClient
 import io.ktor.client.HttpClient
@@ -10,6 +14,8 @@ import io.ktor.client.request.get
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.isSuccess
 import kotlinx.browser.document
+import kotlinx.browser.localStorage
+import kotlin.js.Date
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
@@ -67,6 +73,8 @@ internal class ScreenPlaybackSwitches(
  */
 internal object ScreenSettings {
     const val ROUTE = "settings"
+    /** DEB-5851 (FR-3) — the newest release this TV has seen the server run, and when it first did: `1.73|<epoch ms>`. */
+    private const val UPDATE_RECORD = "ravilo.screen.updateFirstSeen"
     private val json = Json { ignoreUnknownKeys = true }
 
     /** What `/api/health` said this session; kept so a language switch re-draws without a flash. */
@@ -110,6 +118,11 @@ internal object ScreenSettings {
         body.appendChild(line("h2", null, ScreenLanguage.t("about.title")))
         body.appendChild(versionLine("set-app-version", ScreenLanguage.t("settings.app_version"), raviloVersion()))
         body.appendChild(versionLine("set-server-version", ScreenLanguage.t("settings.server_version"), serverVersion ?: "…"))
+        // DEB-5851 (FR-11) — under the two versions: a newer Ravilo is out (FR-1), after the 48 h hold (FR-3).
+        val update = document.createElement("div") as HTMLElement
+        update.id = "set-update"
+        body.appendChild(update)
+        serverVersion?.let { showUpdate(update, it) }
         if (serverVersion == null) loadServerVersion(serverUrl)
     }
 
@@ -126,7 +139,29 @@ internal object ScreenSettings {
             fetching = false
             serverVersion = found ?: "—"
             document.getElementById("set-server-version")?.textContent = serverVersion
+            found?.let { v -> document.getElementById("set-update")?.let { showUpdate(it as HTMLElement, v) } }
         }
+    }
+
+    /**
+     * DEB-5851 (FR-11) — FR-1's rule over this app's own version and the server's, held for 48 h by a first-seen record kept
+     * in the TV's `localStorage`. Two lines, in the About block's own `set-version` class, and nothing at all when the
+     * rule answers nothing. Read only when Settings opens, as the version itself is.
+     */
+    private fun showUpdate(host: HTMLElement, server: String) {
+        val seen = runCatching { localStorage.getItem(UPDATE_RECORD) }.getOrNull()?.let { raw ->
+            val (release, at) = raw.split('|').takeIf { it.size == 2 } ?: return@let null
+            UpdateFirstSeen(parseRaviloRelease(release) ?: return@let null, at.toLongOrNull() ?: return@let null)
+        }
+        val outcome = raviloUpdateNotice(raviloVersion(), server, seen, Date.now().toLong())
+        runCatching {
+            val record = outcome.record
+            if (record == null) localStorage.removeItem(UPDATE_RECORD) else localStorage.setItem(UPDATE_RECORD, "${record.release}|${record.atMs}")
+        }
+        val release = outcome.release ?: return
+        host.textContent = ""
+        host.appendChild(line("div", "set-update-line", t("update.available", ScreenLanguage.lang, mapOf("version" to release.toString()))).also { it.className = "set-version" })
+        host.appendChild(line("div", "set-update-how", t("update.available_samsung", ScreenLanguage.lang)).also { it.className = "set-version" })
     }
 
     /** The `version` of `/api/health`'s `{"status":"ok","version":"…"}`, or null. */

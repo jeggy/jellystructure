@@ -99,6 +99,22 @@ test("About names the app's version and the server's own (DEB-4663 FR-11)", asyn
   await expect(page.locator("#set-server-address")).toHaveText("app:9505");
 });
 
+// DEB-5851 (FR-11) — the quiet "a newer Ravilo exists" line in About. The test stack's screen is a development build
+// (`-N-g<sha>` or `dev`), which FR-1 never tells, so what is provable here is the silence: a server that reports a far
+// newer release adds no line and writes no first-seen record. The line itself (a release app against a newer server,
+// held 48 h) is FR-1/FR-3's table in `RaviloUpdateNoticeTest`, and the Samsung's own check goes to QA.
+test("About says nothing about an update to a development build, whatever the server runs (DEB-5851 FR-1, FR-11)", async ({ page }) => {
+  await page.route(`${SERVER}/api/health`, route => route.fulfill({
+    status: 200, contentType: "application/json", headers: { "access-control-allow-origin": "*" }, body: '{"status":"ok","version":"v9.99-4-gabcdef12"}',
+  }));
+  await boot(page);
+  await openSettings(page);
+  await expect(page.locator("#set-server-version")).toHaveText("v9.99-4-gabcdef12");
+  await expect(page.locator("#set-update-line")).toHaveCount(0);
+  await expect(page.locator("#set-update-how")).toHaveCount(0);
+  expect(await page.evaluate(() => localStorage.getItem("ravilo.screen.updateFirstSeen"))).toBeNull();
+});
+
 test("Change server opens setup prefilled; the same address keeps every profile (DEB-4663 FR-11)", async ({ page }) => {
   await boot(page, [viewer("one", "One"), viewer("two", "Two")]);
   await openSettings(page);
