@@ -34,6 +34,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
@@ -77,22 +78,29 @@ fun rememberShimmerBrush(): Brush {
     }
 }
 
-/** DEB-5837 FR-1 — the sweep position is read in [createShader], which runs in the draw phase, so no frame recomposes. */
-private class SweepBrush(val progress: () -> Float, val base: Color, val bright: Color) : ShaderBrush() {
-    override fun createShader(size: Size): Shader {
-        val sweep = 800f
-        val p = progress()
-        return LinearGradientShader(
-            from = Offset(p * sweep, 0f),
-            to = Offset((p + 1f) * sweep, 400f),
-            colors = listOf(base, bright, base),
-        )
-    }
+/**
+ * DEB-5837 FR-1 — the animated brush carries its progress as a lambda, never a value: [Modifier.skeleton] reads it inside
+ * its draw lambda, so no frame recomposes. (A [ShaderBrush] caches its shader per size, so it cannot animate on its own.)
+ */
+internal class SweepBrush(val progress: () -> Float, val base: Color, val bright: Color) : ShaderBrush() {
+    fun at(p: Float): Brush = Brush.linearGradient(
+        colors = listOf(base, bright, base),
+        start = Offset(p * 800f, 0f),
+        end = Offset((p + 1f) * 800f, 400f),
+    )
+
+    override fun createShader(size: Size): Shader = LinearGradientShader(
+        from = Offset(progress() * 800f, 0f),
+        to = Offset((progress() + 1f) * 800f, 400f),
+        colors = listOf(base, bright, base),
+    )
 }
 
 /** DEB-5837 FR-1 — the one skeleton primitive: [shape] filled with the shimmer brush. Never focusable. */
 @Composable
-fun Modifier.skeleton(shape: Shape, brush: Brush = rememberShimmerBrush()): Modifier = clip(shape).background(brush)
+fun Modifier.skeleton(shape: Shape, brush: Brush = rememberShimmerBrush()): Modifier =
+    if (brush is SweepBrush) clip(shape).drawBehind { drawRect(brush.at(brush.progress())) }
+    else clip(shape).background(brush)
 
 @Composable
 fun ShimmerBox(
