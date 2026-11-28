@@ -35,6 +35,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.LinearGradientShader
+import androidx.compose.ui.graphics.Shader
+import androidx.compose.ui.graphics.ShaderBrush
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.SolidColor
 import dev.jellystructure.ravilo.ui.theme.LocalReducedMotion
@@ -66,15 +72,27 @@ fun rememberShimmerBrush(): Brush {
         ),
         label = "shimmerProgress",
     )
-    val base   = colors.surface
-    val bright = colors.surfaceVariant
-    val sweep  = 800f
-    return Brush.linearGradient(
-        colors = listOf(base, bright, base),
-        start  = Offset(progress * sweep, 0f),
-        end    = Offset((progress + 1f) * sweep, 400f),
-    )
+    return remember(transition, colors.surface, colors.surfaceVariant) {
+        SweepBrush(progress = { progress }, base = colors.surface, bright = colors.surfaceVariant)
+    }
 }
+
+/** DEB-5837 FR-1 — the sweep position is read in [createShader], which runs in the draw phase, so no frame recomposes. */
+private class SweepBrush(val progress: () -> Float, val base: Color, val bright: Color) : ShaderBrush() {
+    override fun createShader(size: Size): Shader {
+        val sweep = 800f
+        val p = progress()
+        return LinearGradientShader(
+            from = Offset(p * sweep, 0f),
+            to = Offset((p + 1f) * sweep, 400f),
+            colors = listOf(base, bright, base),
+        )
+    }
+}
+
+/** DEB-5837 FR-1 — the one skeleton primitive: [shape] filled with the shimmer brush. Never focusable. */
+@Composable
+fun Modifier.skeleton(shape: Shape, brush: Brush = rememberShimmerBrush()): Modifier = clip(shape).background(brush)
 
 @Composable
 fun ShimmerBox(
@@ -83,9 +101,7 @@ fun ShimmerBox(
     radius: Float = 10f,
 ) {
     Box(
-        modifier = modifier
-            .clip(RoundedCornerShape(radius.dp))
-            .background(brush),
+        modifier = modifier.skeleton(RoundedCornerShape(radius.dp), brush),
     )
 }
 
