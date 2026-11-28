@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.ravilo.ui.components.KeptRowScroll
 import dev.jellystructure.ravilo.ui.components.LoadErrorKind
 import dev.jellystructure.ravilo.ui.components.classifyLoadFailure
 import dev.jellystructure.ravilo.ui.components.loadErrorKindOf
@@ -72,6 +73,10 @@ class HomeStore(
     /** R365 (FR-R365-10) — the hero slide showing (its id), so Back to Home shows the slide that was opened. */
     var heroId: String? = null
     var focusItemIndex: Int = 0
+    // DEB-5839 (FR-2) — each row's horizontal scroll, by Row.id, so a row opens where it was left while this store lives.
+    private val rowScrolls = HashMap<String, KeptRowScroll>()
+    fun keptRowScroll(rowId: String): KeptRowScroll? = rowScrolls[rowId]
+    fun keepRowScroll(rowId: String, scroll: KeptRowScroll) { rowScrolls[rowId] = scroll }
 
     /** R139 / R361 — a tile was opened: remember it, and where it was, for the Back-return. */
     fun rememberReturn(rowKey: String, itemKey: String, rowIndex: Int, itemIndex: Int) {
@@ -91,6 +96,7 @@ class HomeStore(
         clearReturn()
         focusRowIndex = 0
         focusItemIndex = 0
+        rowScrolls.clear()   // DEB-5839 (FR-2) — a reset Home opens every row at its start too
         listState.scrollToItem(0)
     }
     // R49/Phase 136 — server-decided Request-segment gating (now: is Seerr connected/enabled).

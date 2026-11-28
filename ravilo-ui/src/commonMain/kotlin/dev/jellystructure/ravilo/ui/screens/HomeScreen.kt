@@ -508,6 +508,8 @@ private fun HomeLoaded(
                     // R236 — channels is always the first row whenever it exists; the bridge targets the
                     // row itself now, never a specific tile (see StaticContentRow's rowFocusRequester doc).
                     rowFocusRequester = firstRowFR,
+                    keptScroll = store.keptRowScroll("channels"),   // DEB-5839 (FR-2)
+                    onScrollKept = { store.keepRowScroll("channels", it) },
                 ) { chIdx, ch, fr ->
                     ChannelCard(
                         name = ch.name,
@@ -842,6 +844,8 @@ private fun ContentRowItem(
         // FR-R240-10 — always exiting (visible = false): this slot only ever holds the tile that just
         // stopped being open, mid-shrink, independent of whatever is opening in [panelKey] above.
         closingAfterKey = closingKey,
+        keptScroll = store.keptRowScroll(row.id),   // DEB-5839 (FR-2)
+        onScrollKept = { store.keepRowScroll(row.id, it) },
         closingPanel = if (closingKey != null) ({
             closingUi?.let { FocusDetailPanel(ui = it, visible = false, width = panelWidth) }
         }) else null,
@@ -940,6 +944,8 @@ private fun OnNowRow(
         onRestored = returnTo.onRestored,
         onItemFocused = returnTo.onItemFocused,
         onEmptiedWhileFocused = returnTo.onEmptied,
+        keptScroll = store.keptRowScroll("on-now"),   // DEB-5839 (FR-2)
+        onScrollKept = { store.keepRowScroll("on-now", it) },
         rowFocusRequester = rowFocusRequester,  // R236 — lands on the leading guide tile by default (first in composition order) via focusRestorer
         // The guide tile is the row's first item, reached via the row-level bridge above.
         leadingItem = { LiveTvGuideTile(onClick = onOpenLiveTvGuide) },

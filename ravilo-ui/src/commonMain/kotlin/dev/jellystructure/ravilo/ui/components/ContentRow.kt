@@ -25,6 +25,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -170,6 +172,10 @@ fun <T> StaticContentRow(
      *  currently closing. Ignored if it equals [openAfterKey] (never render the same tile's panel twice). */
     closingAfterKey: Any? = null,
     closingPanel: (@Composable () -> Unit)? = null,
+    /** DEB-5839 (FR-2) — where this row was scrolled to the last time it was on screen; it opens there. */
+    keptScroll: KeptRowScroll? = null,
+    /** DEB-5839 (FR-2) — told the row's scroll as it settles, for the caller to keep while its store lives. */
+    onScrollKept: ((KeptRowScroll) -> Unit)? = null,
     itemContent: @Composable (index: Int, item: T, focusRequester: FocusRequester?) -> Unit,
 ) {
     val colors = RaviloTheme.colors
@@ -193,7 +199,19 @@ fun <T> StaticContentRow(
         }
     }
 
-    val listState = rememberLazyListState()
+    val keptLead = if (leadingItem != null) 1 else 0
+    val keptStart = remember { resolveKeptRowScroll(keptScroll, items.size, keptLead) { i -> itemKey?.invoke(items[i]) } }
+    val listState = rememberLazyListState(keptStart.index, keptStart.offset)
+    if (onScrollKept != null) {
+        val report by rememberUpdatedState(onScrollKept)
+        LaunchedEffect(listState) {
+            snapshotFlow { listState.firstVisibleItemIndex to listState.firstVisibleItemScrollOffset }
+                .collect { (index, offset) ->
+                    val itemIdx = index - keptLead
+                    report(KeptRowScroll(index, offset, if (itemIdx in items.indices) itemKey?.invoke(items[itemIdx]) else null))
+                }
+        }
+    }
 
     // R248 (FR-R248-3) — focus follows the item, not the index. A silent refresh may reorder this row
     // (Continue Watching after a stop) or drop the focused title from it. Keyed items already keep the
@@ -474,4 +492,24 @@ fun <T> StaticContentRow(
             }
         }
     }
+}
+
+/**
+ * DEB-5839 (FR-2) — a Home row's horizontal scroll: the first visible list index (counting a leading tile), its offset, and
+ * the key of the item there so a row whose items changed can find its place again.
+ */
+data class KeptRowScroll(val index: Int, val offset: Int, val key: Any? = null)
+
+/**
+ * DEB-5839 (FR-2) — the first index and offset a row opens at. The kept index if the same item is still there; else the
+ * kept item's new place if the row still holds it; else the start. Never an index past the row's end.
+ */
+fun resolveKeptRowScroll(kept: KeptRowScroll?, itemCount: Int, lead: Int, keyAt: (Int) -> Any?): KeptRowScroll {
+    val start = KeptRowScroll(0, 0)
+    if (kept == null || itemCount <= 0) return start
+    if (kept.index < lead) return KeptRowScroll(kept.index.coerceAtLeast(0), kept.offset.coerceAtLeast(0))   // the leading tile is still first
+    val key = kept.key ?: return if (kept.index - lead < itemCount) KeptRowScroll(kept.index, kept.offset) else start
+    if (kept.index - lead < itemCount && keyAt(kept.index - lead) == key) return KeptRowScroll(kept.index, kept.offset)
+    val moved = (0 until itemCount).firstOrNull { keyAt(it) == key } ?: return start
+    return KeptRowScroll(moved + lead, 0)
 }
