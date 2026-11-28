@@ -127,6 +127,7 @@ fun MovieDetailScreen(
     val colors = RaviloTheme.colors
     LaunchedEffect(itemId) { store.load(itemId, card) }
     val state by store.state.collectAsState()
+    val openingCard by store.openingCard.collectAsState()   // DEB-5839 (FR-4) — the tile's card, for the first load only
     // R84: phase-2 overlay — empty map until /api/tv/playstate returns after the catalog paint
     val overlay by store.playstateOverlay.collectAsState()
     // 309 (FR-309-3/-6) — 2 s on the page: the speed test, then the encode Play would start; leaving stops it.
@@ -138,7 +139,7 @@ fun MovieDetailScreen(
     Box(modifier = Modifier.fillMaxSize().background(colors.background).fadeInOnLoad(loading = state is MovieDetailState.Loading)) {
         when (val s = state) {
             is MovieDetailState.Loading -> {
-                DetailLoadingShell()
+                DetailLoadingShell(card = openingCard)
                 // DEB-5837 (FR-3) — the real app bar, drawn as when loaded.
                 AppBar(navItems = raviloNavItems(), activeNav = -1, onNavSelect = onNavSelect, onProfile = onProfile, onSearch = onSearch)
             }

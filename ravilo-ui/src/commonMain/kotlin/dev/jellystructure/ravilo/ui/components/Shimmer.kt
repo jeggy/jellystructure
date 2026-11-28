@@ -206,18 +206,31 @@ internal const val DETAIL_SKELETON_ACTIONS = "detail-skeleton-actions"
  * gutters (title, 8 dp, meta, 18 dp, actions). The app bar is drawn by the caller.
  */
 @Composable
-fun DetailLoadingShell() {
+fun DetailLoadingShell(card: dev.jellystructure.shared.tv.MediaCard? = null) {
     val brush = rememberShimmerBrush()
     val compact = dev.jellystructure.ravilo.ui.theme.LocalCompact.current
     Box(Modifier.fillMaxSize().testTag(DETAIL_SKELETON_HERO)) {
         ShimmerBox(modifier = Modifier.matchParentSize(), brush = brush, radius = 0f)
+        // DEB-5839 (FR-4) — opened from a tile: its backdrop (warmed on open, R100), then the loaded hero's own scrims. The card
+        // is shown verbatim and draws no Play, progress, watched mark or badge; the detail answer owns those.
+        val backdropUrl = card?.let { it.backdropUrl ?: it.posterUrl }
+        if (backdropUrl != null) dev.jellystructure.ravilo.ui.seams.RemoteImage(
+            url = backdropUrl,
+            contentDescription = null,
+            modifier = Modifier.matchParentSize(),
+            alignment = dev.jellystructure.ravilo.ui.theme.RaviloDimens.heroBackdropAlignment,
+        )
+        if (card != null) DetailHeroScrims()
         Column(Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(bottom = 44.dp)) {
             Column(Modifier.fillMaxWidth(if (compact) 1f else 0.6f).padding(horizontal = raviloHPad)) {
                 // Title (the loaded title's 40 sp line, or the 80 dp logo's room is the taller of the two)
-                Box(Modifier.width(400.dp).height(40.dp).skeleton(RoundedCornerShape(10.dp), brush))
+                if (card != null) TitleLogoOrText(logoUrl = null, title = card.title, logoModifier = Modifier)
+                else Box(Modifier.width(400.dp).height(40.dp).skeleton(RoundedCornerShape(10.dp), brush))
                 Spacer(Modifier.height(8.dp))
-                // Meta line
-                Box(Modifier.width(240.dp).height(20.dp).skeleton(RoundedCornerShape(10.dp), brush))
+                // Meta line — the card's year as text, the rest (runtime, badges) when the detail lands
+                val year = card?.year
+                if (year != null) Text(year.toString(), color = dev.jellystructure.ravilo.ui.theme.RaviloTheme.colors.textSecondary, fontSize = 15.sp, maxLines = 1, softWrap = false)
+                else Box(Modifier.width(240.dp).height(20.dp).skeleton(RoundedCornerShape(10.dp), brush))
             }
             Spacer(Modifier.height(18.dp))
             Row(
