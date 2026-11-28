@@ -6,6 +6,9 @@ import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
+import androidx.compose.animation.ContentTransform
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
@@ -53,6 +56,7 @@ import androidx.compose.foundation.clickable
 import dev.jellystructure.ravilo.ui.LocalServerBaseUrl
 import dev.jellystructure.ravilo.ui.focus.dpadFocusable
 import dev.jellystructure.ravilo.ui.seams.RemoteImage
+import dev.jellystructure.ravilo.ui.theme.LocalReducedMotion
 import dev.jellystructure.ravilo.ui.theme.RaviloDimens
 import dev.jellystructure.ravilo.ui.theme.raviloHPad
 import dev.jellystructure.ravilo.ui.theme.RaviloMotion
@@ -117,6 +121,8 @@ private fun HeroCarouselContent(
 ) {
     val colors = RaviloTheme.colors
     val sora = Sora
+    // DEB-5838 (FR-7) — under reduced motion the hero is still: no auto-advance, no drift, a cut between slides.
+    val reducedMotion = LocalReducedMotion.current
 
     // R257 (FR-R257-4) — shared with the detail heroes; see HeroScrims.
     val heroScrims = rememberHeroScrims()
@@ -143,9 +149,10 @@ private fun HeroCarouselContent(
     // remaining distance when scrolling settles. Removes the full-width hero's per-frame scaled redraw
     // from competing with the scroll's frame budget.
     val kbScale = remember { Animatable(1.0f) }
-    LaunchedEffect(activeIndex) {
+    LaunchedEffect(activeIndex, reducedMotion) {
         items.getOrNull(activeIndex)?.let { onActiveChanged(it.item.id) }   // R365 (FR-R365-10)
         kbScale.snapTo(1.0f)  // instant reset; the 600ms crossfade covers the snap
+        if (reducedMotion) return@LaunchedEffect   // DEB-5838 (FR-7) — scale stays 1.0
         snapshotFlow { driftEnabled() }
             .collectLatest { enabled ->
                 if (!enabled) return@collectLatest
@@ -184,7 +191,7 @@ private fun HeroCarouselContent(
     }
 
     // Auto-advance; resets when the user manually changes slide. 0 seconds = off.
-    if (autoAdvanceSeconds > 0 && items.size > 1) {
+    if (heroAutoAdvances(autoAdvanceSeconds, items.size, reducedMotion)) {
         LaunchedEffect(resetTick, autoAdvanceSeconds) {
             // DEB-4283 (FR-R383-3) — the interval runs only while the hero can be seen: a slide change off screen is a
             // crossfade, a backdrop decode and ~35 frames drawn for nobody (Stue TV, Home rows 3-5).
@@ -238,10 +245,7 @@ private fun HeroCarouselContent(
         // while it loads so the hero never flashes blank (Hero carries no brand color of its own).
         AnimatedContent(
             targetState = active.backdropUrl,
-            transitionSpec = {
-                fadeIn(tween(RaviloMotion.HERO_CROSSFADE_IN_MS)) togetherWith
-                    fadeOut(tween(RaviloMotion.HERO_CROSSFADE_OUT_MS))
-            },
+            transitionSpec = { heroSlideTransition(reducedMotion) },
             label = "heroBg",
         ) { url ->
             RemoteImage(
@@ -415,6 +419,15 @@ internal suspend fun awaitHeroAdvance(intervalMs: Long, inView: () -> Boolean) {
         .transformLatest { visible -> if (visible) { delay(intervalMs); emit(Unit) } }   // a false cancels the wait in flight
         .first()
 }
+
+/** DEB-5838 (FR-7) — the slides advance by themselves only when asked to (> 0 s), when there is more than one, and not under reduced motion. */
+internal fun heroAutoAdvances(autoAdvanceSeconds: Int, slideCount: Int, reducedMotion: Boolean): Boolean =
+    autoAdvanceSeconds > 0 && slideCount > 1 && !reducedMotion
+
+/** DEB-5838 (FR-7) — a crossfade between slides, or a cut under reduced motion. */
+internal fun heroSlideTransition(reducedMotion: Boolean): ContentTransform =
+    if (reducedMotion) EnterTransition.None togetherWith ExitTransition.None
+    else fadeIn(tween(RaviloMotion.HERO_CROSSFADE_IN_MS)) togetherWith fadeOut(tween(RaviloMotion.HERO_CROSSFADE_OUT_MS))
 
 /** R383 — the Ken Burns drift's step: about 15 a second (0.5 px a step). */
 private const val HERO_DRIFT_STEP_MS = 66L
