@@ -90,7 +90,7 @@ private const val INVISIBLE_FORMAT_CHARS = "\u200B\u200C\u200D\u2060\uFEFF"
 internal fun isHiddenChar(c: Char): Boolean = c.isWhitespace() || c in INVISIBLE_FORMAT_CHARS
 
 /** DEB-5002 — a *line break*: `\r`, `\n`, U+2028 or U+2029. */
-internal fun isLineBreakChar(c: Char): Boolean = c == '\r' || c == '\n' || c == '\u2028' || c == '\u2029'
+internal fun isLineBreakChar(c: Char): Boolean = c == '\r' || c == '\n' || c.code == 0x2028 || c.code == 0x2029
 
 /** FR-1 — the text with hidden characters dropped at both ends, then any trailing `/`. */
 private fun withoutHiddenEnds(text: String): String = text.trim(::isHiddenChar).trimEnd('/')
