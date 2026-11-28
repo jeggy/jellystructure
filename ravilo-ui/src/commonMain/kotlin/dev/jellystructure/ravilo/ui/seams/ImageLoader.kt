@@ -81,6 +81,8 @@ fun RemoteImage(
     var attempt by remember(resolved) { mutableIntStateOf(0) }
     var failures by remember(resolved) { mutableIntStateOf(0) }
     var failed by remember(resolved) { mutableStateOf(false) }
+    // Unlike [failed] this stays up through a retry's load, so the onFailed slot does not flicker every 30 s.
+    var showFailed by remember(resolved) { mutableStateOf(false) }
     if (failed) {
         LaunchedEffect(resolved, failures) {
             ArtworkRetry.waitForRetry(failures)
@@ -108,8 +110,8 @@ fun RemoteImage(
             fallback = placeholder,
             colorFilter = colorFilter,
             // A request cancelled because the tile left the screen is not a failure (and its effect is gone anyway).
-            onError = { e -> if (e.result.throwable !is CancellationException) { failures++; failed = true } },
-            onSuccess = { failures = 0 },
+            onError = { e -> if (e.result.throwable !is CancellationException) { failures++; failed = true; showFailed = true } },
+            onSuccess = { failures = 0; showFailed = false },
         )
     }
     if (onFailed == null) {
@@ -117,7 +119,7 @@ fun RemoteImage(
     } else {
         Box(modifier) {
             image(Modifier.matchParentSize())
-            if (failed) onFailed()
+            if (showFailed) onFailed()
         }
     }
 }

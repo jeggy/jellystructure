@@ -66,7 +66,7 @@ class RemoteImageRetryTest {
     }
 
     @Test fun `the onFailed slot shows while the load has failed and goes when the retry succeeds`() {
-        failFirst = 1
+        failFirst = 2
         SingletonImageLoader.setUnsafe { ctx ->
             ImageLoader.Builder(ctx).serviceLoaderEnabled(false).components { add(FlakyFactory()) }.build()
         }
@@ -79,8 +79,15 @@ class RemoteImageRetryTest {
                 )
             }
             waitUntil(timeoutMillis = 30_000) { onAllNodesWithTag("failed").fetchSemanticsNodes().isNotEmpty() }
-            waitUntil(timeoutMillis = 30_000) { calls.get() >= 2 && onAllNodesWithTag("failed").fetchSemanticsNodes().isEmpty() }
-            assertEquals(2, calls.get(), "one failure and the retry that worked")
+            // The retry's own load (calls == 2) fails too: the slot must stay up through it, with no gap.
+            var gap = false
+            waitUntil(timeoutMillis = 30_000) {
+                val shown = onAllNodesWithTag("failed").fetchSemanticsNodes().isNotEmpty()
+                if (!shown && calls.get() < 3) gap = true
+                !shown && calls.get() >= 3
+            }
+            assertTrue(!gap, "the slot stayed up while the retry loaded and failed")
+            assertEquals(3, calls.get(), "two failures and the retry that worked")
         }
     }
 }
