@@ -3,6 +3,7 @@ package dev.jellystructure.ravilo.ui.screens
 import dev.jellystructure.ravilo.ui.components.LoadErrorKind
 import dev.jellystructure.ravilo.ui.components.loadErrorKindOf
 import dev.jellystructure.shared.tv.CardPlayState
+import dev.jellystructure.shared.tv.MediaCard
 import dev.jellystructure.shared.tv.MovieDetail
 import dev.jellystructure.shared.tv.SeriesDetail
 import dev.jellystructure.shared.tv.TvApiClient
@@ -32,6 +33,13 @@ class MovieDetailStore(private val apiClient: TvApiClient) {
     /** 309 (FR-309-6) — the speed test and the early encode while the page is read. */
     val prewarm = DetailPrewarm(apiClient)
     private val _state = MutableStateFlow<MovieDetailState>(MovieDetailState.Loading)
+    /**
+     * DEB-5839 (FR-4) — the tile this page was opened from, verbatim, for the header of a FIRST load only. Cleared the
+     * moment the detail (or an error) lands, so it can never outlive the answer it stands in for.
+     */
+    private val _openingCard = MutableStateFlow<MediaCard?>(null)
+    val openingCard: StateFlow<MediaCard?> = _openingCard.asStateFlow()
+    private var openedWith: MediaCard? = null
     val state: StateFlow<MovieDetailState> = _state.asStateFlow()
     /** R84: phase-2 overlay — empty until /api/tv/playstate returns after the catalog paint. */
     private val _playstateOverlay = MutableStateFlow<Map<String, CardPlayState>>(emptyMap())
@@ -46,16 +54,19 @@ class MovieDetailStore(private val apiClient: TvApiClient) {
 
     /** R40/R84: when this id is already loaded (retained store, re-entry), keep it on screen and
      *  refresh silently — no Loading flash. First load (or a new id) shows Loading normally. */
-    fun load(id: String) {
+    fun load(id: String, card: MediaCard? = null) {
         if (currentId == id && _state.value is MovieDetailState.Loaded) { refreshSilent(id); return }
         currentId = id
         loadJob?.cancel()
         val gen = ++loadGen
         _playstateOverlay.value = emptyMap()
+        openedWith = card
+        _openingCard.value = card
         _state.value = MovieDetailState.Loading
         loadJob = scope.launch {
             val result = runCatching { apiClient.getMovie(id) }
             if (gen != loadGen) return@launch
+            _openingCard.value = null
             val detail = result.getOrNull()
             if (detail != null) {
                 _state.value = MovieDetailState.Loaded(detail)
@@ -70,7 +81,7 @@ class MovieDetailStore(private val apiClient: TvApiClient) {
     }
 
     /** R207 — retry from the Error state's Retry button. */
-    fun retry() { currentId?.let { load(it) } }
+    fun retry() { currentId?.let { load(it, openedWith) } }
 
     /** R351 (FR-R351-7) — re-entry keeps what is on screen until the new answers arrive; a failed read keeps it. */
     private fun refreshSilent(id: String) {
@@ -122,6 +133,13 @@ class SeriesDetailStore(private val apiClient: TvApiClient) {
     /** R350 (FR-R350-2) — the control that started playback, so Back from the player lands on it. */
     val returnTarget = SeriesReturnTarget()
     private val _state = MutableStateFlow<SeriesDetailState>(SeriesDetailState.Loading)
+    /**
+     * DEB-5839 (FR-4) — the tile this page was opened from, verbatim, for the header of a FIRST load only. Cleared the
+     * moment the detail (or an error) lands, so it can never outlive the answer it stands in for.
+     */
+    private val _openingCard = MutableStateFlow<MediaCard?>(null)
+    val openingCard: StateFlow<MediaCard?> = _openingCard.asStateFlow()
+    private var openedWith: MediaCard? = null
     val state: StateFlow<SeriesDetailState> = _state.asStateFlow()
     /** R84: phase-2 overlay — empty until /api/tv/playstate returns after the catalog paint. */
     private val _playstateOverlay = MutableStateFlow<Map<String, CardPlayState>>(emptyMap())
@@ -133,16 +151,19 @@ class SeriesDetailStore(private val apiClient: TvApiClient) {
     private var loadGen = 0
 
     /** R40/R84: re-entry with the same id keeps the cached detail and refreshes silently (no flash). */
-    fun load(id: String) {
+    fun load(id: String, card: MediaCard? = null) {
         if (currentId == id && _state.value is SeriesDetailState.Loaded) { refreshSilent(id); return }
         currentId = id
         loadJob?.cancel()
         val gen = ++loadGen
         _playstateOverlay.value = emptyMap()
+        openedWith = card
+        _openingCard.value = card
         _state.value = SeriesDetailState.Loading
         loadJob = scope.launch {
             val result = runCatching { apiClient.getSeries(id) }
             if (gen != loadGen) return@launch
+            _openingCard.value = null
             val detail = result.getOrNull()
             if (detail != null) {
                 _state.value = SeriesDetailState.Loaded(detail)
@@ -162,7 +183,7 @@ class SeriesDetailStore(private val apiClient: TvApiClient) {
     }
 
     /** R207 — retry from the Error state's Retry button. */
-    fun retry() { currentId?.let { load(it) } }
+    fun retry() { currentId?.let { load(it, openedWith) } }
 
     /**
      * R351 (FR-R351-7) — re-entry keeps the page as it is until the new answers arrive. It used to empty the overlay

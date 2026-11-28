@@ -97,6 +97,8 @@ import dev.jellystructure.shared.tv.MovieDetail
 fun MovieDetailScreen(
     itemId: String,
     store: MovieDetailStore,
+    /** DEB-5839 (FR-4) — the tile this page was opened from; the store holds it for the first load only. */
+    card: MediaCard? = null,
     onBack: () -> Unit,
     // R181/R180: the whole detail (not just the card) so the caller can thread seriesId +
     // originalLanguage into Dest.Player for per-series remembered tracks + the "Dubbed" badge.
@@ -121,7 +123,7 @@ fun MovieDetailScreen(
     onAnotherFocused: () -> Unit = {},
 ) {
     val colors = RaviloTheme.colors
-    LaunchedEffect(itemId) { store.load(itemId) }
+    LaunchedEffect(itemId) { store.load(itemId, card) }
     val state by store.state.collectAsState()
     // R84: phase-2 overlay — empty map until /api/tv/playstate returns after the catalog paint
     val overlay by store.playstateOverlay.collectAsState()

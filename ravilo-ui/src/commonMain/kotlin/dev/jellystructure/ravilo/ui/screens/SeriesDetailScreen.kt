@@ -119,6 +119,8 @@ import dev.jellystructure.shared.tv.groupedByFile
 fun SeriesDetailScreen(
     itemId: String,
     store: SeriesDetailStore,
+    /** DEB-5839 (FR-4) — the tile this page was opened from; the store holds it for the first load only. */
+    card: MediaCard? = null,
     onBack: () -> Unit,
     onPlay: (EpisodePlayContext) -> Unit,
     onRelatedSelect: (MediaCard) -> Unit,
@@ -140,7 +142,7 @@ fun SeriesDetailScreen(
     onAnotherFocused: () -> Unit = {},
 ) {
     val colors = RaviloTheme.colors
-    LaunchedEffect(itemId) { store.load(itemId) }
+    LaunchedEffect(itemId) { store.load(itemId, card) }
     val state by store.state.collectAsState()
     // R84: phase-2 overlay — empty map until /api/tv/playstate returns after the catalog paint
     val overlay by store.playstateOverlay.collectAsState()

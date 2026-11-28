@@ -325,8 +325,9 @@ internal sealed class Dest {
     data class UpcomingDetail(val id: String, val displayName: String) : Dest()
     // DEB-3984 (FR-12) — [surpriseShown] is every id Surprise me has shown in this run, this page's own last; empty on an
     // ordinary detail page. It is what makes the SURPRISE kicker and *Another one* appear, and what Another one excludes.
-    data class MovieDetail(val itemId: String, val displayName: String, val surpriseShown: List<String> = emptyList()) : Dest()
-    data class SeriesDetail(val itemId: String, val displayName: String, val surpriseShown: List<String> = emptyList()) : Dest()
+    /** DEB-5839 (FR-4) — [card] is the tile it was opened from, a client value that never crosses the wire; null for a deep link, Surprise me or Search. */
+    data class MovieDetail(val itemId: String, val displayName: String, val surpriseShown: List<String> = emptyList(), val card: MediaCard? = null) : Dest()
+    data class SeriesDetail(val itemId: String, val displayName: String, val surpriseShown: List<String> = emptyList(), val card: MediaCard? = null) : Dest()
     data class Player(
         val itemId: String,
         val title: String,
@@ -1092,8 +1093,8 @@ fun RaviloApp(
         // Coil so it's a cache hit (no late fade) when the detail composes, then push the right Dest.
         fun openDetail(card: MediaCard, displayName: String) {
             prefetchImage(imageCtx, apiClient.baseUrl, card.backdropUrl)
-            if (card.kind == MediaKind.SERIES) push(Dest.SeriesDetail(card.id, displayName))
-            else push(Dest.MovieDetail(card.id, displayName))
+            if (card.kind == MediaKind.SERIES) push(Dest.SeriesDetail(card.id, displayName, card = card))
+            else push(Dest.MovieDetail(card.id, displayName, card = card))
         }
 
         // R190 §A — OK on a cast/crew face opens the browse page seeded to that person's filmography
@@ -3013,6 +3014,7 @@ fun RaviloApp(
                 MovieDetailScreen(
                     itemId = dest.itemId,
                     store = store,
+                    card = dest.card,
                     onBack = { pop() },
                     onPlay = { detail -> playOrAsk("film", detail.card.id, detail.card.title) {
                         // R245 (FR-R245-4) — while a cast session is connected, Play casts; the server
@@ -3060,6 +3062,7 @@ fun RaviloApp(
                 SeriesDetailScreen(
                     itemId = dest.itemId,
                     store = store,
+                    card = dest.card,
                     onBack = { pop() },
                     onPlay = { ctx -> playOrAsk("episode", ctx.episodeId, ctx.episodeTitle) {
                         if (castActive?.connectedForVideo == true) {
