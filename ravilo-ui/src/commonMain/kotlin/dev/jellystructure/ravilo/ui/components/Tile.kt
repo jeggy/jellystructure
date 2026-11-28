@@ -37,6 +37,8 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -263,29 +265,11 @@ fun Tile(
                     // request ~640px so Coil decodes ~0.9 MB, not ~8.3 MB. POSTER/SQUARE already use
                     // poster-type proxy images sized to ~320px, so they pass null (backend default).
                     requestedWidth = tileRequestedWidth(variant),
+                    // DEB-5837 (FR-6): a failed load waits for its retry showing the title, as a tile with no artwork does.
+                    onFailed = { TileTitleFallback(title, fallbackHue, colors.surface, Modifier.matchParentSize()) },
                 )
             } else {
-                // HSL-style gradient fallback derived from title hash
-                val fallbackGradient = remember(fallbackHue, colors.surface) {
-                    Brush.verticalGradient(
-                        listOf(
-                            Color.hsl(fallbackHue.toFloat(), 0.38f, 0.22f),
-                            colors.surface,
-                        )
-                    )
-                }
-                Box(
-                    modifier = Modifier.matchParentSize().background(fallbackGradient),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        text = title.take(2).uppercase(),
-                        color = Color.White.copy(alpha = 0.7f),
-                        fontSize = 32.sp,
-                        fontWeight = FontWeight.Bold,
-                        fontFamily = sora,
-                    )
-                }
+                TileTitleFallback(title, fallbackHue, colors.surface, Modifier.matchParentSize())
             }
 
             // R142: dim a watched poster (~brightness .62 via a dark scrim); un-dims on focus.
@@ -554,5 +538,27 @@ private fun CornerBadgeContent(
             Spacer(Modifier.width(4.dp))
             Text(text = upcomingBadgeText(upcomingLabel.orEmpty(), upcomingAirUtc), color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold, fontFamily = sora, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
+    }
+}
+
+/** The title on its hue gradient: a tile with no artwork, and one whose artwork failed and waits for a retry (DEB-5837, FR-6). */
+@Composable
+private fun TileTitleFallback(title: String, hue: Long, surface: Color, modifier: Modifier) {
+    val gradient = remember(hue, surface) {
+        Brush.verticalGradient(listOf(Color.hsl(hue.toFloat(), 0.38f, 0.22f), surface))
+    }
+    // Decorative: the tile already exposes its title to accessibility.
+    Box(modifier = modifier.background(gradient).clearAndSetSemantics {}, contentAlignment = Alignment.Center) {
+        Text(
+            text = title,
+            color = Color.White.copy(alpha = 0.7f),
+            fontSize = 16.sp,
+            fontWeight = FontWeight.Bold,
+            fontFamily = Sora,
+            textAlign = TextAlign.Center,
+            maxLines = 3,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(8.dp),
+        )
     }
 }

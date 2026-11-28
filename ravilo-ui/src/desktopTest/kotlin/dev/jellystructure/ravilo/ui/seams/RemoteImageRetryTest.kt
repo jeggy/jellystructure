@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.seams
 
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
@@ -8,6 +9,7 @@ import androidx.compose.ui.graphics.toPixelMap
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.ExperimentalTestApi
 import androidx.compose.ui.test.captureToImage
+import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.runComposeUiTest
 import androidx.compose.ui.unit.dp
@@ -60,6 +62,25 @@ class RemoteImageRetryTest {
             waitUntil(timeoutMillis = 30_000) { calls.get() >= 3 && centre().red > 0.9f }
             assertEquals(3, calls.get(), "two failures and the retry that worked — no more loads than that")
             assertTrue(centre().blue < 0.1f, "the placeholder is gone")
+        }
+    }
+
+    @Test fun `the onFailed slot shows while the load has failed and goes when the retry succeeds`() {
+        failFirst = 1
+        SingletonImageLoader.setUnsafe { ctx ->
+            ImageLoader.Builder(ctx).serviceLoaderEnabled(false).components { add(FlakyFactory()) }.build()
+        }
+        runComposeUiTest {
+            setContent {
+                RemoteImage(
+                    url = "https://artwork.test/slot.png", contentDescription = null,
+                    modifier = Modifier.size(40.dp), placeholderColor = Color.Blue,
+                    onFailed = { Box(Modifier.testTag("failed").size(10.dp)) },
+                )
+            }
+            waitUntil(timeoutMillis = 30_000) { onAllNodesWithTag("failed").fetchSemanticsNodes().isNotEmpty() }
+            waitUntil(timeoutMillis = 30_000) { calls.get() >= 2 && onAllNodesWithTag("failed").fetchSemanticsNodes().isEmpty() }
+            assertEquals(2, calls.get(), "one failure and the retry that worked")
         }
     }
 }

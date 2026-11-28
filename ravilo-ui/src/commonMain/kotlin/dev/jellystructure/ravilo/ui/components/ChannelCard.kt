@@ -262,6 +262,18 @@ fun ChannelCard(
                 ),
         )
 
+        val nameText = @Composable {
+            Text(
+                text = name,
+                color = if (focused) colors.text else colors.textSecondary,
+                fontSize = ChannelButtonSpec.TEXT_SIZE_SP.sp,
+                fontWeight = FontWeight.SemiBold,
+                textAlign = TextAlign.Center,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(ChannelButtonSpec.TEXT_PAD_DP.dp),
+            )
+        }
         if (logoUrl != null) {
             RemoteImage(
                 url = logoUrl,
@@ -276,18 +288,11 @@ fun ChannelCard(
                     )
                 else
                     Modifier.fillMaxSize(),
+                // DEB-5837 (FR-6): a failed logo waits for its retry showing the name, as a channel with no logo does.
+                onFailed = nameText,
             )
         } else {
-            Text(
-                text = name,
-                color = if (focused) colors.text else colors.textSecondary,
-                fontSize = ChannelButtonSpec.TEXT_SIZE_SP.sp,
-                fontWeight = FontWeight.SemiBold,
-                textAlign = TextAlign.Center,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(ChannelButtonSpec.TEXT_PAD_DP.dp),
-            )
+            nameText()
         }
         }
     }

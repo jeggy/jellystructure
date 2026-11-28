@@ -1,5 +1,6 @@
 package dev.jellystructure.ravilo.ui.seams
 
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.runtime.Composable
@@ -52,6 +53,9 @@ fun RemoteImage(
     /** R308 (FR-R308-3) — e.g. a source-in tint that re-inks a logo the server judged invisible on its
      *  plate. Null = draw the image as it is (every caller before R308). */
     colorFilter: ColorFilter? = null,
+    /** DEB-5837 (FR-6) — drawn over the placeholder colour while a load has failed and waits for its retry;
+     *  a retry that succeeds crossfades the image over it. Null = today's placeholder. */
+    onFailed: (@Composable () -> Unit)? = null,
 ) {
     // R85: relative paths (e.g. /api/tv/image/{id}/poster) are resolved against the server base URL.
     // Absolute TMDB/Jellyfin URLs (https://…) pass through unchanged.
@@ -92,11 +96,11 @@ fun RemoteImage(
     val solid = remember(fill) { ColorPainter(fill) }
     val placeholder = if (placeholderColor != null || contentScale != ContentScale.Fit) solid else null
 
-    key(attempt) {
+    @Composable fun image(m: Modifier) = key(attempt) {
         AsyncImage(
             model = request,
             contentDescription = contentDescription,
-            modifier = modifier,
+            modifier = m,
             contentScale = contentScale,
             alignment = alignment,
             placeholder = placeholder,
@@ -107,6 +111,14 @@ fun RemoteImage(
             onError = { e -> if (e.result.throwable !is CancellationException) { failures++; failed = true } },
             onSuccess = { failures = 0 },
         )
+    }
+    if (onFailed == null) {
+        image(modifier)
+    } else {
+        Box(modifier) {
+            image(Modifier.matchParentSize())
+            if (failed) onFailed()
+        }
     }
 }
 
