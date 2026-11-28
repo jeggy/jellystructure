@@ -314,3 +314,8 @@ dependency requests only what changed.
 - Tests in CI: `scripts/test-gradle-dep-seed.sh` (the seed script's cases and the wiring of all three Dockerfiles, compose,
   `ci.yml` and `publish.yml`). The export-then-save path runs only on `main`, so it is first exercised by the Publish run
   of the commit that lands this; Acceptance 4's cache-key condition covers it.
+- **First `main` run, 2026-11-28 (DEB-5992): the save worked and the restore never found it.** Run 46098150460 saved
+  `gradle-dep-seed-<hash>` (1.14 GiB), and the next three `ci / e2e` runs on `main` all logged `Cache not found for input keys`
+  for that very key. `actions/cache` hashes the *path* into the cache version, and the save named `/tmp/gradle-dep-seed-new`
+  while every restore names `/tmp/gradle-dep-seed`. The export is now moved onto `/tmp/gradle-dep-seed` before the save, and
+  `scripts/test-gradle-dep-seed.sh` fails when the two paths differ. Restoring the FR-8 promise, not a change to it.

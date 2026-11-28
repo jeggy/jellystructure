@@ -390,13 +390,19 @@ jobs:
       - name: Did the export write a set
         id: gradle-dep-export
         if: always()
-        run: if [ -d /tmp/gradle-dep-seed-new/modules-2/files-2.1 ]; then echo "written=true" >> "$GITHUB_OUTPUT"; fi
+        # actions/cache hashes the PATH into the cache version, so a set saved from another directory than the one a restore
+        # names is never found (run 46105231827 restored nothing from a key that existed). Put the export where the restore reads.
+        run: |
+          if [ -d /tmp/gradle-dep-seed-new/modules-2/files-2.1 ]; then
+            rm -rf /tmp/gradle-dep-seed && mv /tmp/gradle-dep-seed-new /tmp/gradle-dep-seed
+            echo "written=true" >> "$GITHUB_OUTPUT"
+          fi
       - name: Carry the Gradle dependency set
         if: always() && steps.gradle-dep-export.outputs.written == 'true'
         continue-on-error: true
         uses: actions/cache/save@v4
         with:
-          path: /tmp/gradle-dep-seed-new
+          path: /tmp/gradle-dep-seed
           key: gradle-dep-seed-${{ hashFiles('gradle/libs.versions.toml', 'gradle/wrapper/gradle-wrapper.properties', 'settings.gradle.kts') }}
 
       - name: Upload Playwright report

@@ -43,6 +43,7 @@ done
 check "publish.yml hands the restored set to the image build" "grep -q 'gradle-dep-seed=/tmp/gradle-dep-seed' .github/workflows/publish.yml && grep -q 'actions/cache/restore@v4' .github/workflows/publish.yml"
 check "publish.yml never writes the set" "! grep -q 'actions/cache/save' .github/workflows/publish.yml"
 check "ci.yml saves the set only on main" "grep -q \"refs/heads/main\" .github/workflows/ci.yml && grep -q 'export-gradle-dep-seed.sh' .github/workflows/ci.yml"
+check "ci.yml saves the set from the directory it restores it into (the cache version hashes the path)" "awk '/actions\\/cache\\/save@v4/{f=1} f&&/path:/{print \$2; exit}' .github/workflows/ci.yml | grep -qx /tmp/gradle-dep-seed"
 check "a pull request restores the set and never writes it" "awk '/export-gradle-dep-seed.sh/{print prev} {prev=\$0}' .github/workflows/ci.yml | grep -q 'refs/heads/main'"
 
 exit $fail
