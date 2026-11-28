@@ -43,4 +43,21 @@ class PlayerEndClosesTest {
         assertTrue(backLeavesAtEnd(ended = true))
         assertFalse(backLeavesAtEnd(ended = false))
     }
+
+    // DEB-5841 (FR-1) — a finished film opens the after-film page unless it came from a download or is known to have no picks.
+    @Test fun `DEB-5841 FR-1 a film played from the server opens the page`() {
+        assertTrue(filmEndOpensPage(isFilm = true, fromDownload = false, picksKnownEmpty = false))
+    }
+
+    @Test fun `DEB-5841 FR-1 an episode, a music video and a trailer are not films`() {
+        assertFalse(filmEndOpensPage(isFilm = false, fromDownload = false, picksKnownEmpty = false))
+    }
+
+    @Test fun `DEB-5841 FR-1 a film played from a download closes as before`() {
+        assertFalse(filmEndOpensPage(isFilm = true, fromDownload = true, picksKnownEmpty = false))
+    }
+
+    @Test fun `DEB-5841 FR-3 a film whose picks are known empty closes as before`() {
+        assertFalse(filmEndOpensPage(isFilm = true, fromDownload = false, picksKnownEmpty = true))
+    }
 }

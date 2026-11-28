@@ -47,6 +47,8 @@ data class ResumeRecord(
     val shuffle: Boolean = false,
     /** DEB-2939 (FR-13) — the session was a newest-first episode: a restore must not grow a credits card. */
     val nothingFollows: Boolean = false,
+    /** DEB-5841 (FR-1) — the session was a film: a restore still opens the after-film page at its end. */
+    val isFilm: Boolean = false,
 )
 
 /** Open question 2 (owner, 2026-09-24): under 30 minutes away ⇒ playing; longer ⇒ paused at the position. */

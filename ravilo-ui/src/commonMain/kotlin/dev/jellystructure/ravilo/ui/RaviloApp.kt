@@ -385,6 +385,12 @@ internal sealed class Dest {
         val nothingFollows: Boolean = false,
         /** DEB-4072 (DEB-3995 FR-16) — played from the phone's own storage (the Downloads page): no server start, heartbeat, stop or restream; progress is queued. */
         val fromDownload: Boolean = false,
+        /** DEB-5841 (FR-1) — a play of a film (`MediaKind.MOVIE`): at its end the player may open the after-film page. Set at every
+         *  film start; an episode, a music video and a trailer never set it. Client-side. */
+        val isFilm: Boolean = false,
+        /** DEB-5841 (FR-3) — the related titles the film's own page already held, carried so the after-film page needs no fetch.
+         *  Null = unknown (the page fetches). Client-side only: never saved in the resume record. */
+        val related: List<MediaCard>? = null,
     ) : Dest()
     data class Settings(val displayName: String) : Dest()
     // R304 (FR-R304-1) — the phone's Profile PAGE: the fifth bottom-bar item, on the stack like the other
@@ -884,6 +890,7 @@ fun RaviloApp(
                     // at 5 %, a shuffled entry still leaves no resume point. The plan itself is not saved.
                     startOver = record.startOver, shuffled = record.shuffle,
                     nothingFollows = record.nothingFollows,   // DEB-2939
+                    isFilm = record.isFilm,   // DEB-5841
                 ))
             } else {
                 playerResume.clear()   // a record with nowhere to go (signed out, too old) is dropped, not kept
@@ -1246,6 +1253,7 @@ fun RaviloApp(
                             serverQueueAt = handover?.at ?: 0,
                             serverSessionId = handover?.sessionId,
                             shuffledNextUp = env.shuffled,
+                            isFilm = env.kind == "movie",   // DEB-5841 (FR-1) — a session hand-over of a film
                         )
                         // DEB-4767 (FR-R370-9) — over the app's own player the push replaces it; it is not stacked above it.
                         if (playPushReplacesTop(stack.lastOrNull())) replaceTop(playerDest) else push(playerDest)
@@ -1296,7 +1304,7 @@ fun RaviloApp(
                         // (the server answers 204 when this TV was measured within 24 h; nothing waits on it).
                         configScope.launch { apiClient.probe() }
                         push(Dest.Player(itemId = play.itemId, title = play.title, kicker = play.kicker, displayName = name, seriesId = play.itemId,
-                            startAtMs = play.positionMs.takeIf { it > 0 }))
+                            startAtMs = play.positionMs.takeIf { it > 0 }, isFilm = true))   // DEB-5841 — Cast Connect carries films
                     }
                     // R380 (FR-R380-1/2) — a music queue plays on the TV's own engine, under this viewer, and Now playing opens.
                     is dev.jellystructure.ravilo.ui.seams.CastConnectMusic -> with(dev.jellystructure.ravilo.ui.music.MusicCast) {
@@ -2687,7 +2695,8 @@ fun RaviloApp(
                             // A series needs episode-resolution (resume point + rail) that only the
                             // detail screen has, so Play opens it; a movie plays directly.
                             card.kind == MediaKind.SERIES -> push(Dest.SeriesDetail(card.id, dest.displayName))
-                            else -> push(Dest.Player(card.id, card.title, displayName = dest.displayName, seriesId = card.id, posterUrl = card.posterUrl))  // R192
+                            else -> push(Dest.Player(card.id, card.title, displayName = dest.displayName, seriesId = card.id, posterUrl = card.posterUrl,
+                                isFilm = card.kind == MediaKind.MOVIE))  // R192; DEB-5841 (FR-1)
                         }
                     },
                     onChannelSelect = { ch -> push(Dest.ChannelView(ch, dest.displayName)) },
@@ -2992,7 +3001,7 @@ fun RaviloApp(
                 }
                 DiscoverDetailScreen(
                     store = store,
-                    onWatchMovie = { itemId, title -> push(Dest.Player(itemId, title, displayName = dest.displayName, seriesId = itemId)) },
+                    onWatchMovie = { itemId, title -> push(Dest.Player(itemId, title, displayName = dest.displayName, seriesId = itemId, isFilm = true)) },   // DEB-5841 (FR-1)
                     onGoToSeries = { itemId -> push(Dest.SeriesDetail(itemId, dest.displayName)) },
                     onBack = { pop() },
                 )
@@ -3038,6 +3047,7 @@ fun RaviloApp(
                             segments = detail.segments,  // Phase 150
                             posterUrl = detail.card.posterUrl,  // R192
                             logoUrl = detail.logoUrl, logoInk = detail.logoInk,  // R303 — a film shows its own logo, no name fallback
+                            isFilm = true, related = detail.related,   // DEB-5841 (FR-1, FR-3) — the page's own list rides along
                         ))
                     } },
                     onRelatedSelect = { openDetail(it, dest.displayName) },
@@ -3153,6 +3163,14 @@ fun RaviloApp(
                 CompositionLocalProvider(dev.jellystructure.ravilo.ui.screens.LocalStillWatching provides stillWatchingTracker,   // DEB-5843 (FR-3) — the app's, so a binge shares it across replaceTop
                     dev.jellystructure.ravilo.ui.screens.LocalShuffledNextUp provides (dest.shufflePlan != null || dest.shuffledNextUp),
                     dev.jellystructure.ravilo.ui.screens.LocalNothingFollows provides dest.nothingFollows,
+                    // DEB-5841 (FR-1) — a finished film closes to the after-film page when it may have picks; until that page exists it is the same close.
+                    dev.jellystructure.ravilo.ui.screens.LocalFilmEnd provides dev.jellystructure.ravilo.ui.screens.FilmEnd(
+                        isFilm = dest.isFilm,
+                        onFilmEnded = if (dev.jellystructure.ravilo.ui.screens.filmEndOpensPage(
+                                dest.isFilm, dest.fromDownload,
+                                picksKnownEmpty = dest.related?.let { dev.jellystructure.ravilo.ui.screens.postFilmPicks(it, dest.itemId).isEmpty() } ?: false,
+                            )) { { playerResume.clear(); pop() } } else null,
+                    ),
                     // DEB-4072 (FR-16) — casting needs the server; from a download the cast button is absent, never broken.
                     LocalCast provides (if (dest.fromDownload) null else LocalCast.current)) {
                 PlayerScreen(
@@ -3212,6 +3230,7 @@ fun RaviloApp(
                                 segments = dev.jellystructure.shared.tv.TvSegmentMarkers(),
                                 // The hand-over's start position belongs to the entry it was sent for, not to this one.
                                 startAtMs = null,
+                                isFilm = false, related = null,   // DEB-5841 — the next entry of a queue is not the film that was opened
                             ))
                             return@navigate
                         }

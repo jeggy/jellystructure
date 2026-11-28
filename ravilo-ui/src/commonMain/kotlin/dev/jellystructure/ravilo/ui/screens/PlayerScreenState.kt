@@ -71,7 +71,26 @@ internal data class PlayerScreenInputs(
     val nothingFollows: Boolean,
     val haptics: HapticFeedback,
     val castLink: CastLinkState,
+    /** DEB-5841 (FR-1) — whether this play is a film and where a finished one goes; see [FilmEnd]. */
+    val film: FilmEnd,
 )
+
+/**
+ * DEB-5841 (FR-1) — the film's end, handed in by the host through [LocalFilmEnd] (a CompositionLocal, not a parameter: see
+ * PlayerScreen's note on the dex register cliff). [isFilm] is a play of a `MediaKind.MOVIE`. [onFilmEnded] is set only when
+ * [filmEndOpensPage] says a finished film leaves for the after-film page, and null otherwise: then `skipCredits()` closes as before.
+ */
+internal class FilmEnd(val isFilm: Boolean = false, val onFilmEnded: (() -> Unit)? = null)
+
+internal val LocalFilmEnd = androidx.compose.runtime.staticCompositionLocalOf { FilmEnd() }
+
+/**
+ * DEB-5841 (FR-1) — does a finished film open the after-film page instead of closing? Only a film that was played from the
+ * server (a download has no server to ask, FR-1/scope) and whose picks are not already known to be empty (FR-3: no picks, no
+ * page — the player closes as today). A film whose list is not yet known opens the page; the page makes the fetch.
+ */
+internal fun filmEndOpensPage(isFilm: Boolean, fromDownload: Boolean, picksKnownEmpty: Boolean): Boolean =
+    isFilm && !fromDownload && !picksKnownEmpty
 
 /**
  * R230 (FR-R230-1) and DEB-2939 (FR-13) — whether the credits card may rise before the file ends (at the credits marker, or
@@ -466,7 +485,9 @@ internal class PlayerScreenState(initial: PlayerScreenInputs) {
     fun skipCredits() {
         nextUpVisible = false
         if (dev.jellystructure.shared.tv.playbackFinished(positionMs, durationMs, segments.creditsStartMs)) store.markWatched(itemId)   // R347
-        onBack()
+        // DEB-5841 (FR-1) — a finished film leaves for the after-film page when the host says it has one; the same close otherwise.
+        val filmEnded = inputs.film.onFilmEnded
+        if (filmEnded != null) filmEnded() else onBack()
     }
 
     /** The credits card's primary action, by mode. */
@@ -1265,6 +1286,7 @@ internal class PlayerScreenState(initial: PlayerScreenInputs) {
             displayName = inputs.resume.record?.displayName ?: "",
             startOver = store.startOver, shuffle = store.shuffle,   // R343
             nothingFollows = inputs.nothingFollows,   // DEB-2939
+            isFilm = inputs.film.isFilm,   // DEB-5841
         ))
         store.stopSession(enginePos, if (positionIsFresh) durationMs else 0L)
     }
