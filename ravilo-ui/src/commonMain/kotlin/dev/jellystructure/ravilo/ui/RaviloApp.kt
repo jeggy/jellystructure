@@ -1653,6 +1653,15 @@ fun RaviloApp(
         val updateTop = stack.lastOrNull()
         val updatePlaying = updateTop is Dest.Player || updateTop is Dest.LiveTv || updateTop is Dest.Remote || musicState.playing || musicLinkedNow
         LaunchedEffect(updatePlaying) { dev.jellystructure.ravilo.ui.components.SoftwareUpdate.setPlaying(updatePlaying) }
+        // DEB-5851 (FR-2) — Android TV, the phone and Linux ask the server's version once a day; never over a play. The Mac
+        // has its own check (R386) and the web its service worker (FR-8).
+        val clientUpdatePlayer = remember { kotlinx.coroutines.flow.MutableStateFlow(false) }
+        LaunchedEffect(updatePlaying) { clientUpdatePlayer.value = updatePlaying }
+        if (!isMacPlatform && !isWebPlatform) {
+            LaunchedEffect(apiClient) {
+                dev.jellystructure.ravilo.ui.components.ClientUpdate.run(apiClient, clientUpdatePlayer) { Clock.System.now().toEpochMilliseconds() }
+            }
+        }
         val sessionOverMusic = musicLinkedNow &&
             dev.jellystructure.ravilo.ui.sessions.touchedTakesBar(sessionsNow.sessions, touchedSession, filmsMode = !inMusic, linkedPlace = musicLinkedPlace)
         // FR-R322-10 — the music mini bar: wherever a song is loaded, except the Playing tab and anywhere a picture plays.

@@ -154,6 +154,9 @@ fun HomeScreen(
     val live = dev.jellystructure.ravilo.ui.LocalLiveConfig.current
     LaunchedEffect(live) { live?.collect { store.refresh(silent = true) } }
 
+    // DEB-5851 (FR-2) — the quiet update check's first ask waits for this.
+    LaunchedEffect(state is HomeState.Loaded) { if (state is HomeState.Loaded) dev.jellystructure.ravilo.ui.components.ClientUpdate.homeDrawn() }
+
     // DEB-2349 (FR-5) — the loaded feed (or the error) fades in once over the loading shell; a feed from R212's snapshot does not.
     Box(modifier = Modifier.fillMaxSize().background(colors.background).fadeInOnLoad(loading = state is HomeState.Loading)) {
         when (val s = state) {

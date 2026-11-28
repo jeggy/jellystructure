@@ -34,6 +34,10 @@
     "note": "R263 (FR-R263-8) — the install card, iPhone/iPad in a browser tab (and Android, via the CTA)."
   },
   "update.toast": "Ravilo updated · Reload",
+  "update.available": {"text": "Ravilo {version} is available", "note": "DEB-5851 FR-12 — the quiet line; {version} is MAJOR.MINOR. Draft da/fo."},
+  "update.available_play": {"text": "Update it in the Google Play Store.", "note": "DEB-5851 FR-4 — second line, Android installed from Google Play. Draft da/fo."},
+  "update.available_download": {"text": "Download it from the Ravilo releases page.", "note": "DEB-5851 FR-4 — second line, an Android download or the Linux .flatpak. Draft da/fo."},
+  "update.available_samsung": {"text": "Update it from Ravilo on your Android phone: Profile ▸ Samsung TV.", "note": "DEB-5851 FR-11 — second line on a Samsung TV. Draft da/fo."},
   "install.step_share": "Share",
   "install.step_add": "Add to Home Screen",
   "install.signin_again": "You'll sign in again in the installed app.",

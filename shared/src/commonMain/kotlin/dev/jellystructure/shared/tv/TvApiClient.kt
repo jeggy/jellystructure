@@ -11,6 +11,8 @@ import kotlinx.coroutines.launch
 import dev.jellystructure.shared.RaviloHeaders
 import dev.jellystructure.shared.raviloVersion
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 
 // R146: ids per /api/tv/playstate request. 100 × ~33 chars ≈ 3.3 KB — well under the Ktor CIO
 // 8192-char request-line limit, so even a 261-episode series never 400s the play-state lookup.
@@ -109,6 +111,16 @@ class TvApiClient(
             else -> { r.assertSuccess(); throw TvApiError.Http(r.status.value, r.bodyAsText()) }
         }
     }
+
+    /**
+     * DEB-5851 (FR-2) — the `version` field of `GET /api/health` (public, no token), or null when the server cannot be
+     * asked or says nothing. A failed read is null, never an error: the update notice keeps its last answer.
+     */
+    suspend fun serverVersion(): String? = runCatching {
+        val r = client.get("$baseUrl/api/health") { identify() }
+        r.assertSuccess()
+        json.parseToJsonElement(r.bodyAsText()).jsonObject["version"]?.jsonPrimitive?.content?.trim()?.ifBlank { null }
+    }.getOrElse { if (it is kotlinx.coroutines.CancellationException) throw it else null }
 
     // ─── Single sign-on (DEB-2233, FR-8, FR-9, FR-11) — all three are open, no token ─────────────────────────────────
 
