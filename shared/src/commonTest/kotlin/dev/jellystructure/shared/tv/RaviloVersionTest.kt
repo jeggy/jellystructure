@@ -87,3 +87,55 @@ class RaviloVersionTest {
     }
 }
 
+
+/** DEB-5851 FR-1 and FR-3 — the quiet "update available" rule. */
+class RaviloUpdateNoticeTest {
+    private val hour = 3_600_000L
+
+    @Test
+    fun `a build between releases counts as its release`() {
+        assertEquals(RaviloVersion(1, 73), raviloUpdateTarget("1.72", "v1.73-81-g921645877"))
+        assertNull(raviloUpdateTarget("1.73", "v1.73-81-g921645877"))
+    }
+
+    @Test
+    fun `nothing for a dev build, an unknown server, another major or an older server`() {
+        assertNull(raviloUpdateTarget("1.72-5-gabcdef12", "v1.73"))
+        assertNull(raviloUpdateTarget("dev", "v1.73"))
+        assertNull(raviloUpdateTarget(null, "v1.73"))
+        assertNull(raviloUpdateTarget("1.72", null))
+        assertNull(raviloUpdateTarget("1.72", ""))
+        assertNull(raviloUpdateTarget("1.72", "dev"))
+        assertNull(raviloUpdateTarget("1.72", "v2.0"))
+        assertNull(raviloUpdateTarget("1.72", "v1.71"))
+        assertEquals(RaviloVersion(1, 73), raviloUpdateTarget("v1.72", "1.73"))
+    }
+
+    @Test
+    fun `the notice waits 48 hours from the first sighting`() {
+        val first = raviloUpdateNotice("1.72", "v1.73-1-gabcdef12", null, 1_000)
+        assertNull(first.release)
+        assertEquals(UpdateFirstSeen(RaviloVersion(1, 73), 1_000), first.record)
+        val almost = raviloUpdateNotice("1.72", "v1.73", first.record, 1_000 + 47 * hour)
+        assertNull(almost.release)
+        assertEquals(first.record, almost.record)
+        val due = raviloUpdateNotice("1.72", "v1.73", first.record, 1_000 + 48 * hour)
+        assertEquals(RaviloVersion(1, 73), due.release)
+    }
+
+    @Test
+    fun `a larger release restarts the clock`() {
+        val old = UpdateFirstSeen(RaviloVersion(1, 73), 0)
+        val n = raviloUpdateNotice("1.72", "v1.74", old, 100 * hour)
+        assertNull(n.release)
+        assertEquals(UpdateFirstSeen(RaviloVersion(1, 74), 100 * hour), n.record)
+    }
+
+    @Test
+    fun `an app that reached the release clears the record`() {
+        val old = UpdateFirstSeen(RaviloVersion(1, 73), 0)
+        val n = raviloUpdateNotice("1.73", "v1.73-2-gabcdef12", old, 100 * hour)
+        assertNull(n.release)
+        assertNull(n.record)
+    }
+}

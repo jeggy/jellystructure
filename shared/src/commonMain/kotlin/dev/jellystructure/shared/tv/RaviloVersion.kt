@@ -74,3 +74,36 @@ fun raviloServerFloor(server: String?): RaviloVersion? {
     val m = FLOOR_RE.matchEntire(server?.trim() ?: return null) ?: return null
     return RaviloVersion(m.groupValues[1].toInt(), m.groupValues[2].toInt())
 }
+
+/** DEB-5851 FR-3 — how long a newer release must have been seen on this device before the notice shows. */
+const val RAVILO_UPDATE_HOLD_MS: Long = 48L * 60 * 60 * 1000
+
+/** DEB-5851 FR-3 — the release first seen newer than this app, and when this device first saw it. */
+data class UpdateFirstSeen(val release: RaviloVersion, val atMs: Long)
+
+/** DEB-5851 — [release] is the notice to show, or null while nothing shows; [record] is what to keep written down. */
+data class UpdateNotice(val release: RaviloVersion?, val record: UpdateFirstSeen?)
+
+/**
+ * DEB-5851 FR-1 — the release a plain-release app [app] is behind, read from the server's `/api/health` [server]
+ * version through [raviloServerFloor]: only when both are known, [app] is a plain release (a leading `v` ignored),
+ * the MAJOR matches and the server's release is newer. A dev or preview build never gets one.
+ */
+fun raviloUpdateTarget(app: String?, server: String?): RaviloVersion? {
+    val a = parseRaviloRelease(app?.trim()?.removePrefix("v")) ?: return null
+    val s = raviloServerFloor(server) ?: return null
+    return s.takeIf { it.major == a.major && it > a }
+}
+
+/**
+ * DEB-5851 FR-1 and FR-3 — one check's outcome. A newer release is written down with the time it was first seen
+ * ([seen] is what the device holds); the notice shows once the same release has been held [RAVILO_UPDATE_HOLD_MS].
+ * A larger release restarts the clock; an app that has reached it, or a server that no longer reports one, clears
+ * the record. A failed check never calls this: it keeps the last answer.
+ */
+fun raviloUpdateNotice(app: String?, server: String?, seen: UpdateFirstSeen?, nowMs: Long): UpdateNotice {
+    val target = raviloUpdateTarget(app, server) ?: return UpdateNotice(null, null)
+    val record = seen?.takeIf { it.release == target } ?: UpdateFirstSeen(target, nowMs)
+    val shown = nowMs - record.atMs >= RAVILO_UPDATE_HOLD_MS
+    return UpdateNotice(target.takeIf { shown }, record)
+}
