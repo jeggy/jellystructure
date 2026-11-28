@@ -306,7 +306,8 @@ fun LiveTvPlayerScreen(
         // DEB-2658 (DEB-2628 FR-8) — a station plays through the same player seam, but there is no picture: the surface stays (the
         // browser's <video> and the desktop's engine hang off it) at one dp, and the audio layout is drawn over the whole screen.
         PlayerVideoSurface(player, if (radio) Modifier.size(1.dp) else Modifier.fillMaxSize())
-        if (radio) (channelNow?.takeIf { it.channelId == tuning?.channelId } ?: tuning)?.let { st ->
+        // DEB-5835 (FR-3) — a station that will not tune draws the error in the radio layout's place.
+        if (radio && state !is LiveTvPlayerState.Error) (channelNow?.takeIf { it.channelId == tuning?.channelId } ?: tuning)?.let { st ->
             RadioNowPlaying(st, stopped = radioStopped, orbit = isTvPlatform, dimmed = dimmed, reducedMotion = reducedMotion)
         }
 
