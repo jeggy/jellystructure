@@ -95,4 +95,11 @@ class RouteToDestTest {
         )
         for (r in bad) assertNull(routeToDest(r, name), "route '$r'")
     }
+
+    // DEB-5841 (FR-5) — the after-film page has no address of its own: a reload while it is open lands on Home, as a reload of the player does.
+    @Test
+    fun `DEB-5841 the after-film page has a route that opens nothing`() {
+        val route = Dest.PostFilm("m1", "A Film", name).toRoute()
+        assertNull(routeToDest(route, name), "route '$route'")
+    }
 }

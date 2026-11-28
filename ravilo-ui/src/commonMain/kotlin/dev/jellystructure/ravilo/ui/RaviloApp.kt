@@ -391,6 +391,14 @@ internal sealed class Dest {
         /** DEB-5841 (FR-3) — the related titles the film's own page already held, carried so the after-film page needs no fetch.
          *  Null = unknown (the page fetches). Client-side only: never saved in the resume record. */
         val related: List<MediaCard>? = null,
+        /** DEB-5841 (FR-5) — the film's backdrop for the after-film page; null when the play did not begin on the film's page. */
+        val backdropUrl: String? = null,
+    ) : Dest()
+    /** DEB-5841 (FR-1) — what opens in the player's place when a film ends; it holds no stream. No route of its own: a reload opens Home. */
+    data class PostFilm(
+        val itemId: String, val title: String, val displayName: String,
+        val logoUrl: String? = null, val logoInk: String? = null, val backdropUrl: String? = null,
+        val related: List<MediaCard>? = null,
     ) : Dest()
     data class Settings(val displayName: String) : Dest()
     // R304 (FR-R304-1) — the phone's Profile PAGE: the fifth bottom-bar item, on the stack like the other
@@ -461,6 +469,7 @@ internal sealed class Dest {
         is MovieDetail    -> "/movie/$itemId"
         is SeriesDetail   -> "/series/$itemId"
         is Player         -> "/player/$itemId"
+        is PostFilm       -> "/post-film/$itemId"   // DEB-5841 — routeToDest gives null for it: a reload opens Home
         is Settings       -> "/settings"
         is YourProfile    -> "/account/profile"
         is ChangePassword -> "/account/password"
@@ -1169,6 +1178,7 @@ fun RaviloApp(
             is Dest.SeerrSearch -> d.displayName
             is Dest.UpcomingDetail -> d.displayName
             is Dest.MovieDetail -> d.displayName; is Dest.SeriesDetail -> d.displayName
+            is Dest.PostFilm -> d.displayName   // DEB-5841
             is Dest.Player -> d.displayName; is Dest.Settings -> d.displayName; is Dest.Remote -> d.displayName
             is Dest.TvNowPlaying -> d.displayName   // R380
             is Dest.YourProfile -> d.displayName; is Dest.ChangePassword -> d.displayName; is Dest.SignInTv -> d.displayName; is Dest.SamsungTv -> d.displayName
@@ -3047,7 +3057,7 @@ fun RaviloApp(
                             segments = detail.segments,  // Phase 150
                             posterUrl = detail.card.posterUrl,  // R192
                             logoUrl = detail.logoUrl, logoInk = detail.logoInk,  // R303 — a film shows its own logo, no name fallback
-                            isFilm = true, related = detail.related,   // DEB-5841 (FR-1, FR-3) — the page's own list rides along
+                            isFilm = true, related = detail.related, backdropUrl = detail.card.backdropUrl ?: detail.card.posterUrl,   // DEB-5841 (FR-1, FR-3) — the page's own list rides along
                         ))
                     } },
                     onRelatedSelect = { openDetail(it, dest.displayName) },
@@ -3169,7 +3179,11 @@ fun RaviloApp(
                         onFilmEnded = if (dev.jellystructure.ravilo.ui.screens.filmEndOpensPage(
                                 dest.isFilm, dest.fromDownload,
                                 picksKnownEmpty = dest.related?.let { dev.jellystructure.ravilo.ui.screens.postFilmPicks(it, dest.itemId).isEmpty() } ?: false,
-                            )) { { playerResume.clear(); pop() } } else null,
+                            )) { {
+                                // FR-1 — the page takes the player's place on the stack, so Back from it returns to the page the film was opened from.
+                                playerResume.clear()
+                                replaceTop(Dest.PostFilm(dest.itemId, dest.title, dest.displayName, dest.logoUrl, dest.logoInk, dest.backdropUrl, dest.related))
+                            } } else null,
                     ),
                     // DEB-4072 (FR-16) — casting needs the server; from a download the cast button is absent, never broken.
                     LocalCast provides (if (dest.fromDownload) null else LocalCast.current)) {
@@ -3591,6 +3605,20 @@ fun RaviloApp(
                     },
                 )
             }
+
+            // DEB-5841 (FR-1..FR-5) — the after-film page: no stream, no player, nothing counts down.
+            is Dest.PostFilm -> dev.jellystructure.ravilo.ui.screens.PostFilmScreen(
+                playedId = dest.itemId, title = dest.title, logoUrl = dest.logoUrl, logoInk = dest.logoInk,
+                backdropUrl = dest.backdropUrl, related = dest.related,
+                loadRelated = { apiClient.getMovie(dest.itemId).related },
+                // FR-4 — the pick's own page replaces this one (it does not play); Back from it lands where the film was opened from.
+                onSelect = { card ->
+                    prefetchImage(imageCtx, apiClient.baseUrl, card.backdropUrl)
+                    replaceTop(if (card.kind == MediaKind.SERIES) Dest.SeriesDetail(card.id, dest.displayName, card = card) else Dest.MovieDetail(card.id, dest.displayName, card = card))
+                },
+                onClose = { pop() },
+                onBack = { pop() },
+            )
 
             is Dest.Settings -> {
                 val store = remember { SettingsStore(apiClient) }
