@@ -1103,6 +1103,7 @@ private fun SettingsContent(
     val installFR = remember { FocusRequester() }
     val signInTvFR = remember { FocusRequester() }
     val signOutFR = remember { FocusRequester() }
+    val aboutFR = remember { FocusRequester() }
     // DEB-1854 (FR-6, FR-7) — the account's password place, from the config; the chain below closes over a row not drawn.
     val pwRow = config.passwordRow()
     val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
@@ -1436,6 +1437,7 @@ private fun SettingsContent(
                 // ring would have stuck the same way ToggleRow's did.
                 onBlurred = { focused = false },
                 onUp = { aboveSignOutFR.requestFocus() },
+                onDown = if (dev.jellystructure.ravilo.ui.isTvPlatform) ({ aboutFR.requestFocus() }) else null,
                 onSelect = onSignOut,
             )
             .padding(horizontal = 24.dp, vertical = 12.dp),
@@ -1447,6 +1449,19 @@ private fun SettingsContent(
     // R340 (FR-R340-2) — the separate "Unpair this TV" section is gone: Sign out above asks whom, and
     // "Everyone on this TV" is what it did (plus the server forgotten). One way out, and it always asks.
 
+    // DEB-5851 (FR-6) — the TV's About: the version, and the quiet line when a newer Ravilo is out. One focus stop that does
+    // nothing on select: a TV has no browser to send anyone to.
+    if (dev.jellystructure.ravilo.ui.isTvPlatform) {
+        dev.jellystructure.ravilo.ui.components.MarkUpdateSeen(dev.jellystructure.ravilo.ui.components.UpdateSurface.TvSettings)
+        Spacer(Modifier.height(32.dp))
+        TvAboutSection(
+            notice = dev.jellystructure.ravilo.ui.components.clientUpdateNotice(),
+            source = dev.jellystructure.ravilo.ui.components.installSource(),
+            focusRequester = aboutFR,
+            onUp = { signOutFR.requestFocus() },
+        )
+    }
+
     // R386 (FR-R386-6, D5) — the desktop target's About, in the phone family: the version, the Software update block
     // (the Mac release build only) and the server. Nothing on a TV, a phone or the web.
     if (dev.jellystructure.ravilo.ui.isDesktopPlatform) {
@@ -1454,6 +1469,41 @@ private fun SettingsContent(
         SectionHeader(str("mac.update.about"))
         Spacer(Modifier.height(12.dp))
         dev.jellystructure.ravilo.ui.components.AboutSection(desk = false)
+    }
+}
+
+const val TV_ABOUT_TAG = "tv-about-section"
+
+/**
+ * DEB-5851 (FR-6) — Settings ▸ About on a TV, under the *About* heading R386 gave the desktop: the version, and the
+ * quiet update line when there is a [notice]. A single focus stop, not actionable.
+ */
+@Composable
+internal fun TvAboutSection(
+    notice: dev.jellystructure.shared.tv.RaviloVersion?,
+    source: dev.jellystructure.ravilo.ui.components.InstallSource,
+    focusRequester: FocusRequester,
+    onUp: () -> Unit,
+) {
+    val colors = RaviloTheme.colors
+    SectionHeader(str("mac.update.about"))
+    Spacer(Modifier.height(12.dp))
+    var focused by rememberFocusVisual()
+    Column(
+        modifier = Modifier
+            .testTag(TV_ABOUT_TAG)
+            .background(colors.surfaceVariant, RoundedCornerShape(8.dp))
+            .focusRing(focused, RoundedCornerShape(8.dp), colors.focusRing, 2.dp)
+            .dpadFocusable(
+                focusRequester = focusRequester,
+                onFocused = { focused = true },
+                onBlurred = { focused = false },
+                onUp = onUp,
+            )
+            .padding(horizontal = 24.dp, vertical = 12.dp),
+    ) {
+        Text("Ravilo ${dev.jellystructure.shared.raviloVersion()}", color = colors.text, fontSize = 14.sp)
+        dev.jellystructure.ravilo.ui.components.ClientUpdateLine(notice, source, openable = false, modifier = Modifier.padding(top = 6.dp))
     }
 }
 

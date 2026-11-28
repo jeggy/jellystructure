@@ -598,7 +598,8 @@ private fun ProfileAvatar(
         // DEB-2597 (FR-2) — focus shows the ring only; the face keeps the viewer's own colour.
         ProfileFace(profile.userId, profile.displayName, avatarUrl, g.circle)
         // DEB-1501 (FR-2) — the web's avatar button: an unread support reply, read from the server and never counted here.
-        if (dev.jellystructure.ravilo.ui.support.supportUnreadShows()) {
+        // DEB-5851 (FR-6) — and on the TV, a newer Ravilo: until Settings has been opened once for that release. Drawn only.
+        if (dev.jellystructure.ravilo.ui.support.supportUnreadShows() || (dev.jellystructure.ravilo.ui.isTvPlatform && clientUpdateDotShows(UpdateSurface.TvSettings))) {
             UpdateDot(Modifier.align(Alignment.TopEnd).offset(x = 2.dp, y = (-2).dp), size = 10.dp, ring = colors.background)
         }
     }
