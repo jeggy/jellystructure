@@ -16,7 +16,14 @@ actual object HomeSnapshotCache {
         return snapshot.takeIf { isSnapshotFresh(it, now) }
     }
 
-    actual fun save(userId: String, snapshot: HomeSnapshot) {
+    // DEB-5839 (FR-5) — the encode and the write run on a background coroutine; a newer save replaces a pending one.
+    private val writer = LatestWinsWriter<String, HomeSnapshot> { userId, snapshot ->
+        if (snapshot == null) snapshotFile(userId).delete() else writeNow(userId, snapshot)
+    }
+
+    actual fun save(userId: String, snapshot: HomeSnapshot) = writer.submit(userId, snapshot)
+
+    private fun writeNow(userId: String, snapshot: HomeSnapshot) {
         val json = runCatching { homeSnapshotJson.encodeToString(snapshot) }.getOrNull() ?: return
         if (exceedsSnapshotSizeCap(json)) return
         val file = snapshotFile(userId)
@@ -29,7 +36,5 @@ actual object HomeSnapshotCache {
         }
     }
 
-    actual fun clear(userId: String) {
-        snapshotFile(userId).delete()
-    }
+    actual fun clear(userId: String) = writer.submit(userId, null)
 }

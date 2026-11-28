@@ -31,7 +31,14 @@ actual object HomeSnapshotCache {
         homeSnapshotJson.decodeFromString(HomeSnapshot.serializer(), f.readText())
     }.getOrNull()?.takeIf { isSnapshotFresh(it, System.currentTimeMillis()) }
 
-    actual fun save(userId: String, snapshot: HomeSnapshot) {
+    // DEB-5839 (FR-5) — the encode and the write run on a background coroutine; a newer save replaces a pending one.
+    private val writer = LatestWinsWriter<String, HomeSnapshot> { userId, snapshot ->
+        if (snapshot == null) file(userId).delete() else writeNow(userId, snapshot)
+    }
+
+    actual fun save(userId: String, snapshot: HomeSnapshot) = writer.submit(userId, snapshot)
+
+    private fun writeNow(userId: String, snapshot: HomeSnapshot) {
         runCatching {
             val json = homeSnapshotJson.encodeToString(HomeSnapshot.serializer(), snapshot)
             if (exceedsSnapshotSizeCap(json)) return
@@ -42,9 +49,7 @@ actual object HomeSnapshotCache {
         }
     }
 
-    actual fun clear(userId: String) {
-        runCatching { file(userId).delete() }
-    }
+    actual fun clear(userId: String) = writer.submit(userId, null)
 }
 
 /** R279 — survives sign-out and unpair: it is the device's, not a viewer's. */
