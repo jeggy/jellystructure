@@ -206,9 +206,9 @@ fun SearchScreen(
     // DEB-5837 FR-2 — a search that shows results keeps them while the next query loads.
     val shown = remember { dev.jellystructure.ravilo.ui.components.LastShown<dev.jellystructure.shared.tv.MediaCard>() }
     val items = when (val s = state) {
-        is SearchState.Loaded -> s.results.items.also { shown.items = it }
-        is SearchState.Loading -> shown.items
-        else -> emptyList<dev.jellystructure.shared.tv.MediaCard>().also { shown.items = it }
+        is SearchState.Loaded -> shown.resolve(false, s.results.items, s.query)
+        is SearchState.Loading -> shown.resolve(true, null, null)
+        else -> shown.resolve(false, null, null)
     }
     // R174 — server-configured items per row; portrait viewports use the smaller portrait count.
     val cols = if (LocalPortrait.current) LocalPortraitGridColumns.current else LocalGridColumns.current

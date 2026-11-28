@@ -94,9 +94,9 @@ fun SeerrSearchScreen(
     // DEB-5837 FR-2 — a search that shows results keeps them while the next query loads.
     val shown = remember { dev.jellystructure.ravilo.ui.components.LastShown<dev.jellystructure.shared.tv.DiscoverEntry>() }
     val items = when (val s = state) {
-        is SeerrSearchState.Loaded -> s.results.items.also { shown.items = it }
-        is SeerrSearchState.Loading -> shown.items
-        else -> emptyList<dev.jellystructure.shared.tv.DiscoverEntry>().also { shown.items = it }
+        is SeerrSearchState.Loaded -> shown.resolve(false, s.results.items, s.results.query)
+        is SeerrSearchState.Loading -> shown.resolve(true, null, null)
+        else -> shown.resolve(false, null, null)
     }
 
     val gridFR = remember { FocusRequester() }

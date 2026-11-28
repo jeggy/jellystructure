@@ -23,9 +23,9 @@ import dev.jellystructure.ravilo.ui.components.SettingsLoadingRows
 import dev.jellystructure.ravilo.ui.components.TV_CODE_SKELETON
 import dev.jellystructure.ravilo.ui.components.TvCodeLoadingBox
 import dev.jellystructure.ravilo.ui.components.LastShown
-import androidx.compose.ui.test.assertCountEquals
 import dev.jellystructure.ravilo.ui.theme.RaviloTheme
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /** DEB-5837 FR-2 — each page surface's Loading state is a skeleton of its content region, never the word "Loading...". */
@@ -51,19 +51,19 @@ class NoBareLoadingTest {
     @Test fun `a first title or request search waits as the result grid`() = assertSkeleton(SEARCH_SKELETON) { SearchLoadingGrid(4) }
     @Test fun `a first music search waits as result rows`() = assertSkeleton(MUSIC_SEARCH_SKELETON) { MusicSearchLoadingRows() }
 
-    @Test fun `a second query keeps the results shown and draws no skeleton`() {
-        val shown = LastShown<String>().also { it.items = listOf("a", "b") }
-        val loading = true
-        runComposeUiTest {
-            setContent {
-                RaviloTheme {
-                    val items = if (loading) shown.items else emptyList()
-                    if (loading && items.isEmpty()) SearchLoadingGrid(4)
-                    items.forEach { androidx.compose.material3.Text(it) }
-                }
-            }
-            onNodeWithTag(SEARCH_SKELETON).assertDoesNotExist()
-            onAllNodesWithText("a").assertCountEquals(1)
-        }
+    @Test fun `a second query loads over the results already shown`() {
+        val shown = LastShown<String>()
+        shown.resolve(false, listOf("a", "b"), "ab")
+        assertEquals(listOf("a", "b"), shown.resolve(true, null, null))
+    }
+
+    @Test fun `a first typed query does not load over the suggestions`() {
+        val shown = LastShown<String>()
+        assertEquals(listOf("s"), shown.resolve(false, listOf("s"), ""))
+        assertEquals(emptyList(), shown.resolve(true, null, null))
+    }
+
+    @Test fun `a query loading with nothing shown draws nothing`() {
+        assertEquals(emptyList(), LastShown<String>().resolve(true, null, null))
     }
 }

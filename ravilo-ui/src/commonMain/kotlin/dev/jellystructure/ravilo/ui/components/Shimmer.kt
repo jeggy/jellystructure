@@ -266,10 +266,13 @@ fun SettingsLoadingRows(rows: Int = 6) {
     }
 }
 
-/** DEB-5837 FR-2 — the TV code screen's wait: the code's box at its loaded size. The footer button is the caller's and stays. */
+/**
+ * DEB-5837 FR-2 — the TV code screen's wait: the code's box at its loaded size. The footer button is the caller's and stays.
+ * The numbers mirror `CodeBody` with its QR: 222 dp QR + 36 dp gap + a text column up to 530 dp, about 233 dp tall.
+ */
 @Composable
 fun TvCodeLoadingBox() {
-    ShimmerBox(Modifier.width(530.dp).height(190.dp).testTag(TV_CODE_SKELETON))
+    ShimmerBox(Modifier.width(222.dp + 36.dp + 530.dp).height(233.dp).testTag(TV_CODE_SKELETON))
 }
 
 /** DEB-5837 FR-2 — a first query's wait: the result grid in the loaded [columns]. */
@@ -288,4 +291,19 @@ fun MusicSearchLoadingRows() {
 }
 
 /** DEB-5837 FR-2 — what a search last showed, so the next query loads under it and only a first query shows the skeleton. */
-class LastShown<T> { var items: List<T> = emptyList() }
+class LastShown<T> {
+    var items: List<T> = emptyList()
+
+    /**
+     * The list a search draws. A loaded list is drawn as it is, but only a non-blank query's results are remembered (a blank
+     * query's are the suggestions, which a first typed query must not load under); [loading] draws what was remembered; an error clears it.
+     */
+    fun resolve(loading: Boolean, loaded: List<T>?, loadedQuery: String?): List<T> {
+        if (loaded != null) {
+            items = if (loadedQuery.isNullOrBlank()) emptyList() else loaded
+            return loaded
+        }
+        if (!loading) items = emptyList()
+        return items
+    }
+}
