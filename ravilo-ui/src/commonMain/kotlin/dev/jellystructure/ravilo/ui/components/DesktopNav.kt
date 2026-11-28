@@ -402,7 +402,8 @@ private fun RailItem(p: DesktopPage, on: Boolean, dot: Boolean, onClick: () -> U
 @Composable
 private fun ViewerFoot(rail: Boolean, name: String, onViewer: () -> Unit, onSettings: () -> Unit, onSignOut: () -> Unit) {
     val colors = RaviloTheme.colors
-    val updateDot = updateDotShows()
+    // DEB-5851 (FR-7) — Linux: and a newer Ravilo, until About has been opened once for that release.
+    val updateDot = updateDotShows() || clientUpdateDotShows(UpdateSurface.LinuxAbout)
     // DEB-1501 (FR-2) — an unread support reply: the dot sits on the viewer's photo, which opens Profile and its Support row.
     val supportDot = dev.jellystructure.ravilo.ui.support.supportUnreadShows()
     val avatar = LocalUserAvatarUrl.current

@@ -710,16 +710,27 @@ private fun GnomePreferences(
         if (onSignInTv != null) AdwRow(str("tvcode.row"), onClick = onSignInTv) { AdwChevron() }
         AdwRow(str("profile.sign_out"), onClick = onSignOut) { AdwChevron() }
     }
-    // R386 (FR-R386-6) — About: the version and the server. No update block on Linux (Flathub updates the Flatpak): nothing
-    // there ever sets the model, so this stays empty — the test driver's `update <state>` is what shows it, to be looked at.
+    // R386 (FR-R386-6) — About: the version and the server. The Software update block is the Mac release build's (nothing on
+    // Linux ever sets its model, so it stays empty — the test driver's `update <state>` is what shows it, to be looked at).
     val updateModel by dev.jellystructure.ravilo.ui.components.SoftwareUpdate.model.collectAsState()
     if (updateModel != null) {
         Spacer(Modifier.height(18.dp))
         dev.jellystructure.ravilo.ui.components.SoftwareUpdateBlock(desk = true)
     }
+    dev.jellystructure.ravilo.ui.components.MarkUpdateSeen(dev.jellystructure.ravilo.ui.components.UpdateSurface.LinuxAbout)
+    val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
     AdwGroup(str("mac.update.about")) {
         val mono = androidx.compose.ui.text.font.FontFamily.Monospace
         AdwRow(str("mac.update.row_version")) { Text(dev.jellystructure.shared.raviloVersion(), color = colors.textSecondary, fontSize = 13.sp, fontFamily = mono) }
+        // DEB-5851 (FR-7) — a newer Ravilo is out: the quiet line between Version and Server; a click opens the releases page.
+        val update = dev.jellystructure.ravilo.ui.components.clientUpdateNotice()
+        if (update != null) {
+            AdwRow(
+                dev.jellystructure.ravilo.ui.components.clientUpdateHeadline(update),
+                str(dev.jellystructure.ravilo.ui.components.clientUpdateSecondLineKey(dev.jellystructure.ravilo.ui.components.installSource())),
+                onClick = { runCatching { uriHandler.openUri(dev.jellystructure.ravilo.ui.components.clientUpdateUrl(dev.jellystructure.ravilo.ui.components.installSource())) } },
+            ) { ExternalLinkGlyph(colors.textDim) }
+        }
         AdwRow(str("mac.update.row_server")) { Text(dev.jellystructure.ravilo.ui.components.aboutServerHost(), color = colors.textSecondary, fontSize = 13.sp, fontFamily = mono) }
     }
 }
