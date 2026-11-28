@@ -2669,6 +2669,7 @@ fun RaviloApp(
                     displayName = dest.displayName,
                     onProfile = { openProfile() },
                     onSignOut = { resetTo(Dest.Login) },
+                    onSignedOutOne = { resetTo(if (MultiTokenStore.getAll().isEmpty()) Dest.Login else Dest.ProfilePicker) },
                     // DEB-4072 (FR-11) — Home's unreachable state offers the downloads whenever the viewer has any on this phone.
                     onWatchDownloads = downloadsController?.takeIf { it.hasPlayableDownloads() }?.let { dc -> { dc.refresh(); push(Dest.Downloads(dest.displayName)) } },
                     onNavSelect = { idx ->

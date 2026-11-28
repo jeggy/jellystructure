@@ -143,6 +143,8 @@ fun HomeScreen(
     // Fires when the user signs out from the error state (see HomeErrorState) — a device whose
     // locally-cached token no longer matches any server-side record can never recover via Retry.
     onSignOut: () -> Unit = {},
+    // DEB-5835 (FR-2) — after ONE profile is signed out: the caller routes by what is left (Login vs ProfilePicker).
+    onSignedOutOne: () -> Unit = onSignOut,
     // Phase R177 — selecting an "On now" tile tunes straight into the live player (never a top-nav tab).
     onLiveTvChannelSelect: (LiveTvChannel) -> Unit = {},
     onOpenLiveTvGuide: () -> Unit = {},
@@ -171,6 +173,7 @@ fun HomeScreen(
                 apiClient = apiClient,
                 onRetry = { store.refresh() },
                 onSignOut = onSignOut,
+                onSignedOutOne = onSignedOutOne,
                 onWatchDownloads = onWatchDownloads,
             )
             is HomeState.Loaded  -> HomeLoaded(
@@ -1067,6 +1070,7 @@ internal fun HomeErrorState(
     onRetry: () -> Unit,
     onSignOut: () -> Unit,
     onWatchDownloads: (() -> Unit)? = null,
+    onSignedOutOne: () -> Unit = onSignOut,
     desktop: Boolean = dev.jellystructure.ravilo.ui.isDesktopPlatform,
 ) {
     val colors = RaviloTheme.colors
@@ -1109,7 +1113,7 @@ internal fun HomeErrorState(
             SignOutChoiceOverlay(
                 displayName = MultiTokenStore.getActive()?.displayName.orEmpty(),
                 onCancel = closeAsk,
-                onOnly = { askSignOut = false; scope.launch { signOutActiveSession(apiClient); onSignOut() } },
+                onOnly = { askSignOut = false; scope.launch { signOutActiveSession(apiClient); onSignedOutOne() } },
                 onEveryone = { askSignOut = false; scope.launch { unpairAllSessions(apiClient); onSignOut() } },
             )
         } else {
@@ -1118,7 +1122,7 @@ internal fun HomeErrorState(
                 description = str("profile.signout_body"),
                 confirmLabel = str("profile.signout_confirm"),
                 onCancel = closeAsk,
-                onConfirm = { askSignOut = false; scope.launch { signOutActiveSession(apiClient); onSignOut() } },
+                onConfirm = { askSignOut = false; scope.launch { signOutActiveSession(apiClient); onSignedOutOne() } },
             )
         }
     }
