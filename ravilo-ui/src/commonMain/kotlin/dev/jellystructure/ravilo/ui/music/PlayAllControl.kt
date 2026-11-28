@@ -1,5 +1,7 @@
 package dev.jellystructure.ravilo.ui.music
 
+import dev.jellystructure.ravilo.ui.components.WaitIndicator
+import dev.jellystructure.ravilo.ui.components.WaitSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -13,7 +15,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Text
@@ -111,7 +112,7 @@ fun PlayAllControl(request: PlayAllRequest, runner: PlayAll, height: Dp, modifie
                 Modifier.height(target).padding(start = if (bar) 12.dp else 10.dp, end = 8.dp), height, RoundedCornerShape(topStart = radius, bottomStart = radius),
                 onClick = { press(PlayAllHalf.PLAY) },
             ) {
-                if (busy != null) CircularProgressIndicator(Modifier.size(glyph), color = ink, strokeWidth = 2.dp)
+                if (busy != null) WaitIndicator()
                 else MusicGlyph(MusicIcon.PLAY, ink, glyph)
                 Text(str("music.play_all"), color = ink, fontSize = if (bar) 13.sp else 12.5.sp, fontWeight = FontWeight.SemiBold, fontFamily = Sora, maxLines = 1)
             }

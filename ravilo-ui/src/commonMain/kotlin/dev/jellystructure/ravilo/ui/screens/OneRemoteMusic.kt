@@ -1,5 +1,7 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.ravilo.ui.components.WaitIndicator
+import dev.jellystructure.ravilo.ui.components.WaitSize
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
@@ -33,7 +35,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -365,7 +366,7 @@ private fun SeekAndTransport(remote: OneRemote, face: MusicFace, onSheet: (Strin
         val shown = if (scrubbing) scrubPos else s.positionMs
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
             Text(fmtLen(shown), color = colors.textSecondary, fontSize = 12.sp, fontFamily = Sora, modifier = Modifier.testTag("remote-position"))
-            if (m.feedback == CommandFeedback.SPINNER) CircularProgressIndicator(color = colors.textDim, strokeWidth = 2.dp, modifier = Modifier.size(14.dp).testTag("remote-spinner"))
+            if (m.feedback == CommandFeedback.SPINNER) WaitIndicator(modifier = Modifier.testTag("remote-spinner"))
             Text(if (s.durationMs > 0) "−" + fmtLen((s.durationMs - shown).coerceAtLeast(0L)) else "", color = colors.textSecondary, fontSize = 12.sp, fontFamily = Sora)
         }
     }
@@ -410,7 +411,7 @@ private fun RemotePlayPause(remote: OneRemote, enabled: Boolean) {
             .testTag("remote-play-pause"),
         contentAlignment = Alignment.Center,
     ) {
-        if (s.buffering && enabled) CircularProgressIndicator(color = colors.background, strokeWidth = 3.dp, modifier = Modifier.size(30.dp))
+        if (s.buffering && enabled) WaitIndicator(WaitSize.Alone)
         else PlayPauseGlyph(playing = s.playing, tint = colors.background, sizeDp = 28)
     }
 }

@@ -1,5 +1,7 @@
 package dev.jellystructure.ravilo.ui.music
 
+import dev.jellystructure.ravilo.ui.components.WaitIndicator
+import dev.jellystructure.ravilo.ui.components.WaitSize
 import dev.jellystructure.ravilo.ui.components.fadeInOnLoad
 import dev.jellystructure.ravilo.ui.components.ArrowRow
 import androidx.compose.animation.animateContentSize
@@ -438,7 +440,7 @@ private fun ArtistPlayAll(playAll: PlayAll, artistId: String, context: MusicCont
                 height, shape, onClick = { press(ArtistPlayOrder.NEWEST) },
             ) {
                 Row(Modifier.then(if (desk) Modifier else Modifier.fillMaxWidth()), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
-                    if (busy != null) androidx.compose.material3.CircularProgressIndicator(Modifier.size(if (desk) 15.dp else 17.dp), color = ink, strokeWidth = 2.dp)
+                    if (busy != null) WaitIndicator()
                     else MusicGlyph(MusicIcon.PLAY, ink, if (desk) 15.dp else 17.dp)
                     Spacer(Modifier.width(8.dp))
                     Text(str("music.play_all"), color = ink, fontSize = if (desk) 13.5.sp else 15.sp, fontWeight = FontWeight.SemiBold, fontFamily = Sora, maxLines = 1)

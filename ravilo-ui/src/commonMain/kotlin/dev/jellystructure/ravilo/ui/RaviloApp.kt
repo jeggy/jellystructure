@@ -1,5 +1,7 @@
 package dev.jellystructure.ravilo.ui
 
+import dev.jellystructure.ravilo.ui.components.WaitIndicator
+import dev.jellystructure.ravilo.ui.components.WaitSize
 import dev.jellystructure.ravilo.ui.music.asPlaylistWrites
 import dev.jellystructure.ravilo.ui.music.asPlaylistChanges
 import dev.jellystructure.ravilo.ui.screens.TvApproveStore
@@ -3274,7 +3276,7 @@ fun RaviloApp(
                         Box(Modifier.align(Alignment.TopStart).size(46.dp).clickable { pop() }, contentAlignment = Alignment.Center) {
                             dev.jellystructure.ravilo.ui.components.DeskIcon(dev.jellystructure.ravilo.ui.components.DeskIcon.BACK, RaviloTheme.colors.text, 22.dp)
                         }
-                        androidx.compose.material3.CircularProgressIndicator(color = RaviloTheme.colors.textDim, strokeWidth = 2.5.dp, modifier = Modifier.size(28.dp))
+                        WaitIndicator(WaitSize.Alone)
                     }
                 } else dev.jellystructure.ravilo.ui.theme.KeepDark { OneRemoteScreen(
                     remote = remote,

@@ -1,5 +1,7 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.ravilo.ui.components.WaitIndicator
+import dev.jellystructure.ravilo.ui.components.WaitSize
 import dev.jellystructure.shared.tv.weekdayKey
 import dev.jellystructure.shared.tv.monthKey
 import dev.jellystructure.ravilo.ui.focus.chipFocusRing
@@ -32,7 +34,6 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -515,11 +516,7 @@ private fun StatusPill(label: String, color: Color, spinner: Boolean) {
         horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
         if (spinner) {
-            CircularProgressIndicator(
-                modifier = Modifier.size(8.dp),
-                color = Color.White,
-                strokeWidth = 1.5.dp,
-            )
+            WaitIndicator()
         }
         Text(label, color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
     }

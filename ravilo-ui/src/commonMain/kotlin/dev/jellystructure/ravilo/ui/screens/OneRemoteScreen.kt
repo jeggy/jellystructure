@@ -1,5 +1,7 @@
 package dev.jellystructure.ravilo.ui.screens
 
+import dev.jellystructure.ravilo.ui.components.WaitIndicator
+import dev.jellystructure.ravilo.ui.components.WaitSize
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -30,7 +32,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -177,7 +178,7 @@ fun OneRemoteScreen(
                         dev.jellystructure.ravilo.ui.music.castRadioLive(s).station, Modifier.fillMaxHeight().aspectRatio(1f, matchHeightConstraintsFirst = true), corner = 16.dp)
                     else if (art != null) RemoteImage(url = art, contentDescription = s.title, modifier = Modifier.fillMaxSize(), contentScale = if (m.musicShape) ContentScale.Fit else ContentScale.Crop, requestedWidth = 1280)
                     else Text(s.title ?: name, color = colors.text, fontSize = 26.sp, fontWeight = FontWeight.Bold, fontFamily = SpaceGrotesk, textAlign = TextAlign.Center, maxLines = 3, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(24.dp))
-                    if (s.buffering && !unreachable) CircularProgressIndicator(color = Color.White, strokeWidth = 3.dp, modifier = Modifier.size(36.dp))
+                    if (s.buffering && !unreachable) WaitIndicator(WaitSize.Alone)
                 }
             },
             bottom = {
@@ -221,7 +222,7 @@ fun OneRemoteScreen(
                     // DEB-2660 (FR-11) — a station has no seek bar and no times: LIVE takes its place while it plays, and nothing does while it is stopped or failed.
                     Row(Modifier.fillMaxWidth().heightIn(min = 28.dp).testTag("remote-live"), verticalAlignment = Alignment.CenterVertically) {
                         if (s.playing && !s.failed && !unreachable) dev.jellystructure.ravilo.ui.music.RadioLiveMark()
-                        if (m.feedback == CommandFeedback.SPINNER) CircularProgressIndicator(color = colors.textDim, strokeWidth = 2.dp, modifier = Modifier.padding(start = 10.dp).size(14.dp).testTag("remote-spinner"))
+                        if (m.feedback == CommandFeedback.SPINNER) WaitIndicator(modifier = Modifier.padding(start = 10.dp).testTag("remote-spinner"))
                     }
                 } else {
                 RemoteSeekBar(
@@ -233,7 +234,7 @@ fun OneRemoteScreen(
                 )
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                     Text(hmsLabel(if (scrubbing) scrubPos else s.positionMs), color = colors.textSecondary, fontSize = 13.sp, fontFamily = Sora)
-                    if (m.feedback == CommandFeedback.SPINNER) CircularProgressIndicator(color = colors.textDim, strokeWidth = 2.dp, modifier = Modifier.size(14.dp).testTag("remote-spinner"))
+                    if (m.feedback == CommandFeedback.SPINNER) WaitIndicator(modifier = Modifier.testTag("remote-spinner"))
                     Text(hmsLabel(s.durationMs), color = colors.textDim, fontSize = 13.sp, fontFamily = Sora)
                 }
                 }
@@ -250,7 +251,7 @@ fun OneRemoteScreen(
                                 .testTag("remote-play-pause"),
                             contentAlignment = Alignment.Center,
                         ) {
-                            if (s.buffering && transportEnabled) CircularProgressIndicator(color = colors.background, strokeWidth = 3.dp, modifier = Modifier.size(32.dp))
+                            if (s.buffering && transportEnabled) WaitIndicator(WaitSize.Alone)
                             else PlayPauseGlyph(playing = s.playing, tint = colors.background, sizeDp = 30)
                         }
                     }
