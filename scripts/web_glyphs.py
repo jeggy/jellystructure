@@ -195,7 +195,10 @@ def relevant(c):
 def used_characters():
     """{char: [where, ...]} over the app's Kotlin string literals and the i18n tables."""
     used = {}
-    for path in sorted(glob.glob(os.path.join(ROOT, "ravilo-ui/src/commonMain/kotlin/**/*.kt"), recursive=True)):
+    kotlin = glob.glob(os.path.join(ROOT, "ravilo-ui/src/commonMain/kotlin/**/*.kt"), recursive=True)
+    # The native language names moved here from LanguageIdentity.kt; Ravilo draws them, so the font must carry them.
+    kotlin.append(os.path.join(ROOT, "shared/src/commonMain/kotlin/dev/jellystructure/shared/tv/LanguageNames.kt"))
+    for path in sorted(kotlin):
         rel = os.path.relpath(path, ROOT)
         for line, text in kotlin_literals(open(path, encoding="utf-8").read()):
             for c in text:
