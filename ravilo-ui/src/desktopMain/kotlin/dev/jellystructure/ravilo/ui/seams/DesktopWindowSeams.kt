@@ -108,8 +108,16 @@ actual fun Modifier.wakeOnPointerMove(onMove: () -> Unit): Modifier =
 
 actual fun systemPrefersReducedMotion(): Boolean = reducedMotion
 
-/** macOS's *Reduce motion* (Accessibility → Display), read once: `defaults read com.apple.universalaccess reduceMotion`. */
+/** macOS's *Reduce motion* (Accessibility → Display), and Linux's (above), read once; the Mac's is: `defaults read com.apple.universalaccess reduceMotion`. */
 private val reducedMotion: Boolean by lazy {
+    // DEB-5838 (FR-7) — Linux asks the Settings portal (GNOME animations off, KDE duration factor 0); no answer in 2 s ⇒ motion.
+    if (System.getProperty("os.name").orEmpty().lowercase().startsWith("linux")) return@lazy runCatching {
+        val task = java.util.concurrent.FutureTask {
+            dev.jellystructure.ravilo.ui.desktop.LinuxReducedMotion.reduced(dev.jellystructure.ravilo.ui.desktop.LinuxPortal::readSetting)
+        }
+        Thread(task, "ravilo-reduced-motion").apply { isDaemon = true; start() }
+        task.get(2, java.util.concurrent.TimeUnit.SECONDS)
+    }.getOrDefault(false)
     if (!dev.jellystructure.ravilo.ui.desktop.DesktopPaths.isMac) return@lazy false
     runCatching {
         val p = ProcessBuilder("defaults", "read", "com.apple.universalaccess", "reduceMotion").redirectErrorStream(true).start()
