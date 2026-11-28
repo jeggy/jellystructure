@@ -269,4 +269,69 @@ class FreezeWatchTest {
     fun `a never started song at its very end has ended`() {
         assertEquals(FreezeVerdict.ENDED, FreezeRecovery().onFreeze(160_400, 163_100, book = false, neverStarted = true))
     }
+
+    // ── DEB-5531 (FR-9, FR-10) — a song not started after 6 s asks once more ──
+
+    /** Ticks every 250 ms from [from] to [to] for a song whose position stands at its load point; returns the first time [StartReask.due] says ask. */
+    private fun StartReask.waitFor(from: Long, to: Long, eligible: Boolean = true, started: Boolean = false, want: Boolean = true): Long? {
+        var t = from
+        while (t <= to) { if (due(t, started, want, eligible)) return t; t += 250 }
+        return null
+    }
+
+    @Test
+    fun `a song not started at 6 s with an observed figure sent asks once, and a lighter answer is loaded`() {
+        val r = StartReask()
+        assertNull(r.waitFor(0, 5_750))
+        assertEquals(6_000L, r.waitFor(6_000, 12_000))
+        assertNull(r.waitFor(12_250, 60_000), "it asks once")
+        assertEquals(true, StartReask.loadsAnswer(currentDirect = true, answerDirect = false))
+    }
+
+    @Test
+    fun `a song given the same direct copy keeps its load and does not ask again`() {
+        val r = StartReask()
+        assertEquals(6_000L, r.waitFor(0, 10_000))
+        assertEquals(false, StartReask.loadsAnswer(currentDirect = true, answerDirect = true))
+        assertNull(r.waitFor(10_250, 90_000))
+    }
+
+    @Test
+    fun `a song with no observed figure sent never asks`() {
+        assertNull(StartReask().waitFor(0, 90_000, eligible = false))
+    }
+
+    @Test
+    fun `a song that has started, or a paused one, does not ask`() {
+        assertNull(StartReask().waitFor(0, 30_000, started = true))
+        val r = StartReask()
+        assertNull(r.waitFor(0, 30_000, want = false))
+        assertEquals(36_250L, r.waitFor(30_250, 40_000), "the count starts when the viewer plays")
+    }
+
+    @Test
+    fun `a tick after a gap starts the count again, and a new load counts from nothing`() {
+        val r = StartReask()
+        assertNull(r.waitFor(0, 4_000))
+        assertNull(r.waitFor(10_000, 15_750), "the Mac slept: only ran time counts")
+        r.newLoad()
+        assertNull(r.waitFor(16_000, 21_750))
+        assertEquals(22_000L, r.waitFor(22_000, 30_000))
+    }
+
+    @Test
+    fun `a restart of ours does not let the song ask again, and a new song does`() {
+        val r = StartReask()
+        assertNotNull(r.waitFor(0, 7_000))
+        r.newLoad()   // a restart keeps the song's memory
+        assertNull(r.waitFor(8_000, 60_000))
+        r.newSong()
+        assertNotNull(r.waitFor(61_000, 70_000))
+    }
+
+    @Test
+    fun `a lighter copy or a transcode is not a direct load and is never eligible, so it never asks`() {
+        assertEquals(false, StartReask.loadsAnswer(currentDirect = false, answerDirect = false))
+        assertEquals(false, StartReask.loadsAnswer(currentDirect = false, answerDirect = true))
+    }
 }

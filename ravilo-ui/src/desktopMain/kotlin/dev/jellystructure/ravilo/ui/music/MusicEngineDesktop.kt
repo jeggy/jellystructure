@@ -80,6 +80,15 @@ actual object MusicEngine {
     /** DEB-3400 — a song that stops moving: the watch finds it, the recovery decides (one restart, then the next song). */
     private val freezeWatch = FreezeWatch()
     private val recovery = FreezeRecovery()
+    /** DEB-5531 (FR-9) — a song not started after 6 s asks the server once more; what the current load is, for the rule. */
+    private val startReask = StartReask()
+    private var reaskJob: Job? = null
+    /** Bumped by every load, so an answer to a re-ask never lands on a load that has since been replaced. */
+    private var loadSeq = 0
+    private var loadDirect = false
+    private var loadStartMs = 0L
+    /** This load has sent a `waiting` report whose detail carried `observed=` (FR-9). */
+    private var observedSent = false
     /** DEB-3400 (FR-3) — a restart of ours is starting the song again: it keeps the recovery's memory. */
     private var restarting = false
     /** Read by the quit (off Compose's thread), so the monitor keeps it current. */
@@ -202,6 +211,7 @@ actual object MusicEngine {
 
     private fun loadTicket(ticket: StreamTicket, startMs: Long, play: Boolean, rate: Float, volume: Float) {
         endHandled = false
+        loadSeq++; loadDirect = ticket.directPlay; loadStartMs = startMs; observedSent = false; startReask.newLoad()
         player.load(absolute(ticket.hlsUrl.orEmpty()), musicMimeFor(ticket.directPlay, ticket.container), startMs)
         player.setRate(rate)
         applyVolume(volume)
@@ -219,6 +229,7 @@ actual object MusicEngine {
         val pos = atMs ?: player.state.positionMs
         openTrackId = null
         tickJob?.cancel()
+        reaskJob?.cancel()
         val c = client()
         val b = book
         // DEB-5538 (FR-8) — a song posts no QoE row, frozen or not: its trace is the log, and the server hears of a wait from the `waiting` report.
@@ -231,7 +242,8 @@ actual object MusicEngine {
     private fun startSong(i: Int, startMs: Long = 0L, play: Boolean = true) {
         val track = q.tracks.getOrNull(i) ?: return
         closeSong()
-        if (!restarting) { recovery.newSong(); songWait.newSong() }
+        if (!restarting) { recovery.newSong(); songWait.newSong(); startReask.newSong() }
+        reaskJob?.cancel()
         freezeWatch.reset()
         dropBook()
         q.index = i
@@ -317,6 +329,7 @@ actual object MusicEngine {
         // DEB-3034 — a wait is reported while it lasts (FR-1) with its detail (FR-2); a pause ends it. A pause is reported with what sent it (FR-7).
         val waiting = songWait.waiting && !paused
         val detail = if (waiting) songWait.detail(waitSample(s, withWhy = true)) else null
+        if (detail?.contains(" observed=") == true) observedSent = true
         val flag: Boolean? = if (waiting) true else if (waitEnded) false else null
         val by = if (paused) pauseBy else null
         scope.launch { runCatching { c?.reportProgress(id, pos, paused, vol, flag, detail, by) } }
@@ -360,7 +373,13 @@ actual object MusicEngine {
                 if (openTrackId != null && s.ended && !endHandled) { endHandled = true; onSongEnded() }
                 if (s.failed && !failed && openTrackId != null) onPlayerFailed(s)
                 if (openTrackId != null && !failed && loadJob?.isActive != true) {
-                    freezeWatch.feed(FreezeWatch.Sample(System.currentTimeMillis(), s.positionMs, s.wantsPlay, s.seeking, s.ended, s.failed))?.let { onFrozen(s, it) }
+                    val now = System.currentTimeMillis()
+                    freezeWatch.feed(FreezeWatch.Sample(now, s.positionMs, s.wantsPlay, s.seeking, s.ended, s.failed))?.let { onFrozen(s, it) }
+                    // DEB-5531 (FR-9, FR-10) — a song's direct start that has not started: ask once for the lighter copy. Never a book part, never a restream.
+                    if (book == null && openTrackId != null && !failed && !endHandled &&
+                        startReask.due(now, freezeWatch.hasStarted, s.wantsPlay && !s.seeking && !s.ended && !s.failed, eligible = loadDirect && observedSent)) {
+                        q.current?.let { reaskStart(it) }
+                    }
                 } else freezeWatch.reset()
                 val playing = s.wantsPlay && !s.ended && !s.failed
                 // DEB-3034 (FR-1) — a song only: a book's heartbeat is the book's, a station's is the tuner's.
@@ -383,6 +402,28 @@ actual object MusicEngine {
                 if (n++ % 4 == 0) updateCard()
                 delay(250)
             }
+        }
+    }
+
+    /**
+     * DEB-5531 (FR-9, FR-11) — the same `playMusic` call with the same start position. A lighter answer replaces the load
+     * (the song's session stays open: the server joins it, and sends Jellyfin no stop for the replaced stream); the same
+     * direct copy is left loading, since a reload would throw the download away (FR-7).
+     */
+    private fun reaskStart(track: MusicTrackItem) {
+        val seq = loadSeq
+        val startMs = loadStartMs
+        DesktopLog.note("music: start wait 6 s, asking again")
+        reaskJob?.cancel()
+        reaskJob = scope.launch {
+            val ticket = runCatching { client()?.playMusic(track.id, musicCapabilities, startMs.takeIf { it > 0 }) }.getOrNull()
+            if (!isActive || seq != loadSeq || openTrackId != track.id || book != null) return@launch
+            if (ticket == null) { DesktopLog.note("music: start wait 6 s, asked again: no answer, kept loading"); return@launch }
+            if (!StartReask.loadsAnswer(loadDirect, ticket.directPlay)) { DesktopLog.note("music: start wait 6 s, asked again: same copy, kept loading"); return@launch }
+            DesktopLog.note("music: start wait 6 s, asked again: lighter copy")
+            freezeWatch.reset()   // FR-7's count starts again for the new load
+            loadTicket(ticket, startMs, play = player.state.wantsPlay, rate = 1f, volume = musicVolumeScale(track, context, q.shuffled, MusicPrefs.evenVolume))
+            publish()
         }
     }
 
