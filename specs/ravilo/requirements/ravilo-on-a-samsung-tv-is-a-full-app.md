@@ -2299,3 +2299,93 @@ the wire: no existing field changes.
 
 **Field read.** It still needs a `.wgt` on the household's set that can prove its path (DEB-5629). Read 14 days from the
 first direct play there, against 4 970 ms.
+
+## Amendment 2026-11-28 (DEB-5503) — a Samsung direct-plays only for an app that never switches audio inside the file
+
+QA re-ran the plan on 2026-11-27 (DEB-5918), against a backend carrying DEB-5916 (`702cf95bf`) and with apps built from 1.73
+and from DEB-5917 (`9471a66ed`). The starts, seeks, subtitles, DTS and the switch's route passed, and Tizen 10.0 started
+direct in a median 2.8 s. The audio legs failed on every path:
+- **1.73 app, remembered audio off the default.** The server answered with a direct play that names the remembered
+  track (stream 7, AAC, beside an E-AC-3 default at stream 4). The app then switched inside the file and froze, as in
+  DEB-5507. The likely cause: stream 7 is a copy that jellystructure added (314), and `audioIsOffDefault` counts a copy as
+  the track it copies. So the rule said "default" while the ticket still carried stream 7.
+- **DEB-5917 app, a pick during a direct play.** `setSelectTrack` threw `PLAYER_ERROR_INVALID_OPERATION`. The app
+  restreamed once, as the amendment asks, but `avplay.open` on the answer failed with `INVALID_OPERATION`. The page then
+  went unresponsive for about 90 s, and every later `open` failed until the app left. **A throw from `setSelectTrack`
+  leaves AVPlay unusable.**
+- **1.73 app on 10.0, a pick during a direct play.** The page was unresponsive for over 6 minutes, and no restream was
+  ever asked for.
+
+So FR-44's in-file switch is withdrawn on the Samsung. The installed 1.73 `.wgt` keeps calling it, and its in-play pick
+can't be fixed from the server, so the 1.73 `.wgt` must not get a direct play at all.
+
+**FR-43, amended — the capability the server waits for.** `ClientCapabilities` gains `audio_by_restream: Boolean = false`,
+an additive field. An app sets it to mean *on a direct play I change audio only by restreaming, never inside the file*.
+- A start, prepare, prewarm or restream from a `tizen` device is negotiated as `hls_only = true` unless its capabilities
+  carry `audio_by_restream = true`. This sits beside FR-46's switch: either one turns direct play off.
+- The 1.73 `.wgt` and any build without the field send `false`, so they get exactly 1.72's negotiation. Their in-play
+  audio pick is then the HLS restream that has always worked.
+- Android TV, the receiver and the web don't send the field, and nothing on them reads it.
+
+**FR-44, amended again — audio.** This replaces the *Audio* bullets of *Amendment 2026-11-27, fourth*:
+- **The server's rule compares what the ticket carries.** A Samsung direct play's ticket always carries the file's default
+  track as its chosen audio.
+  - If the asked track is a copy jellystructure added of the default track (`copy_of` = the default's index), the
+    negotiation asks for the default track itself and stays direct. It is the same audio, and the Samsung declares that
+    codec.
+  - Any other asked track that is not the default is `hls_only`, as before: our ladder, carrying that track.
+  - The invariant is tested directly: no `tizen` ticket with `direct_play = true` names a chosen audio other than the
+    file's default track.
+- **The app never calls `setSelectTrack('AUDIO', …)`.** `AvPlayBackend` declares `audio_by_restream = true`.
+  - A pick during a direct play first closes the player (`stop()`, then `close()`). Then it restreams from the current
+    position with that audio and `hls_only = true`.
+  - The *one audio restream per pick* rule stays.
+  - The *no restream when nothing changes* rule stays.
+  - DEB-5917's select check goes, along with the code it guards.
+- **Every reopen starts from a closed player.** Any restream (audio, subtitle burn-in, FR-27, FR-32) calls `stop()`, then
+  `close()`, before the next `open()`.
+  - If that `open()` or `prepareAsync` fails, the app restreams once more with `hls_only = true`, so the answer is our
+    ladder.
+  - If that also fails, the play ends on FR-60's failure screen (its cause and a way out). The page never stops answering
+    the remote.
+
+**What it costs.** A viewer on the 1.73 `.wgt` gets no direct play. That is today's field state anyway: the household's
+set has had none since 1.73, because its path is unproven. A file played with audio other than its default starts on our
+ladder.
+
+**Tizen 10.0's freeze is noted, not specced.** On the 10.0 emulator, every play froze about 15 s after the first frame,
+both direct plays and plays on our HLS. That points to the emulator (no GPU, no audio sink), not the app. The household's
+set is 5.0, and no newer Samsung is on the board. The field read will show any freeze on a real set.
+
+**Proof (CI).**
+- `linuxX64Test`:
+  - a `tizen` start without `audio_by_restream` negotiates with no direct-play profile;
+  - with `audio_by_restream = true`, an added copy of the default asks for the default and stays direct, and its ticket
+    carries the default;
+  - with `audio_by_restream = true`, a real second track is `hls_only` and carries that track;
+  - for every `tizen` ticket answered direct, the chosen audio is the default;
+  - an Android TV start is untouched.
+- `ravilo-screen` e2e, with the fake AVPlay:
+  - the start posts `audio_by_restream: true`;
+  - a pick during a direct play never calls `setSelectTrack('AUDIO', …)`, calls `stop()` and then `close()` before the
+    next `open()`, and restreams once with `hls_only: true`;
+  - an `open()` that fails after a restream gets one more restream with `hls_only: true`;
+  - a second failure ends on FR-60's failure screen, and the page still takes a key.
+
+**Proof (QA, `tizen-emulator`, Tizen 5.0).**
+- With the 1.73 `.wgt` against the new backend: a start is never direct, and a pick plays on with no freeze.
+- With the new `.wgt`:
+  - a remembered off-default track starts on our ladder with that track;
+  - an added AAC copy of an E-AC-3 default starts direct;
+  - a pick during a direct play plays on from the same position on our ladder, with the page answering throughout;
+  - a one-track file direct-plays with no restream.
+- On 10.0, if a Samsung-signed build can be made: the same pick, timed inside the first 15 s.
+
+**Build order**, for one engineer, side by side:
+1. **The backend:** the `audio_by_restream` gate and the copy rule. Once on prod, this alone makes every installed
+   `.wgt` safe.
+2. **`ravilo-screen`:** declare the field, remove the in-file select, close before every reopen, and the fallback after
+   a failed open.
+
+**Release gate.** No Samsung `.wgt` that carries DEB-5629 (it proves the set's path and so opens direct play there) is
+released before piece 1 is on prod.
