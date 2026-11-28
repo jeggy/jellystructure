@@ -193,3 +193,37 @@ FR-279-1's discipline holds: new paths and new fields only, nothing renamed or r
 viewer's own token (`tvTokenForClient`), never the server key, and only on a playlist the viewer owns. The reads keep
 `tvToken` as today.
 
+
+## Amendment 2026-11-28 — a song on a slow line gets the lighter copy (DEB-5531)
+
+Task: DEB-5531. The owner, on the three-day log review (2026-11-25), was asked whether a slow line should get a smaller
+copy of a song so it starts in seconds. He answered *"Yes, a smaller copy on a slow line only; the original everywhere
+else"*. The case: the Mac, on a line from the office of about 1.42 Mbps, direct-played FLAC files of 1.34–1.80 Mbps, and
+songs could not start (`specs/ravilo/requirements/a-song-that-stops-moving-picks-itself-up.md`, *Amendment 2026-11-25*).
+
+FR-279-6 says a song direct-plays whenever the device declares its codec. That stays true on any line that can carry
+the file. This adds one exception.
+
+- **FR-279-12 — The line decides the copy.** At a song's start (`startMusicPlayback`), the server looks up the
+  device's **line figure**: the `observed=<bps>` of that device's latest song `waiting` report
+  (`a-song-that-waits-says-so.md`, FR-2) that carried one. The figure counts only when it is under 30 minutes old and
+  the report came from the same client address as this start (`LoginRateLimiter.clientKey`, as the sign-in routes
+  read it). A song **fits** the line when its file's bitrate is at most 0.8 × the line figure. A song that does not fit
+  gets FR-279-6's existing stereo AAC 256 kbps HLS copy instead of direct play. A song that fits, or a start with no
+  line figure, behaves exactly as today.
+- **What the lighter copy is.** It is the transcode that already exists for a WMA, and it gets the same treatment
+  everywhere: `StreamTicket.direct_play = false`, Jellyfin's own `TranscodingUrl`, and outside 218's session ceiling.
+  `checkCeiling` acts on cast devices only, and they post no song waits.
+- **Back to the original.** The line figure expires after 30 minutes and is replaced when the client address changes,
+  for example when the Mac moves from the office to home. The first song after that is tried as the original again. If
+  the line is still slow, that song waits, which makes a new figure. On a line that stays bad, that costs one wait of
+  about 6 s every 30 minutes (the client side is the song spec's FR-9).
+- **Nothing on the wire changes.** There is no new field or route. The figure is held in memory per device, so a server
+  restart forgets it, and the next wait makes it again. FR-279-10 holds: nothing a viewer reads says that a song was
+  converted.
+
+**Acceptance (added).**
+- A `linuxX64Test` on the fit rule covers four cases: a figure of 1.42 Mbps with a 1.34 Mbps file gives the lighter
+  copy; with a 320 kbps file, direct play; a figure 31 min old, direct play; a figure from another address, direct play.
+- On prod, the server log's `PlaybackInfo (music)` line shows `transcode=true` for the first FLAC start after a capped
+  Mac's song has waited. An uncapped control leg shows `directPlay=true`.

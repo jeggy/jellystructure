@@ -151,3 +151,44 @@ That contradicts `a-song-that-waits-says-so.md` (*"That table has no row for any
 - On the Mac (QA), cap the Mac's line below the album's bitrate (`cap.sh` on the server side, with an uncapped control
   leg). The first song may take up to 30 s to start, but no song is skipped before it has played, and the log shows no
   *restarted* at 0.
+
+## Amendment 2026-11-28 — a song that cannot start asks once for the lighter copy (DEB-5531)
+
+Task: DEB-5531. FR-7 stops a song that has not started from being restarted at 0 or skipped too soon. On a line too thin
+for the file, though, the song can still take up to 30 s, or never start at all. The owner chose a smaller copy for a
+slow line, and the original everywhere else (2026-11-25, DEB-5531's card). The server side is
+`specs/requirements/phase-279-api-tv-music.md`, *Amendment 2026-11-28*, FR-279-12. It reads:
+
+> At a song's start, the server looks up the device's line figure: the `observed=<bps>` of that device's latest song
+> `waiting` report that carried one, under 30 minutes old and from the same client address. A song fits the line when
+> its file's bitrate is at most 0.8 × the line figure. A song that does not fit gets the stereo AAC 256 kbps HLS copy
+> instead of direct play.
+
+That rule alone only helps from the **second** song: the first one on a slow line has already been started direct. This
+amendment covers that first song.
+
+- **FR-9 — Ask once, at 6 s.** When a song has not started (FR-7: its position has not yet moved 1 s past its load
+  point) after 6 s, and this load has already sent a `waiting` report that carried an `observed` figure, the engine asks
+  the server for the song again, once, with the same `playMusic` call and the same start position.
+  - If the answer is the lighter copy (`direct_play = false` where the current load is direct), the engine loads it.
+    FR-7's count starts again for the new load.
+  - If the answer is the same direct copy, the engine leaves the current load alone. It does not reload it, which would
+    throw the download away (FR-7), and it does not ask again for this song.
+  - A load that sent no `observed` figure does not ask: the server would have nothing to decide with.
+- **FR-10 — Only songs, only a direct start.** FR-9 applies to songs on the local desktop engine, at a song's start
+  only. A freeze in the middle keeps FR-1 to FR-4. A book part, the lighter copy itself, and a song that is already a
+  transcode (a WMA) never ask.
+- **FR-11 — It leaves a trace.** `ravilo.log` gets one line when the engine asks, and one for its outcome:
+  `music: start wait 6 s, asked again: lighter copy`, or `...: same copy, kept loading`. Nothing new goes to the server.
+  The re-ask is an ordinary start, and the timeline already shows the wait.
+
+**Acceptance (added).**
+- A `FreezeWatch` or engine unit test (`:ravilo-ui:desktopTest --tests '*FreezeWatch*'`, plus the engine's test) covers
+  three cases. A song not started at 6 s, with an `observed` figure sent, asks once and loads a `direct_play = false`
+  answer. The same song given a direct answer keeps its load and does not ask again. A song with no `observed` figure
+  sent never asks.
+- On the Mac (QA): cap the Mac's line below the album's bitrate (`cap.sh`), with an uncapped control leg.
+  - On the capped leg, the first song starts within about 10 s, every following song starts in a few seconds, and no
+    song is skipped. `ravilo.log` shows one *asked again: lighter copy*.
+  - On the control leg, every song direct-plays and no line shows *asked again*.
+  - In Jellyfin's activity, each song counts as one play.
