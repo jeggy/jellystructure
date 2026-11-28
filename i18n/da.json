@@ -730,6 +730,18 @@
     "text": "Skriv adressen på jeres Ravilo-server",
     "note": "Draft Danish — review before release."
   },
+  "setup.hidden_line_break": {
+    "text": "Adressen har et skjult linjeskift",
+    "note": "Draft Danish — review before release."
+  },
+  "setup.hidden_space": {
+    "text": "Adressen har et skjult mellemrum",
+    "note": "Draft Danish — review before release."
+  },
+  "setup.use_fixed_address": {
+    "text": "Brug {address}",
+    "note": "Draft Danish — review before release."
+  },
   "action.watch_now": {
     "text": "Se nu",
     "note": "Draft Danish — review before release."

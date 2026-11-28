@@ -730,6 +730,18 @@
     "text": "Skriva adressuna á Ravilo-ambætaranum hjá tær",
     "note": "Draft Faroese — review before release."
   },
+  "setup.hidden_line_break": {
+    "text": "Adressan hevur eitt fjalt linjuskift",
+    "note": "Draft Faroese — review before release."
+  },
+  "setup.hidden_space": {
+    "text": "Adressan hevur eitt fjalt millumrúm",
+    "note": "Draft Faroese — review before release."
+  },
+  "setup.use_fixed_address": {
+    "text": "Brúka {address}",
+    "note": "Draft Faroese — review before release."
+  },
   "action.watch_now": {
     "text": "Hygg nú",
     "note": "Draft Faroese — review before release."

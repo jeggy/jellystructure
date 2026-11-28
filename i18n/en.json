@@ -811,6 +811,18 @@
     "text": "Enter your Ravilo server address",
     "note": "R279 — the line above the input on first run."
   },
+  "setup.hidden_line_break": {
+    "text": "This address has a hidden line break",
+    "note": "DEB-5013 — the sentence under the server address when it holds a line break (a pasted second line)."
+  },
+  "setup.hidden_space": {
+    "text": "This address has a hidden space",
+    "note": "DEB-5013 — the sentence under the server address when it holds a space or another invisible character, and no line break."
+  },
+  "setup.use_fixed_address": {
+    "text": "Use {address}",
+    "note": "DEB-5013 — the button that replaces the address with its cleaned form; {address} is that address, set in a monospace face. Keep the placeholder."
+  },
   "action.watch_now": {
     "text": "Watch Now",
     "note": "R279 — the primary button on a Discover detail for something already in the library. Distinct from action.play, which is the library's own hero button."

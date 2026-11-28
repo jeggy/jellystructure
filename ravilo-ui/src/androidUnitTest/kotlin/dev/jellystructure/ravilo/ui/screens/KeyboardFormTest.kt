@@ -237,6 +237,41 @@ class KeyboardFormTest {
         rule.onNodeWithTag(ServerSetupTags.ADDRESS_FIELD).assertTextContains("media.example.org")
     }
 
+    // DEB-5013 (FR-4 to FR-6) — the hidden-character warning on a TV.
+
+    @Test fun `server setup opened on a pasted two-line address starts on the fix button, and Connect does nothing`() {
+        val saved = mutableListOf<String>()
+        render(keyboardDown) { ServerSetupScreen(onUrlSaved = saved::add, initialAddress = "jelly.example.net\n[21:20]") }
+        rule.onNodeWithTag(ServerSetupTags.HIDDEN_WARNING).assertIsDisplayed()
+        rule.onNodeWithTag(ServerSetupTags.HIDDEN_MARKS).assertTextContains("jelly.example.net\u00B6[21:20]")
+        focusedAndShown(ServerSetupTags.FIX)
+        // FR-6: Connect is disabled while the warning shows.
+        press(Key.DirectionDown); focusedAndShown(ServerSetupTags.CONNECT)
+        press(Key.DirectionCenter)
+        org.junit.Assert.assertEquals(emptyList<String>(), saved)
+    }
+
+    @Test fun `server setup with the warning walks field, fix, Connect and back up the same way`() {
+        render(keyboardDown) { ServerSetupScreen(onUrlSaved = {}, initialAddress = "jelly. example.net") }
+        focusedAndShown(ServerSetupTags.FIX)
+        press(Key.DirectionUp); focusedAndShown(ServerSetupTags.ADDRESS)
+        press(Key.DirectionDown); focusedAndShown(ServerSetupTags.FIX)
+        press(Key.DirectionDown); focusedAndShown(ServerSetupTags.CONNECT)
+        press(Key.DirectionUp); focusedAndShown(ServerSetupTags.FIX)
+    }
+
+    @Test fun `the fix button puts the cleaned address in the field, removes the warning and moves focus to Connect`() {
+        val saved = mutableListOf<String>()
+        render(keyboardDown) { ServerSetupScreen(onUrlSaved = saved::add, initialAddress = "jelly.example.net\n[21:20]") }
+        focusedAndShown(ServerSetupTags.FIX)
+        press(Key.DirectionCenter)
+        rule.onNodeWithTag(ServerSetupTags.HIDDEN_WARNING).assertDoesNotExist()
+        rule.onNodeWithTag(ServerSetupTags.ADDRESS_FIELD).assertTextContains("jelly.example.net")
+        focusedAndShown(ServerSetupTags.CONNECT)
+        press(Key.DirectionCenter)
+        org.junit.Assert.assertEquals(listOf("https://jelly.example.net"), saved)
+    }
+
     @Test @Config(qualifiers = "w412dp-h915dp")
     fun `on a phone the address field takes focus directly, as before`() {
         render(915.dp) { ServerSetupScreen(onUrlSaved = {}) }

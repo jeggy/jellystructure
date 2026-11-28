@@ -38,6 +38,11 @@ data class RaviloColors(
     // #2dd49a reaches only about 1.9 : 1 on Daylight's near-white pill, so Daylight overrides both.
     val good: Color = Color(0xFF2DD49A),
     val bad: Color = Color(0xFFF2797F),
+    // DEB-5013 (FR-4) — the hidden-character warning's text and marks, and the rail and button border beside them
+    // (ravilo.css --warn). Defaults are Aurora, Midnight and Graphite's; Noir's accent is #f5b542, and #f5b542 on
+    // Daylight's background is 1.8 : 1, so those two override.
+    val warning: Color = Color(0xFFF5B542),
+    val warningRule: Color = warning,
 )
 
 val AuroraColors = RaviloColors(
@@ -104,6 +109,7 @@ val NoirColors = RaviloColors(
     accentSecondary = Color(0xFFE0792F),
     card            = Color(0xFF0D0C0A),
     tileRadius      = 6.dp,
+    warning         = Color(0xFFE0792F),
 )
 
 // R338 (FR-R338-1) — Graphite: dark and neutral, one blue.
@@ -156,6 +162,8 @@ val DaylightColors = RaviloColors(
     isLight         = true,
     good            = Color(0xFF0F7A52),
     bad             = Color(0xFFB3242C),
+    warning         = Color(0xFF8A5A00),
+    warningRule     = Color(0xFFC98A12),
 )
 
 /**
