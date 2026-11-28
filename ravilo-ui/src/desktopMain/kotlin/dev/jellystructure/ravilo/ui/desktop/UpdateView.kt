@@ -50,7 +50,8 @@ object UpdateView {
         val last = status.checkedAt?.let(checked)
         return when (plan) {
             UpdatePlan.NoBlock -> null
-            UpdatePlan.UpToDate -> model(UpdateBlockState.UpToDate(last))
+            // NotYet is never stored (UpdateRules.afterCheck); it reads as Up to date only to stay exhaustive.
+            UpdatePlan.UpToDate, UpdatePlan.NotYet -> model(UpdateBlockState.UpToDate(last))
             is UpdatePlan.HeldBack -> model(UpdateBlockState.HeldBack(plan.latest.toString(), plan.server.toString()))
             UpdatePlan.Offline -> model(UpdateBlockState.Offline(last))
             is UpdatePlan.AskSparkle -> when (s.phase) {

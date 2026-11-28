@@ -52,8 +52,6 @@ data class UpdateStatus(
  * which this replaced, went in FR-R386-11.)
  */
 object UpdateCheck {
-    private const val DAY_MS = 24L * 60 * 60 * 1000
-    private const val RETRY_MS = 15L * 60 * 1000
     private val json = Json { ignoreUnknownKeys = true }
     private val prefs by lazy { PrefsFile("update") }
 
@@ -109,7 +107,7 @@ object UpdateCheck {
         }.getOrNull()
     }
 
-    /** FR-R386-3's L, or what `v<S>`'s appcast came to: a 404 is *nothing published*, anything unreadable is offline. */
+    /** FR-R386-3's L, or what `v<S>`'s appcast came to: a 404 is *not yet published*, anything unreadable is offline. */
     private suspend fun readAppcast(url: String): AppcastRead = withContext(Dispatchers.IO) {
         runCatching {
             val request = Request.Builder().url(url).get().build()
@@ -145,8 +143,8 @@ object UpdateCheck {
         // FR-R386-9 — *Check for Updates…* was chosen in the Ravilo menu: About opens and the check runs there.
         if (sparkle.menuClicks > menuSeen) { menuSeen = sparkle.menuClicks; AppCommands.send(AppCommand.UPDATE_CHECK) }
         _status.value = _status.value.copy(
-            plan = plan ?: _status.value.plan,
-            checkedAt = if (plan != null && plan != UpdatePlan.Offline) now else _status.value.checkedAt,
+            plan = plan?.let { UpdateRules.afterCheck(_status.value.plan, it) } ?: _status.value.plan,
+            checkedAt = if (plan != null && plan != UpdatePlan.Offline && plan != UpdatePlan.NotYet) now else _status.value.checkedAt,
             sparkle = sparkle,
             cannotUpdateFrom = if (DesktopPaths.isMac) placeThatCannotUpdate() else null,
             checking = checking,
@@ -212,10 +210,10 @@ object UpdateCheck {
                 } else checkMac(server)
                 val guard = if (DesktopPaths.isMac) placeThatCannotUpdate() else null
                 if (plan is UpdatePlan.AskSparkle && guard == null) MacUpdater.checkInBackground(plan.feedUrl)
-                // Offline keeps the last check's time; it and an unreachable server ask again in a quarter of an hour.
+                // Offline and a not-yet appcast keep the last check's time; they and an unreachable server ask again in a quarter of an hour.
                 checking = false
                 publish(plan, now)
-                nextAt = now + if (server == null || plan == UpdatePlan.Offline) RETRY_MS else DAY_MS
+                nextAt = now + UpdateRules.nextDelayMs(server != null, plan)
             }
             publish(null, now)
             // One second, not sixty: the snapshot above follows Sparkle's callbacks, and *Check now* answers promptly.

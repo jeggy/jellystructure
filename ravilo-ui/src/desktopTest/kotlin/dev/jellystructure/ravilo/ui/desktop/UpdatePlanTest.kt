@@ -19,8 +19,8 @@ class UpdatePlanTest {
     }
 
     @Test
-    fun `a 404 appcast on the server's release means nothing to offer, never an error`() {
-        assertEquals(UpdatePlan.UpToDate, UpdateRules.plan("1.52", "v1.53", AppcastRead.NotPublished, null))
+    fun `a 404 appcast on the server's release is not yet, never an error`() {
+        assertEquals(UpdatePlan.NotYet, UpdateRules.plan("1.52", "v1.53", AppcastRead.NotPublished, null))
     }
 
     @Test
@@ -34,7 +34,7 @@ class UpdatePlanTest {
         assertEquals(UpdatePlan.HeldBack(v(1, 53), v(1, 51)), UpdateRules.plan("1.52", "1.51", null, release(1, 53)))
         assertEquals(UpdatePlan.UpToDate, UpdateRules.plan("1.52", "1.51", null, release(1, 52)))
         assertEquals(UpdatePlan.UpToDate, UpdateRules.plan("1.52", "1.52", null, release(1, 51)), "latest behind the app offers nothing")
-        assertEquals(UpdatePlan.UpToDate, UpdateRules.plan("1.52", "1.52", null, AppcastRead.NotPublished))
+        assertEquals(UpdatePlan.NotYet, UpdateRules.plan("1.52", "1.52", null, AppcastRead.NotPublished))
     }
 
     @Test
@@ -122,5 +122,21 @@ class UpdatePlanTest {
             "update: check (background) feed=https://example.test/v1.53/appcast.xml",
             MacUpdater.checkLine("background", "https://example.test/v1.53/appcast.xml"),
         )
+    }
+
+    @Test
+    fun `a not-yet keeps the earlier decision, or shows Up to date`() {
+        val held = UpdatePlan.HeldBack(v(1, 53), v(1, 52))
+        assertEquals(held, UpdateRules.afterCheck(held, UpdatePlan.NotYet))
+        assertEquals(UpdatePlan.UpToDate, UpdateRules.afterCheck(null, UpdatePlan.NotYet))
+        assertEquals(UpdatePlan.UpToDate, UpdateRules.afterCheck(UpdatePlan.Offline, UpdatePlan.NotYet))
+        assertEquals(UpdatePlan.Offline, UpdateRules.afterCheck(held, UpdatePlan.Offline))
+    }
+
+    @Test
+    fun `a not-yet asks again in a quarter of an hour`() {
+        assertEquals(15L * 60 * 1000, UpdateRules.nextDelayMs(true, UpdatePlan.NotYet))
+        assertEquals(15L * 60 * 1000, UpdateRules.nextDelayMs(false, UpdatePlan.UpToDate))
+        assertEquals(24L * 60 * 60 * 1000, UpdateRules.nextDelayMs(true, UpdatePlan.UpToDate))
     }
 }

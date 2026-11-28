@@ -27,12 +27,15 @@ sealed interface UpdatePlan {
 
     /** State 12 — GitHub cannot be reached, or the server is unknown. */
     data object Offline : UpdatePlan
+
+    /** The appcast is not published yet: not a decision. Asked again in a quarter of an hour; never shown. */
+    data object NotYet : UpdatePlan
 }
 
-/** What reading a GitHub appcast came to: a 404 is *nothing published*, never an error (FR-R386-3). */
+/** What reading a GitHub appcast came to: a 404 is *not yet published*, never an error (FR-R386-3). */
 sealed interface AppcastRead {
     data class Release(val version: RaviloVersion) : AppcastRead
-    /** A 404, or an appcast that names no plain release: nothing to offer. */
+    /** A 404, or an appcast that names no plain release: not yet published, so asked again later. */
     data object NotPublished : AppcastRead
     /** GitHub cannot be reached, or answered something other than 200 or 404. */
     data object Unreachable : AppcastRead
@@ -60,16 +63,28 @@ object UpdateRules {
         if (s > a) {
             return when (feed) {
                 is AppcastRead.Release -> UpdatePlan.AskSparkle(s, appcastOf(s))
-                AppcastRead.NotPublished -> UpdatePlan.UpToDate   // a release from before R386: nothing to offer
+                AppcastRead.NotPublished -> UpdatePlan.NotYet
                 AppcastRead.Unreachable, null -> UpdatePlan.Offline
             }
         }
         return when (latest) {
             is AppcastRead.Release -> if (latest.version > a) UpdatePlan.HeldBack(latest.version, s) else UpdatePlan.UpToDate
-            AppcastRead.NotPublished -> UpdatePlan.UpToDate
+            AppcastRead.NotPublished -> UpdatePlan.NotYet
             AppcastRead.Unreachable, null -> UpdatePlan.Offline
         }
     }
+
+    /** What the block keeps after a check: a [UpdatePlan.NotYet] keeps the earlier decision, or shows Up to date. */
+    fun afterCheck(previous: UpdatePlan?, decided: UpdatePlan): UpdatePlan =
+        if (decided != UpdatePlan.NotYet) decided
+        else if (previous == null || previous == UpdatePlan.Offline) UpdatePlan.UpToDate else previous
+
+    /** Milliseconds until the next check: a quarter of an hour after a failure or a *not yet*, a day otherwise. */
+    fun nextDelayMs(serverKnown: Boolean, plan: UpdatePlan?): Long =
+        if (!serverKnown || plan == UpdatePlan.Offline || plan == UpdatePlan.NotYet) RETRY_MS else DAY_MS
+
+    const val RETRY_MS = 15L * 60 * 1000
+    const val DAY_MS = 24L * 60 * 60 * 1000
 
     /** The version an appcast's item names (`sparkle:shortVersionString`), as a plain release — or null. */
     fun versionInAppcast(xml: String): RaviloVersion? {
