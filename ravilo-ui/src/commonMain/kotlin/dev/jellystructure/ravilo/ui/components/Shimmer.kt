@@ -194,36 +194,39 @@ fun HomeLoadingShell() {
     }
 }
 
-/** Loading shell shown while MovieDetailState.Loading or SeriesDetailState.Loading is active. */
+/** Test seams: the detail skeleton's hero band and its action line. */
+internal const val DETAIL_SKELETON_HERO = "detail-skeleton-hero"
+internal const val DETAIL_SKELETON_ACTIONS = "detail-skeleton-actions"
+
+/**
+ * Loading shell shown while MovieDetailState.Loading or SeriesDetailState.Loading is active.
+ *
+ * DEB-5837 FR-3 — the loaded page's own shape: a hero band that fills the visible height (R295, no fixed height), its text
+ * column bottom-aligned with the loaded hero's 44 dp bottom padding, and the title, meta and action lines in that column's
+ * gutters (title, 8 dp, meta, 18 dp, actions). The app bar is drawn by the caller.
+ */
 @Composable
 fun DetailLoadingShell() {
     val brush = rememberShimmerBrush()
-
-    Column(modifier = Modifier.fillMaxWidth()) {
-        // Hero skeleton
-        ShimmerBox(modifier = Modifier.fillMaxWidth().height(620.dp), brush = brush, radius = 0f)
-        Spacer(Modifier.height(24.dp))
-        // Title
-        Box(modifier = Modifier.padding(horizontal = raviloHPad)) {
-            ShimmerBox(modifier = Modifier.width(400.dp).height(60.dp), brush = brush)
-        }
-        Spacer(Modifier.height(16.dp))
-        // Synopsis lines
-        Box(modifier = Modifier.padding(horizontal = raviloHPad)) {
-            Column {
-                ShimmerBox(modifier = Modifier.fillMaxWidth(0.8f).height(20.dp), brush = brush)
+    val compact = dev.jellystructure.ravilo.ui.theme.LocalCompact.current
+    Box(Modifier.fillMaxSize().testTag(DETAIL_SKELETON_HERO)) {
+        ShimmerBox(modifier = Modifier.matchParentSize(), brush = brush, radius = 0f)
+        Column(Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(bottom = 44.dp)) {
+            Column(Modifier.fillMaxWidth(if (compact) 1f else 0.6f).padding(horizontal = raviloHPad)) {
+                // Title (the loaded title's 40 sp line, or the 80 dp logo's room is the taller of the two)
+                Box(Modifier.width(400.dp).height(40.dp).skeleton(RoundedCornerShape(10.dp), brush))
                 Spacer(Modifier.height(8.dp))
-                ShimmerBox(modifier = Modifier.fillMaxWidth(0.6f).height(20.dp), brush = brush)
+                // Meta line
+                Box(Modifier.width(240.dp).height(20.dp).skeleton(RoundedCornerShape(10.dp), brush))
             }
-        }
-        Spacer(Modifier.height(24.dp))
-        // Buttons
-        Row(
-            modifier = Modifier.padding(horizontal = raviloHPad),
-            horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(16.dp),
-        ) {
-            ShimmerBox(modifier = Modifier.width(160.dp).height(60.dp), brush = brush, radius = 12f)
-            ShimmerBox(modifier = Modifier.width(140.dp).height(60.dp), brush = brush, radius = 12f)
+            Spacer(Modifier.height(18.dp))
+            Row(
+                modifier = Modifier.padding(horizontal = raviloHPad).testTag(DETAIL_SKELETON_ACTIONS),
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                Box(Modifier.width(160.dp).height(60.dp).skeleton(RoundedCornerShape(12.dp), brush))
+                Box(Modifier.width(140.dp).height(60.dp).skeleton(RoundedCornerShape(12.dp), brush))
+            }
         }
     }
 }

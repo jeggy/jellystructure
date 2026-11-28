@@ -154,7 +154,11 @@ fun SeriesDetailScreen(
     // DEB-2349 (FR-5) — the page fades in once over the loading shell; one from `DetailStore`'s cache does not.
     Box(modifier = Modifier.fillMaxSize().background(colors.background).fadeInOnLoad(loading = state is SeriesDetailState.Loading)) {
         when (val s = state) {
-            is SeriesDetailState.Loading -> DetailLoadingShell()
+            is SeriesDetailState.Loading -> {
+                DetailLoadingShell()
+                // DEB-5837 (FR-3) — the real app bar, drawn as when loaded.
+                AppBar(navItems = raviloNavItems(), activeNav = -1, onNavSelect = onNavSelect, onProfile = onProfile, onSearch = onSearch)
+            }
             is SeriesDetailState.Error -> DetailErrorState(kind = s.kind, onRetry = { store.retry() }, onBack = onBack)
             is SeriesDetailState.Loaded -> SeriesDetailLoaded(
                 wireDetail = s.detail,

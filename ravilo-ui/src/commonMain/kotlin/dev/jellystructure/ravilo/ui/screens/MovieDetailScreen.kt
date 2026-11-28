@@ -133,7 +133,11 @@ fun MovieDetailScreen(
     // DEB-2349 (FR-5) — the page fades in once over the loading shell; one from `DetailStore`'s cache does not.
     Box(modifier = Modifier.fillMaxSize().background(colors.background).fadeInOnLoad(loading = state is MovieDetailState.Loading)) {
         when (val s = state) {
-            is MovieDetailState.Loading -> DetailLoadingShell()
+            is MovieDetailState.Loading -> {
+                DetailLoadingShell()
+                // DEB-5837 (FR-3) — the real app bar, drawn as when loaded.
+                AppBar(navItems = raviloNavItems(), activeNav = -1, onNavSelect = onNavSelect, onProfile = onProfile, onSearch = onSearch)
+            }
             is MovieDetailState.Error -> DetailErrorState(kind = s.kind, onRetry = { store.retry() }, onBack = onBack)
             is MovieDetailState.Loaded -> MovieDetailLoaded(
                 detail = s.detail,
