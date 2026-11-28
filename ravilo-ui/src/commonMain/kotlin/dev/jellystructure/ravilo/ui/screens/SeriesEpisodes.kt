@@ -160,3 +160,27 @@ class SeriesReturnTarget {
     /** R365 — what is held, without spending it. */
     internal fun peek(): SeriesReturnFocus? = target
 }
+
+/** DEB-5839 (FR-1) — the control the film or series page was left from for a cast face, a related title or a genre chip. */
+internal sealed class DetailReturnFocus {
+    data object Play : DetailReturnFocus()
+    data object Genre : DetailReturnFocus()
+    data class Cast(val personId: String) : DetailReturnFocus()
+    data class Related(val cardId: String) : DetailReturnFocus()
+}
+
+/**
+ * DEB-5839 (FR-1) — held by a title page's store, which outlives the page. Written when a control opens something,
+ * read once when the page is composed again; a later arrival finds nothing and focuses Play.
+ */
+class DetailReturnTarget {
+    private var focus: DetailReturnFocus? = null
+    private var scroll: ListScroll? = null
+    internal fun remember(focus: DetailReturnFocus, scroll: ListScroll) { this.focus = focus; this.scroll = scroll }
+    /** The control and the page's scroll, once. Forgets them either way. */
+    internal fun take(): Pair<DetailReturnFocus, ListScroll>? {
+        val f = focus; val sc = scroll
+        focus = null; scroll = null
+        return if (f != null && sc != null) f to sc else null
+    }
+}

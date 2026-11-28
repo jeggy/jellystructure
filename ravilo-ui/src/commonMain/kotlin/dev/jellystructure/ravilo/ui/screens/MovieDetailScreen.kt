@@ -40,6 +40,7 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
@@ -54,6 +55,7 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.focus.FocusRequester
+import dev.jellystructure.ravilo.ui.focus.requestFocusRetrying
 import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.focus.onFocusChanged
 import kotlinx.coroutines.launch
@@ -151,6 +153,7 @@ fun MovieDetailScreen(
                 onRelatedSelect = onRelatedSelect,
                 onCastSelect = onCastSelect,
                 onGenreSelect = onGenreSelect,
+                returnTarget = store.returnTarget,
                 displayName = displayName,
                 onNavSelect = onNavSelect,
                 onProfile = onProfile,
@@ -164,7 +167,7 @@ fun MovieDetailScreen(
 }
 
 @Composable
-private fun MovieDetailLoaded(
+internal fun MovieDetailLoaded(
     detail: MovieDetail,
     overlay: Map<String, CardPlayState>,
     onBack: () -> Unit,
@@ -181,6 +184,7 @@ private fun MovieDetailLoaded(
     onAnother: (() -> Unit)?,
     anotherEntryFocus: Boolean = false,
     onAnotherFocused: () -> Unit = {},
+    returnTarget: DetailReturnTarget? = null,
 ) {
     val colors = RaviloTheme.colors
     val spaceGrotesk = SpaceGrotesk
@@ -211,11 +215,49 @@ private fun MovieDetailLoaded(
     val trailerFR = remember { FocusRequester() }   // R163
     var showTrailer by remember { mutableStateOf(false) }
     val anotherFR = remember { FocusRequester() }
+    // DEB-5839 (FR-1) — the control a cast face, related title, genre chip or Play was opened from, read once as the page
+    // is rebuilt on the way back. A requester per face and per related title lets Back land on that exact one.
+    val returnFocus = remember(detail.card.id) { returnTarget?.take() }
+    val castFRs = remember(detail.card.id) { detail.cast.associate { it.id to FocusRequester() } }
+    val relatedFRs = remember(detail.card.id) { detail.related.associate { it.id to FocusRequester() } }
+    // The rails' own scroll, held here so the return can bring the opened face or title on screen before it is focused.
+    val castRowState = rememberLazyListState()
+    val relatedRowState = rememberLazyListState()
+    var keepScrollOnPlayFocus by remember { mutableStateOf(false) }   // R72's reframe stays out of a return's one focus
+    fun park(focus: DetailReturnFocus) {
+        returnTarget?.remember(focus, ListScroll(listState.firstVisibleItemIndex, listState.firstVisibleItemScrollOffset))
+    }
     LaunchedEffect(Unit) {
         if (anotherEntryFocus && onAnother != null) {
             onAnotherFocused()
             runCatching { anotherFR.requestFocus() }.onFailure { runCatching { playFR.requestFocus() } }
-        } else runCatching { playFR.requestFocus() }
+            return@LaunchedEffect
+        }
+        val target = returnFocus?.let { (focus, at) ->
+            when (focus) {
+                DetailReturnFocus.Play -> playFR
+                DetailReturnFocus.Genre -> genreFR.takeIf { detail.genres.isNotEmpty() }
+                is DetailReturnFocus.Cast -> castFRs[focus.personId]
+                is DetailReturnFocus.Related -> relatedFRs[focus.cardId]
+            }?.let { it to at }
+        }
+        if (target == null) { requestFocusRetrying(scope, playFR); return@LaunchedEffect }
+        // R350's sequence: the page to where it was, then the focus with the bounded retry — never a bare requestFocus.
+        val (fr, at) = target
+        runCatching { listState.scrollToItem(at.index, at.offset) }
+        when (val f = returnFocus?.first) {
+            is DetailReturnFocus.Cast -> detail.cast.indexOfFirst { it.id == f.personId }.takeIf { it >= 0 }?.let { i ->
+                withFrameNanos { }
+                runCatching { castRowState.scrollToItem(i) }
+            }
+            is DetailReturnFocus.Related -> detail.related.indexOfFirst { it.id == f.cardId }.takeIf { it >= 0 }?.let { i ->
+                withFrameNanos { }
+                runCatching { relatedRowState.scrollToItem(i) }
+            }
+            else -> {}
+        }
+        keepScrollOnPlayFocus = fr === playFR && (at.index > 0 || at.offset > 0)
+        requestFocusRetrying(scope, fr)
     }
 
     // R223 FR-2: every path that sends focus to the nav bar from inside the hero must also guarantee the
@@ -324,7 +366,7 @@ private fun MovieDetailLoaded(
                             Spacer(Modifier.height(10.dp))
                             GenreChipRow(
                                 genres = detail.genres,
-                                onGenreSelect = onGenreSelect?.let { cb -> { values: List<String> -> cb(values, detail.card.title) } },
+                                onGenreSelect = onGenreSelect?.let { cb -> { values: List<String> -> park(DetailReturnFocus.Genre); cb(values, detail.card.title) } },
                                 entryFocusRequester = genreFR,
                                 onUp = goToNavBar,
                                 onDown = { if (detail.synopsis != null) runCatching { synopsisFR.requestFocus() } else runCatching { playFR.requestFocus() } },
@@ -370,7 +412,8 @@ private fun MovieDetailLoaded(
                                 // hero is actually scrolled — on open the list is already at the top (offset 0),
                                 // so skip the competing scroll(UserInput) that otherwise fights bring-into-view
                                 // mid-transition (the open transition was the jankiest pass on-device).
-                                if (it.hasFocus && listState.firstVisibleItemScrollOffset > 0) scope.launch {
+                                if (it.hasFocus && keepScrollOnPlayFocus) keepScrollOnPlayFocus = false
+                                else if (it.hasFocus && listState.firstVisibleItemScrollOffset > 0) scope.launch {
                                     listState.scroll(MutatePriority.UserInput) {
                                         scrollBy(-listState.firstVisibleItemScrollOffset.toFloat())
                                     }
@@ -428,7 +471,7 @@ private fun MovieDetailLoaded(
                             focusRequester = playFR,
                             style = ButtonStyle.PRIMARY,
                             modifier = (if (phoneDownloadsRow) Modifier.width(phonePlayWidth) else Modifier.widthIn(min = 200.dp)).testTag("movie-play"),
-                            onSelect = { onPlay(detail) },
+                            onSelect = { park(DetailReturnFocus.Play); onPlay(detail) },
                         )
                         // DEB-4070 (FR-8, amended) — Play · Download · My List: the control has one fixed width per language, so Play never moves.
                         if (downloadPanel != null && downloadWidth != null && downloadsAllowed) downloadPanel.Control(downloadWidth, Modifier.testTag("movie-download"))
@@ -506,12 +549,13 @@ private fun MovieDetailLoaded(
                     Spacer(Modifier.height(raviloRowHeadPadB))
                     ArrowRow(
                         modifier = Modifier.focusRestorer(),
+                        state = castRowState,
                         contentPadding = PaddingValues(horizontal = raviloHPad, vertical = raviloTrackPadV),
                         horizontalArrangement = Arrangement.spacedBy(raviloItemSpacing),
                     ) {
                         items(detail.cast.size, key = { i -> detail.cast[i].id }) { i ->
                             val person = detail.cast[i]
-                            CastCircle(person = person, onSelect = onCastSelect?.let { { it(person, detail.card.title) } })
+                            CastCircle(person = person, focusRequester = castFRs[person.id], onSelect = onCastSelect?.let { { park(DetailReturnFocus.Cast(person.id)); it(person, detail.card.title) } })
                         }
                     }
                 }
@@ -527,6 +571,7 @@ private fun MovieDetailLoaded(
                     Spacer(Modifier.height(raviloRowHeadPadB))
                     ArrowRow(
                         modifier = Modifier.focusRestorer(),
+                        state = relatedRowState,
                         contentPadding = PaddingValues(horizontal = raviloHPad, vertical = raviloTrackPadV),
                         horizontalArrangement = Arrangement.spacedBy(raviloItemSpacing),
                     ) {
@@ -540,7 +585,8 @@ private fun MovieDetailLoaded(
                                 upcomingAirUtc = card.upcomingAirUtc,
                                 qualityBadge = card.qualityBadge,   // R325
                                 downloaded = dev.jellystructure.ravilo.ui.downloads.isDownloaded(card.id),   // DEB-4071 (FR-8)
-                                onSelect = { onRelatedSelect(card) },
+                                focusRequester = relatedFRs[card.id],
+                                onSelect = { park(DetailReturnFocus.Related(card.id)); onRelatedSelect(card) },
                             )
                         }
                     }

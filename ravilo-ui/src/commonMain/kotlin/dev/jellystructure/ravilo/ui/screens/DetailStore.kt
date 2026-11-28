@@ -29,6 +29,8 @@ sealed class SeriesDetailState {
 }
 
 class MovieDetailStore(private val apiClient: TvApiClient) {
+    /** DEB-5839 (FR-1) — the control that opened a cast face, a related title or a genre chip, so Back lands on it. */
+    val returnTarget = DetailReturnTarget()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     /** 309 (FR-309-6) — the speed test and the early encode while the page is read. */
     val prewarm = DetailPrewarm(apiClient)
