@@ -113,6 +113,10 @@ internal sealed class SeriesReturnFocus {
     /** R365 (FR-R365-9) — the episode the player moved on to (next-up card, *Next*, the rail); the page resolves it to
      *  its season and card with [returnFocusFor] when it is composed again. */
     data class EpisodeId(val episodeId: String, override val seasonIdx: Int = -1) : SeriesReturnFocus()
+    /** DEB-5839 (FR-1) — a cast face, a related title or a genre chip opened something; the page's scroll comes with it. */
+    data class Cast(override val seasonIdx: Int, val personId: String, val scroll: ListScroll) : SeriesReturnFocus()
+    data class Related(override val seasonIdx: Int, val cardId: String, val scroll: ListScroll) : SeriesReturnFocus()
+    data class Genre(override val seasonIdx: Int, val scroll: ListScroll) : SeriesReturnFocus()
 }
 
 /**

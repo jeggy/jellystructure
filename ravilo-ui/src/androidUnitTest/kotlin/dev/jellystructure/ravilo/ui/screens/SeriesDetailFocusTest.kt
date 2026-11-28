@@ -17,6 +17,8 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performKeyInput
+import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performScrollToKey
 import androidx.compose.ui.test.performMouseInput
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.test.performTouchInput
@@ -566,5 +568,56 @@ class SeriesDetailFocusTest {
     @Test fun `DEB-4280 — the page the pill opened still starts on Play`() {
         renderSurprisePage(series(1, 3, shuffle = false), anotherEntryFocus = false)
         rule.onNodeWithTag(SeriesDetailTags.PLAY).assertIsFocused()
+    }
+
+    // ── DEB-5839 (FR-1) — a cast face or a related title, opened and come back from ──────────────────
+
+    private fun withRails(d: SeriesDetail) = d.copy(
+        cast = (1..8).map { dev.jellystructure.shared.tv.Person(id = "p$it", name = "Person $it", role = null, imageUrl = null) },
+        related = (1..8).map { MediaCard(id = "rel$it", title = "Related $it", year = 2020, genre = null, rating = null, posterUrl = null, backdropUrl = null) },
+    )
+
+    private fun focusedWithText(text: String) = rule.onNode(
+        isFocused() and (androidx.compose.ui.test.hasText(text) or hasAnyAncestor(androidx.compose.ui.test.hasText(text)) or androidx.compose.ui.test.hasAnyDescendant(androidx.compose.ui.test.hasText(text))),
+        useUnmergedTree = true,
+    )
+
+    private fun renderLeavingForTheRails(d: SeriesDetail, target: SeriesReturnTarget): () -> Unit {
+        dev.jellystructure.ravilo.ui.RaviloAppContext.init(androidx.test.core.app.ApplicationProvider.getApplicationContext())
+        var shown by mutableStateOf(true)
+        rule.setContent {
+            if (shown) SeriesDetailLoaded(
+                wireDetail = d, overlay = watched(d, upToSeason = 0), onBack = {}, onPlay = {}, onMarkEpisode = { _, _ -> },
+                onMarkFavorite = {}, onRelatedSelect = { shown = false }, onCastSelect = { _, _ -> shown = false }, onGenreSelect = null,
+                displayName = "Olivar", onNavSelect = {}, onProfile = null, onSearch = null, returnTarget = target,
+            )
+        }
+        rule.waitForIdle()
+        return { shown = true; rule.waitForIdle() }
+    }
+
+    @Test fun `DEB-5839 FR-1 — a cast face opened, Back lands on that face, once`() {
+        val d = withRails(series(2, 6, shuffle = false))
+        val target = SeriesReturnTarget()
+        val back = renderLeavingForTheRails(d, target)
+        rule.onNode(androidx.compose.ui.test.hasScrollToKeyAction()).performScrollToKey("cast")
+        rule.waitForIdle()
+        rule.onNodeWithText("Person 2").performClick()
+        rule.waitForIdle()
+        rule.onNodeWithTag(SeriesDetailTags.PLAY).assertDoesNotExist()   // the browse page is on top
+        back()
+        focusedWithText("Person 2").assertExists()
+        assertEquals(null, target.peek())   // read once: a later arrival finds nothing and focuses Play
+    }
+
+    @Test fun `DEB-5839 FR-1 — a related title opened, Back lands on that title`() {
+        val d = withRails(series(2, 6, shuffle = false))
+        val back = renderLeavingForTheRails(d, SeriesReturnTarget())
+        rule.onNode(androidx.compose.ui.test.hasScrollToKeyAction()).performScrollToKey("related")
+        rule.waitForIdle()
+        rule.onNodeWithText("Related 2").performClick()
+        rule.waitForIdle()
+        back()
+        focusedWithText("Related 2").assertExists()
     }
 }

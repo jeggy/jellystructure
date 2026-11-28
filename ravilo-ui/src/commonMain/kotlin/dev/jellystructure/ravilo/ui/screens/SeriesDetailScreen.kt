@@ -40,6 +40,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -553,6 +555,21 @@ internal fun SeriesDetailLoaded(
     // R350 (FR-R350-2, amended 2026-10-02) — set for the one focus request that brings Play back on a scrolled page (a
     // mouse can press Play with the page scrolled): R72's reframe to the top would undo the restored scroll.
     var keepScrollOnPlayFocus by remember { mutableStateOf(false) }
+    // DEB-5839 (FR-1) — a requester per cast face and related title, and the rails' own scroll, so Back lands on the one opened.
+    val castFRs = remember(detail.card.id) { detail.cast.associate { it.id to FocusRequester() } }
+    val relatedFRs = remember(detail.card.id) { detail.related.associate { it.id to FocusRequester() } }
+    val castRowState = rememberLazyListState()
+    val relatedRowState = rememberLazyListState()
+    fun listScrollNow() = ListScroll(listState.firstVisibleItemIndex, listState.firstVisibleItemScrollOffset)
+    // Scroll the page to where it was, bring the rail's item on screen, then focus it — the scroll-then-focus sequence.
+    fun focusAt(at: ListScroll, rail: LazyListState?, railIndex: Int, requester: FocusRequester?) {
+        if (requester == null) { focusPlay(); return }
+        scope.launch {
+            runCatching { listState.scrollToItem(at.index, at.offset) }
+            if (rail != null && railIndex >= 0) { withFrameNanos { }; runCatching { rail.scrollToItem(railIndex) } }
+            requestFocusRetrying(scope, requester)
+        }
+    }
     // Item 1 (the Episodes header, with the pills when there are any) parked just below the overlay AppBar.
     val belowBarPx = with(density) { (RaviloDimens.appBarHeight + 24.dp).toPx() }.toInt()
 
@@ -581,6 +598,9 @@ internal fun SeriesDetailLoaded(
                     requestFocusRetrying(scope, playFR)
                 }
             } ?: focusPlay()
+            is SeriesReturnFocus.Cast -> focusAt(returnFocus.scroll, castRowState, detail.cast.indexOfFirst { it.id == returnFocus.personId }, castFRs[returnFocus.personId])
+            is SeriesReturnFocus.Related -> focusAt(returnFocus.scroll, relatedRowState, detail.related.indexOfFirst { it.id == returnFocus.cardId }, relatedFRs[returnFocus.cardId])
+            is SeriesReturnFocus.Genre -> if (detail.genres.isNotEmpty()) focusAt(returnFocus.scroll, null, -1, genreFR) else focusPlay()
             is SeriesReturnFocus.EpisodeId, null -> focusPlay()   // EpisodeId is resolved above; unknown → Play
         }
     }
@@ -690,7 +710,7 @@ internal fun SeriesDetailLoaded(
                             Spacer(Modifier.height(10.dp))
                             GenreChipRow(
                                 genres = detail.genres,
-                                onGenreSelect = onGenreSelect?.let { cb -> { values: List<String> -> cb(values, detail.card.title) } },
+                                onGenreSelect = onGenreSelect?.let { cb -> { values: List<String> -> returnTarget?.remember(SeriesReturnFocus.Genre(selectedSeasonIdx, listScrollNow())); cb(values, detail.card.title) } },
                                 entryFocusRequester = genreFR,
                                 onUp = goToNavBar,
                                 onDown = { if (detail.synopsis != null) runCatching { synopsisFR.requestFocus() } else focusPlay() },
@@ -1116,12 +1136,13 @@ internal fun SeriesDetailLoaded(
                     Spacer(Modifier.height(raviloRowHeadPadB))
                     ArrowRow(
                         modifier = Modifier.focusRestorer(),
+                        state = castRowState,
                         contentPadding = PaddingValues(horizontal = raviloHPad, vertical = raviloTrackPadV),
                         horizontalArrangement = Arrangement.spacedBy(raviloItemSpacing),
                     ) {
                         items(detail.cast.size, key = { i -> detail.cast[i].id }) { i ->
                             val person = detail.cast[i]
-                            CastCircle(person = person, onSelect = onCastSelect?.let { { it(person, detail.card.title) } })
+                            CastCircle(person = person, focusRequester = castFRs[person.id], onSelect = onCastSelect?.let { { returnTarget?.remember(SeriesReturnFocus.Cast(selectedSeasonIdx, person.id, listScrollNow())); it(person, detail.card.title) } })
                         }
                     }
                 }
@@ -1137,6 +1158,7 @@ internal fun SeriesDetailLoaded(
                     Spacer(Modifier.height(raviloRowHeadPadB))
                     ArrowRow(
                         modifier = Modifier.focusRestorer(),
+                        state = relatedRowState,
                         contentPadding = PaddingValues(horizontal = raviloHPad, vertical = raviloTrackPadV),
                         horizontalArrangement = Arrangement.spacedBy(raviloItemSpacing),
                     ) {
@@ -1150,7 +1172,8 @@ internal fun SeriesDetailLoaded(
                                 upcomingAirUtc = card.upcomingAirUtc,
                                 qualityBadge = card.qualityBadge,   // R325
                                 downloaded = dev.jellystructure.ravilo.ui.downloads.isDownloaded(card.id),   // DEB-4071 (FR-8)
-                                onSelect = { onRelatedSelect(card) },
+                                focusRequester = relatedFRs[card.id],
+                                onSelect = { returnTarget?.remember(SeriesReturnFocus.Related(selectedSeasonIdx, card.id, listScrollNow())); onRelatedSelect(card) },
                             )
                         }
                     }
