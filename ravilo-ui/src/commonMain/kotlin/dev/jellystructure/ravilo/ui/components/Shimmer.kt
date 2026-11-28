@@ -251,3 +251,41 @@ fun DetailLoadingShell(card: dev.jellystructure.shared.tv.MediaCard? = null) {
 fun DetailErrorState(kind: LoadErrorKind, onRetry: () -> Unit, onBack: (() -> Unit)? = null) {
     LoadErrorState(kind, onRetry = onRetry, onBack = onBack)
 }
+
+internal const val SETTINGS_SKELETON = "settings-skeleton"
+internal const val TV_CODE_SKELETON = "tv-code-skeleton"
+internal const val SEARCH_SKELETON = "search-skeleton"
+internal const val MUSIC_SEARCH_SKELETON = "music-search-skeleton"
+
+/** DEB-5837 FR-2 — Settings' wait: setting rows at the loaded row's 52 dp, under the page title (and the desktop tabs) the caller draws. */
+@Composable
+fun SettingsLoadingRows(rows: Int = 6) {
+    val brush = rememberShimmerBrush()
+    Column(Modifier.fillMaxWidth().testTag(SETTINGS_SKELETON), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        repeat(rows) { ShimmerBox(Modifier.fillMaxWidth().height(52.dp), brush) }
+    }
+}
+
+/** DEB-5837 FR-2 — the TV code screen's wait: the code's box at its loaded size. The footer button is the caller's and stays. */
+@Composable
+fun TvCodeLoadingBox() {
+    ShimmerBox(Modifier.width(530.dp).height(190.dp).testTag(TV_CODE_SKELETON))
+}
+
+/** DEB-5837 FR-2 — a first query's wait: the result grid in the loaded [columns]. */
+@Composable
+fun SearchLoadingGrid(columns: Int) {
+    Box(Modifier.fillMaxSize().testTag(SEARCH_SKELETON)) { TileShimmerGrid(columns) }
+}
+
+/** DEB-5837 FR-2 — music search's wait: the result rows of its first group. */
+@Composable
+fun MusicSearchLoadingRows() {
+    val brush = rememberShimmerBrush()
+    Column(Modifier.fillMaxWidth().padding(horizontal = raviloHPad).testTag(MUSIC_SEARCH_SKELETON), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        repeat(3) { ShimmerBox(Modifier.fillMaxWidth().height(56.dp), brush) }
+    }
+}
+
+/** DEB-5837 FR-2 — what a search last showed, so the next query loads under it and only a first query shows the skeleton. */
+class LastShown<T> { var items: List<T> = emptyList() }

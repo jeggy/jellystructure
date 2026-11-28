@@ -203,9 +203,12 @@ fun SearchScreen(
     val desk = dev.jellystructure.ravilo.ui.theme.isDesktopLayout
     LaunchedEffect(externalQuery) { if (externalQuery != null && (externalQuery != query || (store.state.value as? SearchState.Loaded)?.query != externalQuery)) { query = externalQuery; store.onQuery(externalQuery) } }
 
+    // DEB-5837 FR-2 — a search that shows results keeps them while the next query loads.
+    val shown = remember { dev.jellystructure.ravilo.ui.components.LastShown<dev.jellystructure.shared.tv.MediaCard>() }
     val items = when (val s = state) {
-        is SearchState.Loaded -> s.results.items
-        else -> emptyList()
+        is SearchState.Loaded -> s.results.items.also { shown.items = it }
+        is SearchState.Loading -> shown.items
+        else -> emptyList<dev.jellystructure.shared.tv.MediaCard>().also { shown.items = it }
     }
     // R174 — server-configured items per row; portrait viewports use the smaller portrait count.
     val cols = if (LocalPortrait.current) LocalPortraitGridColumns.current else LocalGridColumns.current
@@ -429,7 +432,7 @@ fun SearchScreen(
         val label = when {
             query.isEmpty()                              -> str("search.suggestions_label")
             items.isEmpty() && state is SearchState.Loaded -> str("search.empty", mapOf("query" to query))
-            state is SearchState.Loading                 -> str("loading")
+            state is SearchState.Loading && items.isEmpty() -> ""   // DEB-5837 FR-2 — a first query says nothing; the skeleton waits below
             // Bug fix: "1 results" read wrong — found during general mobile exploration testing.
             items.size == 1                              -> str("search.result_one")
             else                                         -> str("search.results", mapOf("count" to items.size.toString()))
@@ -443,6 +446,7 @@ fun SearchScreen(
         )
         Spacer(Modifier.height(12.dp))
 
+        if (state is SearchState.Loading && items.isEmpty()) dev.jellystructure.ravilo.ui.components.SearchLoadingGrid(cols)
         if (items.isNotEmpty()) {
             LazyVerticalGrid(
                 // R337 — a computer's grid takes as many of its own tiles as fit.

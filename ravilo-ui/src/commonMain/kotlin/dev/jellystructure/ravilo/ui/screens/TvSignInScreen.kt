@@ -144,6 +144,7 @@ fun TvSignInScreen(
                         fontWeight = FontWeight.SemiBold, textAlign = TextAlign.Center,
                     )
                     // Loading: the footer's button is already there, so focus does not move when the code arrives.
+                    is TvSignInState.Loading -> dev.jellystructure.ravilo.ui.components.TvCodeLoadingBox()
                     else -> Unit
                 }
             }

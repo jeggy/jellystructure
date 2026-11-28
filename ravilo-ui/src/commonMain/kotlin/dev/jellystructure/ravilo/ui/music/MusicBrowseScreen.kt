@@ -315,7 +315,9 @@ fun MusicBrowseScreen(
                 Spacer(Modifier.height(10.dp))
             }
             if (query.isNotBlank()) {
-                searchResults(results, query, expanded, { expanded = it }, onOpenAlbum, onOpenArtist, onTrackMore)
+                // DEB-5837 FR-2 — a first query waits as the first group's rows; a later one keeps the results shown.
+                if (results == null) item(key = "search-skeleton") { dev.jellystructure.ravilo.ui.components.MusicSearchLoadingRows() }
+                else searchResults(results, query, expanded, { expanded = it }, onOpenAlbum, onOpenArtist, onTrackMore)
             } else {
                 if (!deskFamily) item(key = "chips") {
                     LazyRow(contentPadding = PaddingValues(horizontal = raviloHPad), horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(vertical = 10.dp)) {

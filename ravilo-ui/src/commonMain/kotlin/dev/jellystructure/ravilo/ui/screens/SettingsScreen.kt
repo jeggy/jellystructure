@@ -311,7 +311,7 @@ fun SettingsScreen(
             Spacer(Modifier.height(if (deskLayout) 22.dp else 40.dp))
 
             when (val s = state) {
-                is SettingsState.Loading -> Text(str("loading"), color = colors.textSecondary, fontSize = 16.sp)
+                is SettingsState.Loading -> dev.jellystructure.ravilo.ui.components.SettingsLoadingRows()
                 is SettingsState.Error   -> LoadErrorState(s.kind, onRetry = { store.load() }, onBack = onBack)
                 is SettingsState.Loaded  -> SettingsContent(
                     config = s.config,
@@ -610,7 +610,7 @@ fun DesktopSettingsPanel(
             }
             Column(Modifier.fillMaxWidth().padding(start = 28.dp, end = 28.dp, top = if (mac) 22.dp else 8.dp, bottom = 28.dp)) {
                 when (val s = state) {
-                    is SettingsState.Loading -> Text(str("loading"), color = colors.textSecondary, fontSize = 13.sp, fontFamily = ui)
+                    is SettingsState.Loading -> dev.jellystructure.ravilo.ui.components.SettingsLoadingRows()
                     is SettingsState.Error -> LoadErrorState(s.kind, onRetry = { store.load() }, onBack = onClose)
                     is SettingsState.Loaded -> if (mac) when (tab) {
                         0 -> general(s.config)

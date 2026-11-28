@@ -91,9 +91,12 @@ fun SeerrSearchScreen(
     var query by remember { mutableStateOf("") }
     var inGrid by remember { mutableStateOf(false) }
 
+    // DEB-5837 FR-2 — a search that shows results keeps them while the next query loads.
+    val shown = remember { dev.jellystructure.ravilo.ui.components.LastShown<dev.jellystructure.shared.tv.DiscoverEntry>() }
     val items = when (val s = state) {
-        is SeerrSearchState.Loaded -> s.results.items
-        else -> emptyList()
+        is SeerrSearchState.Loaded -> s.results.items.also { shown.items = it }
+        is SeerrSearchState.Loading -> shown.items
+        else -> emptyList<dev.jellystructure.shared.tv.DiscoverEntry>().also { shown.items = it }
     }
 
     val gridFR = remember { FocusRequester() }
@@ -201,7 +204,7 @@ fun SeerrSearchScreen(
         val label = when {
             query.isEmpty()                                  -> str("request.search_hint")
             items.isEmpty() && state is SeerrSearchState.Loaded -> str("search.empty", mapOf("query" to query))
-            state is SeerrSearchState.Loading                -> str("loading")
+            state is SeerrSearchState.Loading && items.isEmpty() -> ""   // DEB-5837 FR-2 — a first query says nothing; the skeleton waits below
             else                                              -> str("search.results", mapOf("count" to items.size.toString()))
         }
         Text(
@@ -213,6 +216,9 @@ fun SeerrSearchScreen(
         )
         Spacer(Modifier.height(12.dp))
 
+        if (state is SeerrSearchState.Loading && items.isEmpty()) dev.jellystructure.ravilo.ui.components.SearchLoadingGrid(
+            if (LocalPortrait.current) LocalPortraitGridColumns.current else LocalGridColumns.current,
+        )
         if (items.isNotEmpty()) {
             // R174 — server-configured items per row; portrait viewports use the smaller portrait count.
             val cols = if (LocalPortrait.current) LocalPortraitGridColumns.current else LocalGridColumns.current
